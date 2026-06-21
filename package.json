@@ -20,6 +20,7 @@
     "lint": "echo \"(lint placeholder)\""
   },
   "devDependencies": {
+    "@dread-hollow/decor": "workspace:*",
     "esbuild": "0.21.5"
   },
   "keywords": [
