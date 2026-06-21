@@ -9,12 +9,17 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Action } from "@dread-hollow/shared";
+import { botStep, type Action } from "@dread-hollow/shared";
 import { RoomManager, type GameRoom } from "./rooms.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
+/** Delay between a bot's individual actions, so humans can watch it move. */
+const BOT_STEP_MS = 700;
 const manager = new RoomManager();
+
+/** Rooms with a pending bot step, so we never schedule two at once. */
+const botTimers = new Map<GameRoom, ReturnType<typeof setTimeout>>();
 
 interface Session {
   playerId: string;
@@ -34,6 +39,44 @@ function broadcast(room: GameRoom): void {
   for (const ws of room.sockets.values()) {
     if (ws.readyState === ws.OPEN) ws.send(data);
   }
+  scheduleBots(room);
+}
+
+/**
+ * If it's a bot's turn, drive one of its actions after a short delay, broadcast,
+ * and (via broadcast) schedule the next step — until a human is up or the game
+ * ends. A move that makes no progress is force-ended so a room can't get stuck.
+ */
+function scheduleBots(room: GameRoom): void {
+  const s = room.state;
+  if (room.sockets.size === 0) return; // nobody's watching; let it idle
+  if (s.phase !== "explore" && s.phase !== "haunt") return;
+  const active = s.players.find((p) => p.id === s.activePlayerId);
+  if (!active?.isBot) return;
+  if (botTimers.has(room)) return;
+
+  const timer = setTimeout(() => {
+    botTimers.delete(room);
+    // Re-check: state may have changed before the timer fired.
+    if (s.activePlayerId !== active.id || (s.phase !== "explore" && s.phase !== "haunt")) {
+      broadcast(room);
+      return;
+    }
+    const before = { pos: active.position, move: s.movementLeft };
+    const { action, endTurnAfter } = botStep(s, active.id);
+    room.apply(action);
+    const stalled =
+      !endTurnAfter &&
+      action.type !== "end-turn" &&
+      active.position === before.pos &&
+      s.movementLeft === before.move;
+    if ((endTurnAfter && action.type !== "end-turn") || stalled) {
+      if (s.activePlayerId === active.id) room.apply({ type: "end-turn", playerId: active.id });
+    }
+    broadcast(room);
+  }, BOT_STEP_MS);
+
+  botTimers.set(room, timer);
 }
 
 function attachToRoom(
@@ -64,6 +107,11 @@ function leaveRoom(ws: WebSocket, session: Session): void {
   room.apply({ type: "leave", playerId: session.playerId });
   session.room = null;
   if (room.isEmpty) {
+    const timer = botTimers.get(room);
+    if (timer) {
+      clearTimeout(timer);
+      botTimers.delete(room);
+    }
     manager.remove(room.code);
   } else {
     broadcast(room);
