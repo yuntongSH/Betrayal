@@ -55,6 +55,9 @@ character; the host begins the descent. Best with 3–6 explorers.
 > Point the client at a different server with `VITE_SERVER_URL`, e.g.
 > `VITE_SERVER_URL=wss://your-host pnpm dev:client`.
 
+Prefer containers? `docker compose up --build` brings up both services — see
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ## 🎮 How to play
 
 The short version:
