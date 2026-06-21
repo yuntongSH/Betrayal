@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { legalMoves } from "@dread-hollow/shared";
+import { legalMoves, neighborKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { Scene } from "../three/Scene";
 import { TraitPanel } from "./TraitPanel";
@@ -9,11 +9,19 @@ import { HauntBanner } from "./HauntBanner";
 import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
 
+const KEY_DIR: Record<string, Direction> = {
+  ArrowUp: "north", ArrowDown: "south", ArrowLeft: "west", ArrowRight: "east",
+  w: "north", s: "south", a: "west", d: "east",
+  W: "north", S: "south", A: "west", D: "east",
+};
+
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const endTurn = useStore((s) => s.endTurn);
   const attackPlayer = useStore((s) => s.attackPlayer);
+  const moveTo = useStore((s) => s.moveTo);
+  const explore = useStore((s) => s.explore);
 
   const active = game.players.find((p) => p.id === game.activePlayerId);
   const myTurn = game.activePlayerId === myId;
@@ -26,14 +34,34 @@ export function GameScreen() {
   );
   const attackTargets = legal?.attackPlayers ?? [];
 
-  // Press E to end your turn.
+  // Keyboard: arrows / WASD to move, E to end turn.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.key === "e" || e.key === "E") && myTurn && !ended) endTurn();
+      if (!myTurn || ended) return;
+      if ((e.key === "e" || e.key === "E")) {
+        endTurn();
+        return;
+      }
+      const dir = KEY_DIR[e.key];
+      if (!dir || !legal) return;
+      const me = game.players.find((p) => p.id === myId);
+      const room = me?.position ? game.house[me.position] : undefined;
+      if (!room) return;
+      // Open doorway that way → discover; else a connected room that way → walk.
+      if (legal.doors.includes(dir)) {
+        e.preventDefault();
+        explore(dir);
+        return;
+      }
+      const target = neighborKey(room.floor, room.x, room.y, dir);
+      if (legal.explored.includes(target)) {
+        e.preventDefault();
+        moveTo(target);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [myTurn, ended, endTurn]);
+  }, [myTurn, ended, endTurn, legal, game, myId, moveTo, explore]);
 
   return (
     <div className="game-shell">
@@ -98,8 +126,9 @@ export function GameScreen() {
       )}
 
       <div className="hud-hint">
-        Drag to orbit · click a glowing room to move · click a flame arrow to
-        explore{game.phase === "haunt" ? " · click a monster to strike" : ""}
+        Drag to orbit · arrow keys / WASD to move · click a glowing room or a
+        flame arrow · E ends your turn
+        {game.phase === "haunt" ? " · click a monster to strike" : ""}
       </div>
     </div>
   );
