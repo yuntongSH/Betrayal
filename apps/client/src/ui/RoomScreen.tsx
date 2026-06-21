@@ -7,6 +7,7 @@ export function RoomScreen() {
   const roomCode = useStore((s) => s.roomCode);
   const chooseCharacter = useStore((s) => s.chooseCharacter);
   const startGame = useStore((s) => s.startGame);
+  const addBot = useStore((s) => s.addBot);
   const leave = useStore((s) => s.leave);
 
   const me = game.players.find((p) => p.id === playerId);
@@ -75,6 +76,7 @@ export function RoomScreen() {
                 <span className={`dot ${p.connected ? "on" : "off"}`} />
                 {p.name}
                 {p.isHost && <span className="badge">host</span>}
+                {p.isBot && <span className="badge bot">bot</span>}
                 {p.characterId && (
                   <span className="muted small">
                     {CHARACTERS.find((c) => c.id === p.characterId)?.name}
@@ -85,13 +87,25 @@ export function RoomScreen() {
           </ul>
 
           {me?.isHost ? (
-            <button
-              className="btn primary"
-              disabled={!everyoneReady}
-              onClick={startGame}
-            >
-              {everyoneReady ? "Begin the descent" : "Waiting for the party…"}
-            </button>
+            <>
+              <button
+                className="btn"
+                disabled={game.players.length >= CHARACTERS.length}
+                onClick={addBot}
+              >
+                + Add bot
+              </button>
+              <button
+                className="btn primary"
+                disabled={!everyoneReady}
+                onClick={startGame}
+              >
+                {everyoneReady ? "Begin the descent" : "Waiting for the party…"}
+              </button>
+              <p className="muted small">
+                Small parties are topped up to 3 with bots automatically.
+              </p>
+            </>
           ) : (
             <p className="muted">Waiting for the host to begin…</p>
           )}

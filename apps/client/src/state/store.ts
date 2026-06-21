@@ -1,6 +1,9 @@
 import { create } from "zustand";
-import type { Action, Direction, GameState } from "@dread-hollow/shared";
+import { CHARACTERS, type Action, type Direction, type GameState } from "@dread-hollow/shared";
 import { Connection, type ServerMessage } from "../net/connection";
+
+/** Bots added for a one-click solo game (1 human + this many bots). */
+const SOLO_BOTS = 3;
 
 const SERVER_URL =
   (import.meta.env.VITE_SERVER_URL as string | undefined) ??
@@ -20,6 +23,8 @@ interface Store {
   setName: (name: string) => void;
   createRoom: (name: string) => void;
   joinRoom: (code: string, name: string) => void;
+  playSolo: (name: string) => void;
+  addBot: () => void;
   leave: () => void;
 
   // game intents (player id is injected automatically)
@@ -33,6 +38,9 @@ interface Store {
 }
 
 export const useStore = create<Store>((set, get) => {
+  // Transient flag: when the next "joined" arrives, auto-set-up a solo game.
+  let pendingSolo = false;
+
   function handle(msg: ServerMessage): void {
     switch (msg.t) {
       case "joined":
@@ -48,6 +56,20 @@ export const useStore = create<Store>((set, get) => {
           status: "connected",
           error: null,
         });
+        if (pendingSolo) {
+          pendingSolo = false;
+          const conn = get().conn;
+          const pid = msg.playerId;
+          if (conn) {
+            // Add the bots, claim a character the bots won't take, and start.
+            for (let i = 0; i < SOLO_BOTS; i++) {
+              conn.send({ t: "action", action: { type: "add-bot", playerId: pid } });
+            }
+            const mine = CHARACTERS[SOLO_BOTS]?.id ?? CHARACTERS[0]!.id;
+            conn.send({ t: "action", action: { type: "choose-character", playerId: pid, characterId: mine } });
+            conn.send({ t: "action", action: { type: "start-game", playerId: pid } });
+          }
+        }
         break;
       case "state":
         set({ game: msg.state });
@@ -106,6 +128,15 @@ export const useStore = create<Store>((set, get) => {
       set({ status: "connecting", error: null });
       conn.send({ t: "create-room", name });
     },
+
+    playSolo: (name) => {
+      const conn = ensureConn();
+      pendingSolo = true;
+      set({ status: "connecting", error: null });
+      conn.send({ t: "create-room", name });
+    },
+
+    addBot: () => act((playerId) => ({ type: "add-bot", playerId })),
 
     joinRoom: (code, name) => {
       const conn = ensureConn();

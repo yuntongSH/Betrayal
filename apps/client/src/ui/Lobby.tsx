@@ -7,6 +7,7 @@ export function Lobby() {
   const setName = useStore((s) => s.setName);
   const createRoom = useStore((s) => s.createRoom);
   const joinRoom = useStore((s) => s.joinRoom);
+  const playSolo = useStore((s) => s.playSolo);
   const status = useStore((s) => s.status);
   const [code, setCode] = useState("");
 
@@ -41,6 +42,14 @@ export function Lobby() {
           onClick={() => createRoom(trimmed)}
         >
           Open a new manor
+        </button>
+
+        <button
+          className="btn"
+          disabled={!canPlay || status === "connecting"}
+          onClick={() => playSolo(trimmed)}
+        >
+          Play solo vs 3 bots
         </button>
 
         <div className="divider">or join one</div>
