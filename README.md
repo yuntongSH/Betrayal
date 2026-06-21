@@ -58,6 +58,17 @@ character; the host begins the descent. Best with 3–6 explorers.
 Prefer containers? `docker compose up --build` brings up both services — see
 [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
+### 🎴 Single-file build (no install, no server)
+
+Just want to try it? [`artifact/dread-hollow.html`](artifact/dread-hollow.html) is a
+**standalone, single-file** build — open it in any browser (it loads three.js from
+a CDN) and play **pass-and-play** on one screen. It runs the exact same rules
+engine, bundled in. Regenerate it with:
+
+```bash
+pnpm build:artifact   # → artifact/dread-hollow.html
+```
+
 ## 🎮 How to play
 
 The short version:

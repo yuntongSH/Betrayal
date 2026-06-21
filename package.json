@@ -14,9 +14,13 @@
     "dev:server": "pnpm --filter @dread-hollow/server dev",
     "dev:client": "pnpm --filter @dread-hollow/client dev",
     "build": "pnpm -r build",
+    "build:artifact": "node scripts/build-artifact.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @dread-hollow/shared test",
     "lint": "echo \"(lint placeholder)\""
+  },
+  "devDependencies": {
+    "esbuild": "0.21.5"
   },
   "keywords": [
     "board-game",
