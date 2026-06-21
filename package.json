@@ -1,0 +1,31 @@
+{
+  "name": "dread-hollow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An open-source, 3D online haunted-house exploration & betrayal board game.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @dread-hollow/server dev & pnpm --filter @dread-hollow/client dev",
+    "dev:server": "pnpm --filter @dread-hollow/server dev",
+    "dev:client": "pnpm --filter @dread-hollow/client dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @dread-hollow/shared test",
+    "lint": "echo \"(lint placeholder)\""
+  },
+  "keywords": [
+    "board-game",
+    "three.js",
+    "react-three-fiber",
+    "haunted-house",
+    "betrayal",
+    "multiplayer",
+    "webgl",
+    "3d"
+  ]
+}
