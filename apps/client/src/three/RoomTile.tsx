@@ -2,17 +2,8 @@ import { useMemo } from "react";
 import { Html } from "@react-three/drei";
 import { DIRECTIONS, placedDoorways } from "@dread-hollow/shared";
 import type { PlacedRoom, RoomDef } from "@dread-hollow/shared";
+import { buildRoomDecor, roomTheme } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
-
-const SPECIAL_GLOW: Record<string, string | undefined> = {
-  "heal-sanity": "#6fb6b5",
-  "heal-might": "#e8a85a",
-  "drain-speed": "#5a6f9a",
-  pit: "#3a2a2a",
-  "draw-extra-omen": "#8c2f23",
-  "pentagram-chamber": "#8c2f23",
-  vault: "#c8a23a",
-};
 
 const HALF = TILE / 2;
 
@@ -29,7 +20,9 @@ export function RoomTile({
 }) {
   const [wx, wy, wz] = roomWorld(room);
   const doors = useMemo(() => placedDoorways(room), [room]);
-  const glow = SPECIAL_GLOW[def.special];
+  const theme = useMemo(() => roomTheme(room.roomId), [room.roomId]);
+  // The decorations are vanilla three Groups, memoized for the tile's lifetime.
+  const decor = useMemo(() => buildRoomDecor(room.roomId, TILE), [room.roomId]);
 
   return (
     <group position={[wx, wy, wz]}>
@@ -51,7 +44,7 @@ export function RoomTile({
       >
         <boxGeometry args={[TILE, 0.3, TILE]} />
         <meshStandardMaterial
-          color={highlighted ? "#3a4a3a" : "#1c1812"}
+          color={highlighted ? "#3a4a3a" : theme.floor}
           emissive={highlighted ? "#5a8f5a" : "#000000"}
           emissiveIntensity={highlighted ? 0.5 : 0}
           roughness={0.95}
@@ -74,29 +67,26 @@ export function RoomTile({
             ? [TILE, WALL_H, 0.2]
             : [0.2, WALL_H, TILE];
         return (
-          <mesh key={d} position={pos} castShadow>
+          <mesh key={d} position={pos} castShadow receiveShadow>
             <boxGeometry args={size} />
-            <meshStandardMaterial color="#2a2018" roughness={1} />
+            <meshStandardMaterial color={theme.wall} roughness={1} />
           </mesh>
         );
       })}
 
-      {glow && (
-        <pointLight
-          position={[0, WALL_H * 0.7, 0]}
-          color={glow}
-          intensity={6}
-          distance={TILE * 2.2}
-          decay={2}
-        />
-      )}
+      {/* the room's themed furnishings */}
+      <primitive object={decor} />
 
-      <Html
-        position={[0, WALL_H + 0.4, 0]}
-        center
-        distanceFactor={14}
-        occlude={false}
-      >
+      {/* a per-room accent light for vibe */}
+      <pointLight
+        position={[0, WALL_H * 0.75, 0]}
+        color={theme.accent}
+        intensity={theme.accentIntensity * 6}
+        distance={TILE * 2.4}
+        decay={2}
+      />
+
+      <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={14} occlude={false}>
         <div className={`room-label ${highlighted ? "lit" : ""}`}>{def.name}</div>
       </Html>
     </group>

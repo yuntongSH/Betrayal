@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
-import type { Mesh } from "three";
+import { buildMonsterFigure } from "@dread-hollow/decor";
+import type { Group } from "three";
 
 export function MonsterToken({
   position,
@@ -16,21 +17,20 @@ export function MonsterToken({
   attackable: boolean;
   onClick: () => void;
 }) {
-  const ref = useRef<Mesh>(null);
+  const ref = useRef<Group>(null);
+  const figure = useMemo(() => buildMonsterFigure(name), [name]);
 
   useFrame((state) => {
     if (!ref.current) return;
     const t = state.clock.elapsedTime;
-    ref.current.rotation.y = t * 0.6;
-    ref.current.position.y = position[1] + 0.8 + Math.sin(t * 3) * 0.1;
+    ref.current.rotation.y = t * 0.5;
+    ref.current.position.y = position[1] + 0.05 + Math.sin(t * 3) * 0.08;
   });
 
   return (
-    <group position={[position[0], 0, position[2]]}>
-      <mesh
+    <group position={[position[0], position[1], position[2]]}>
+      <group
         ref={ref}
-        position={[0, position[1] + 0.8, 0]}
-        castShadow
         onClick={(e) => {
           e.stopPropagation();
           if (attackable) onClick();
@@ -43,17 +43,10 @@ export function MonsterToken({
           document.body.style.cursor = "default";
         }}
       >
-        <octahedronGeometry args={[0.5, 0]} />
-        <meshStandardMaterial
-          color="#1a0e0e"
-          emissive={attackable ? "#c2412f" : "#5a1d15"}
-          emissiveIntensity={attackable ? 1.1 : 0.5}
-          roughness={0.3}
-          metalness={0.4}
-        />
-      </mesh>
-      <pointLight position={[0, position[1] + 0.8, 0]} color="#c2412f" intensity={3} distance={3.5} decay={2} />
-      <Html position={[0, position[1] + 1.6, 0]} center distanceFactor={12} occlude={false}>
+        <primitive object={figure} />
+      </group>
+      <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={4} decay={2} />
+      <Html position={[0, 1.9, 0]} center distanceFactor={12} occlude={false}>
         <div className="token-label monster">
           {name} · {hp}♥{attackable ? " — strike" : ""}
         </div>
