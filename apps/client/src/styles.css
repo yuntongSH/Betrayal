@@ -307,9 +307,102 @@ input:focus {
 .game-loading {
   height: 100%;
 }
+.game-shell {
+  position: relative;
+}
+.game-shell canvas {
+  display: block;
+  touch-action: none;
+}
 .game-loading {
   display: grid;
   place-items: center;
+  text-align: center;
+}
+
+/* labels rendered inside the 3D scene via drei <Html> */
+.room-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  text-shadow: 0 0 6px #000, 0 0 6px #000;
+  pointer-events: none;
+  user-select: none;
+}
+.room-label.lit {
+  color: var(--good);
+}
+.token-label {
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--ink);
+  text-shadow: 0 0 6px #000, 0 0 4px #000;
+  pointer-events: none;
+  user-select: none;
+}
+.token-label.me {
+  color: var(--flame);
+  font-weight: bold;
+}
+.token-label.traitor {
+  color: var(--blood-bright);
+}
+.token-label.monster {
+  color: #e88;
+}
+
+/* top status bar + controls */
+.hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 1.2rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent);
+  pointer-events: none;
+  font-size: 1rem;
+}
+.hud-top.haunt .hud-turn {
+  color: var(--blood-bright);
+}
+.haunt-tag {
+  color: var(--blood-bright);
+  letter-spacing: 0.1em;
+}
+.you-tag {
+  color: var(--flame);
+}
+.hud-move {
+  color: var(--ink-dim);
+}
+.hud-endturn {
+  position: absolute;
+  bottom: 1.4rem;
+  right: 1.4rem;
+}
+.hud-hint {
+  position: absolute;
+  bottom: 1.4rem;
+  left: 1.4rem;
+  max-width: 320px;
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+.hud-result {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(1.6rem, 5vw, 3rem);
+  letter-spacing: 0.06em;
+  color: var(--flame);
+  text-shadow: 0 0 30px rgba(232, 168, 90, 0.5);
+  pointer-events: none;
   text-align: center;
 }
 
