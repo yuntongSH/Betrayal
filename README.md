@@ -69,6 +69,16 @@ engine, bundled in. Regenerate it with:
 pnpm build:artifact   # → artifact/dread-hollow.html
 ```
 
+## 👥 Ways to play
+
+- **Solo vs bots** — "Play solo vs 3 bots" drops you into a 4-player game (you +
+  three AI explorers) the server (or the artifact) plays automatically.
+- **Multiplayer** — open a manor, share the **4-letter room code**; anyone who
+  enters it joins the *same* house. Bots take their turns on their own.
+- **Auto-fill** — small parties are topped up to a minimum of three with bots on
+  start, so two humans get one bot, a lone human gets two.
+- **Add bots** — the host can add bots in the lobby for a fuller party.
+
 ## 🎮 How to play
 
 The short version:
