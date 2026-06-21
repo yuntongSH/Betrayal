@@ -122,20 +122,23 @@ export const HAUNTS: HauntDef[] = [
     name: "The Hungering House",
     reveal:
       "The walls flex like a throat. {traitor} smiles — they understand now that the house was never a building. It was always a mouth, and they are its tongue.",
-    heroGoal: "Get any living hero back through the Entrance Hall and out.",
-    traitorGoal: "Devour every hero before they escape.",
+    heroGoal:
+      "Destroy the house's maws, or carry the Iron Key to the Entrance Hall and force the door open.",
+    traitorGoal: "Devour every hero before they break free.",
     setup: (s, _t, ctx) => {
       spawn(s, ctx, "Gnashing Maw", 4, 4, 2);
     },
     checkWin: (s) => {
-      const escaped = livingHeroes(s).some((p) => {
-        if (!p.position) return false;
-        const room = s.house[p.position];
-        return room?.roomId === "entrance-hall";
-      });
-      if (escaped) return "heroes";
       if (livingHeroes(s).length === 0) return "traitor";
-      return null;
+      // Destroying the house's maws breaks the spell on the doors...
+      if (livingMonsters(s).length === 0) return "heroes";
+      // ...or a hero forces the front door with the Iron Key. (Heroes begin in
+      // the Entrance Hall, so the key requirement prevents an instant escape.)
+      const escaped = livingHeroes(s).some((p) => {
+        const room = p.position ? s.house[p.position] : undefined;
+        return room?.roomId === "entrance-hall" && p.inventory.includes("it-key");
+      });
+      return escaped ? "heroes" : null;
     },
   },
   {
