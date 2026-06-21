@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dread Hollow — a haunted-house betrayal game</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<style>
+:root{
+  --bg:#07070a;--panel:rgba(18,16,24,.82);--edge:rgba(120,90,70,.25);
+  --ink:#d8cfc4;--dim:#8a8076;--blood:#8c2f23;--blood2:#c2412f;--flame:#e8a85a;--good:#6fae6f;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60%),var(--bg);
+  color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;overflow:hidden}
+.btn{font:inherit;cursor:pointer;color:var(--ink);background:rgba(40,34,30,.8);border:1px solid var(--edge);
+  border-radius:8px;padding:.6rem 1rem;transition:.15s}
+.btn:hover:not(:disabled){border-color:var(--flame);transform:translateY(-1px)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:linear-gradient(180deg,var(--blood2),var(--blood));border-color:#5a1d15;color:#f4e7dd}
+.btn.danger{background:linear-gradient(180deg,#7a2018,#561009);border-color:#3a0c06;color:#f4d7d0}
+.muted{color:var(--dim)} .small{font-size:.78rem}
+
+/* lobby */
+#lobby{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.2rem;gap:1rem;text-align:center}
+.title{font-size:2.6rem;margin:0;letter-spacing:.04em;text-shadow:0 0 24px rgba(232,168,90,.25)}
+.title .f{animation:flick 3s infinite;filter:drop-shadow(0 0 10px var(--flame))}
+.tagline{color:var(--dim);font-style:italic;max-width:520px;margin:0}
+.char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.7rem;max-width:780px;width:100%;
+  max-height:54vh;overflow:auto;padding:.3rem}
+.char-card{display:flex;gap:.7rem;text-align:left;padding:.7rem;border-radius:12px;background:var(--panel);
+  border:1px solid var(--edge);border-left-width:4px;cursor:pointer;color:var(--ink);font:inherit}
+.char-card:hover{transform:translateY(-2px)}
+.char-card.mine{background:rgba(60,48,40,.95);box-shadow:0 0 0 2px var(--flame) inset}
+.char-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#1a1410;font-weight:bold;font-size:1.2rem;flex:0 0 auto}
+.char-info em{color:var(--dim);font-size:.8rem;display:block}
+.char-traits{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.35rem}
+.trait-chip{font-size:.68rem;padding:.1rem .4rem;border-radius:5px;background:rgba(0,0,0,.4);color:var(--dim)}
+
+/* game */
+#game{display:none;height:100%;position:relative}
+#canvas-wrap{position:absolute;inset:0}
+#canvas-wrap canvas{position:absolute;inset:0;display:block}
+.label-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl3d{font-size:11px;color:var(--dim);white-space:nowrap;text-shadow:0 0 6px #000,0 0 6px #000;pointer-events:none}
+.lbl3d.lit{color:var(--good)}
+.tok-lbl{font-size:11px;color:var(--ink);white-space:nowrap;text-shadow:0 0 6px #000,0 0 4px #000;pointer-events:none}
+.tok-lbl.traitor{color:var(--blood2)} .tok-lbl.monster{color:#e88}
+
+#hud-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
+  padding:.8rem 1.1rem;background:linear-gradient(180deg,rgba(0,0,0,.6),transparent);pointer-events:none}
+.haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)}
+#hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:4rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
+#hud-right{position:absolute;top:3.3rem;right:.8rem;width:270px;max-width:42vw}
+#hud-bottom{position:absolute;bottom:1.1rem;left:50%;transform:translateX(-50%);display:flex;gap:.5rem}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:10px;backdrop-filter:blur(6px)}
+.roster{padding:.45rem .55rem;display:flex;flex-direction:column;gap:.18rem}
+.roster-row{display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.1rem .2rem;border-radius:5px}
+.roster-row.active{background:rgba(232,168,90,.14)} .roster-row.dead{opacity:.45;text-decoration:line-through}
+.roster-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.roster-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.roster-traitor{color:var(--blood2)}
+.log{flex:1;min-height:0;display:flex;flex-direction:column}
+.log-title{padding:.35rem .6rem;border-bottom:1px solid var(--edge);font-size:.76rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.log-scroll{overflow-y:auto;padding:.45rem .6rem;display:flex;flex-direction:column;gap:.3rem;font-size:.8rem}
+.log-entry{line-height:1.35;border-left:2px solid transparent;padding-left:.5rem}
+.k-roll{border-color:#7a6db0}.k-card{border-color:#6fb6b5}.k-move{border-color:#4a4a55}
+.k-haunt{border-color:var(--blood2);color:#e8b3a8}.k-combat{border-color:var(--blood)}
+.k-death{border-color:#000;color:#c2517a}.k-win{border-color:var(--flame);color:var(--flame)}
+.dice{display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle}
+.die{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:3px;font-size:10px;font-style:normal;
+  background:#2a2018;border:1px solid #4a3a2a}
+.die.d0{opacity:.5}.die.d2{background:#4a3520;border-color:var(--flame);color:var(--flame)}
+.trait-panel{padding:.7rem;display:flex;flex-direction:column;gap:.55rem}
+.trait-panel.dead{opacity:.7}
+.tp-head{display:flex;align-items:center;gap:.5rem;border-left:3px solid;padding-left:.5rem}
+.tp-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#1a1410;font-weight:bold}
+.side-tag{margin-left:auto;font-size:.62rem;padding:.1rem .4rem;border-radius:4px;letter-spacing:.08em}
+.side-tag.traitor{background:var(--blood);color:#f4e7dd}.side-tag.heroes{background:#2c4a2c;color:#cfe}
+.tp-dead{color:var(--blood2);font-style:italic}
+.tp-traits{display:flex;flex-direction:column;gap:.32rem}
+.tp-th{display:flex;justify-content:space-between;font-size:.78rem;text-transform:capitalize}
+.tp-track{display:flex;gap:2px;margin-top:2px}
+.pip{flex:1;text-align:center;font-size:.68rem;padding:.1rem 0;border-radius:3px;background:rgba(0,0,0,.4);color:var(--dim)}
+.pip.skull{color:#c2517a}.pip.cur{color:#120d0a;font-weight:bold}
+.tp-inv ul{margin:.2rem 0 0;padding:0;list-style:none;font-size:.82rem}
+.tp-inv li{display:flex;gap:.4rem;align-items:center}.ii{width:1.1em;text-align:center}
+.tp-goal{border-radius:8px;padding:.5rem;font-size:.84rem;border:1px solid var(--edge)}
+.tp-goal.traitor{background:rgba(140,47,35,.18)}.tp-goal.heroes{background:rgba(44,74,44,.18)}
+#overlay{position:absolute;inset:0;display:none;place-items:center;z-index:10;
+  background:radial-gradient(circle at 50% 40%,rgba(60,8,4,.5),rgba(0,0,0,.82))}
+.haunt-card,.result{width:min(520px,92vw);background:var(--panel);border:1px solid var(--blood);border-radius:14px;
+  padding:1.5rem;text-align:center;box-shadow:0 0 60px rgba(140,47,35,.4)}
+.kick{color:var(--blood2);letter-spacing:.2em;text-transform:uppercase;font-size:.8rem}
+.haunt-card h2{margin:.3rem 0 .7rem;font-size:1.9rem}.tt{color:var(--blood2)}
+.hgoals{display:grid;gap:.5rem;text-align:left;margin:.9rem 0 1.2rem}
+.hgoals>div{border:1px solid var(--edge);border-radius:8px;padding:.55rem;opacity:.6}
+.hgoals .ga{opacity:1;border-color:var(--flame);background:rgba(232,168,90,.1)}
+.hgoals span{display:block;margin-bottom:.15rem}
+.result .rtitle{font-size:2.2rem;color:var(--flame);text-shadow:0 0 30px rgba(232,168,90,.5);margin-bottom:.4rem}
+#hud-hint{position:absolute;bottom:1.1rem;left:1.1rem;max-width:300px;color:var(--dim);font-size:.76rem;pointer-events:none}
+@keyframes flick{0%,100%{opacity:1}48%{opacity:.85}50%{opacity:.55}52%{opacity:.9}70%{opacity:.7}}
+@media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}}
+</style>
+</head>
+<body>
+<div id="lobby">
+  <h1 class="title"><span class="f">🕯️</span> Dread Hollow</h1>
+  <p class="tagline">A manor that builds itself, one dreadful room at a time — until one of you stops being a friend. Pick your party (pass-and-play on one screen) and begin the descent.</p>
+  <div class="char-grid" id="char-grid"></div>
+  <button class="btn primary" id="begin-btn" disabled>Begin the descent (<span id="party-count">0</span>)</button>
+  <p class="muted small">This is an offline single-device build. The full online multiplayer version lives at the GitHub repo.</p>
+</div>
+
+<div id="game">
+  <div id="canvas-wrap"></div>
+  <div id="hud-top"></div>
+  <div id="hud-left"></div>
+  <div id="hud-right"></div>
+  <div id="hud-bottom"></div>
+  <div id="hud-hint">Drag to orbit · scroll to zoom · click a glowing room to move · click a flame arrow to explore · click a monster to strike</div>
+  <div id="overlay"></div>
+</div>
+
+<script>
+"use strict";var DH=(()=>{var $=Object.defineProperty;var De=Object.getOwnPropertyDescriptor;var Ce=Object.getOwnPropertyNames;var Pe=Object.prototype.hasOwnProperty;var Ge=(e,t,r)=>t in e?$(e,t,{enumerable:!0,configurable:!0,writable:!0,value:r}):e[t]=r;var Ae=(e,t)=>{for(var r in t)$(e,r,{get:t[r],enumerable:!0})},Me=(e,t,r,o)=>{if(t&&typeof t=="object"||typeof t=="function")for(let n of Ce(t))!Pe.call(e,n)&&n!==r&&$(e,n,{get:()=>t[n],enumerable:!(o=De(t,n))||o.enumerable});return e};var Ee=e=>Me($({},"__esModule",{value:!0}),e);var ge=(e,t,r)=>Ge(e,typeof t!="symbol"?t+"":t,r);var it={};Ae(it,{ALL_CARDS:()=>we,ALL_ROTATIONS:()=>Z,CARDS_BY_ID:()=>xe,CHARACTERS:()=>ee,CHARACTERS_BY_ID:()=>C,DIE_FACES:()=>J,DIRECTIONS:()=>_,DIR_DELTA:()=>N,DRAWABLE_ROOMS:()=>K,ENTRANCE_KEY:()=>Te,EVENTS:()=>T,FLOORS:()=>Oe,HAUNTS:()=>P,HAUNTS_BY_ID:()=>E,ITEMS:()=>I,MENTAL_TRAITS:()=>Le,OMENS:()=>R,PHYSICAL_TRAITS:()=>He,ROOMS:()=>A,ROOMS_BY_ID:()=>f,Rng:()=>h,STAIR_LINKS:()=>ie,START_ROOMS:()=>B,TRAITS:()=>z,addLog:()=>l,addPlayer:()=>se,baseTrait:()=>Y,beginTurn:()=>j,buildDecks:()=>oe,checkWinNow:()=>g,chooseCharacter:()=>de,connections:()=>L,createGame:()=>We,drawCard:()=>W,drawRoomForFloor:()=>ne,effectiveTrait:()=>S,getActivePlayer:()=>Fe,getCard:()=>x,getPlayer:()=>u,hasTag:()=>ae,hauntRoll:()=>Q,itemTagBonus:()=>H,itemTraitBonus:()=>ke,key:()=>v,legalMoves:()=>at,livingPlayers:()=>Be,modTrait:()=>p,monsterPhase:()=>fe,neighborKey:()=>k,onTraitorTurnEnd:()=>pe,openDoors:()=>q,opposite:()=>X,parseKey:()=>_e,placedDoorways:()=>U,playerAttack:()=>he,reduce:()=>nt,rollDice:()=>y,rotateDirection:()=>ve,setConnected:()=>le,startGame:()=>me,stepToward:()=>ue,traitRoll:()=>$e,triggerHaunt:()=>ce,worldDoorways:()=>G});var z=["speed","might","sanity","knowledge"],He=["speed","might"],Le=["sanity","knowledge"],Oe=["basement","ground","upper"],_=["north","east","south","west"];var h=class e{constructor(t){ge(this,"s");this.s=t>>>0||2654435769}static fromState(t){let r=new e(1);return r.s=t>>>0,r}get state(){return this.s>>>0}next(){this.s=this.s+1831565813>>>0;let t=this.s;return t=Math.imul(t^t>>>15,t|1),t^=t+Math.imul(t^t>>>7,t|61),((t^t>>>14)>>>0)/4294967296}int(t){return Math.floor(this.next()*t)}range(t,r){return t+this.int(r-t+1)}pick(t){if(t.length===0)throw new Error("Rng.pick on empty array");return t[this.int(t.length)]}shuffle(t){let r=t.slice();for(let o=r.length-1;o>0;o--){let n=this.int(o+1),a=r[o];r[o]=r[n],r[n]=a}return r}};var J=[0,0,1,1,2,2];function y(e,t){let r=Math.max(0,Math.floor(t)),o=[],n=0;for(let a=0;a<r;a++){let i=J[e.int(J.length)];o.push(i),n+=i}return{dice:o,total:n}}function $e(e,t){return y(e,t)}function Q(e,t){let r=y(e,6);return{roll:r,triggered:r.total<t}}var N={north:{dx:0,dy:-1},east:{dx:1,dy:0},south:{dx:0,dy:1},west:{dx:-1,dy:0}};function X(e){switch(e){case"north":return"south";case"south":return"north";case"east":return"west";case"west":return"east"}}function ve(e,t){let r=t/90%4,o=_.indexOf(e);return _[(o+r)%4]}function G(e,t){return new Set(e.map(r=>ve(r,t)))}function v(e,t,r){return`${e}:${t}:${r}`}function _e(e){let[t,r,o]=e.split(":");return{floor:t,x:Number(r),y:Number(o)}}function k(e,t,r,o){let{dx:n,dy:a}=N[o];return v(e,t+n,r+a)}var Z=[0,90,180,270];var T=[{id:"ev-whispers",type:"event",name:"Whispers in the Walls",text:"Voices say your name from inside the plaster. Roll Sanity (4) or lose your grip.",effect:{kind:"trait-roll",trait:"sanity",difficulty:4,onPass:{kind:"narrative"},onFail:{kind:"trait-mod",trait:"sanity",delta:-1}}},{id:"ev-floorboards",type:"event",name:"Rotten Floorboards",text:"The floor gives way. Roll Speed (3) to catch yourself.",effect:{kind:"trait-roll",trait:"speed",difficulty:3,onPass:{kind:"narrative"},onFail:{kind:"trait-mod",trait:"might",delta:-1}}},{id:"ev-clarity",type:"event",name:"A Moment of Clarity",text:"For one breath, the house makes terrible sense. Gain 1 Knowledge.",effect:{kind:"heal",trait:"knowledge",delta:1}},{id:"ev-coldspot",type:"event",name:"Cold Spot",text:"Something walks through you. Lose 1 Sanity.",effect:{kind:"trait-mod",trait:"sanity",delta:-1}},{id:"ev-compartment",type:"event",name:"Hidden Compartment",text:"A panel slides aside. Draw an Item.",effect:{kind:"draw",deck:"item",count:1}},{id:"ev-secondwind",type:"event",name:"Second Wind",text:"Fear sharpens you instead of breaking you. Gain 1 Speed.",effect:{kind:"heal",trait:"speed",delta:1}},{id:"ev-dread",type:"event",name:"Creeping Dread",text:"The certainty that you are not alone. Roll Sanity (5).",effect:{kind:"trait-roll",trait:"sanity",difficulty:5,onPass:{kind:"narrative"},onFail:{kind:"trait-mod",trait:"sanity",delta:-2}}},{id:"ev-grip",type:"event",name:"Something Grabs You",text:"Cold fingers close on your ankle. Roll Might (4) to break free.",effect:{kind:"trait-roll",trait:"might",difficulty:4,onPass:{kind:"narrative"},onFail:{kind:"trait-mod",trait:"speed",delta:-1}}},{id:"ev-mirror",type:"event",name:"The Mirror Lies",text:"Your reflection moves a half-second late. Roll Knowledge (4).",effect:{kind:"trait-roll",trait:"knowledge",difficulty:4,onPass:{kind:"heal",trait:"knowledge",delta:1},onFail:{kind:"trait-mod",trait:"sanity",delta:-1}}},{id:"ev-tonic",type:"event",name:"Forgotten Medicine",text:"A dusty vial, still potent. Gain 1 Might.",effect:{kind:"heal",trait:"might",delta:1}},{id:"ev-prayer",type:"event",name:"Half-Remembered Prayer",text:"The words come back when you need them. Gain 1 Sanity.",effect:{kind:"heal",trait:"sanity",delta:1}},{id:"ev-luckyfind",type:"event",name:"Lucky Find",text:"Tucked behind a loose brick. Draw an Item.",effect:{kind:"draw",deck:"item",count:1}}];var I=[{id:"it-revolver",type:"item",name:"Rusted Revolver",text:"Four chambers, three bullets, one prayer. +1 die when you attack.",effect:{kind:"item-passive",tag:"weapon",bonus:1}},{id:"it-dagger",type:"item",name:"Sacrificial Dagger",text:"Older than the house. It hums when blood is near. +1 die when you attack.",effect:{kind:"item-passive",tag:"weapon",bonus:1}},{id:"it-beartrap",type:"item",name:"Bear Trap",text:"Heavy, rusted, and very much still working. +1 die when you attack.",effect:{kind:"item-passive",tag:"weapon",bonus:1}},{id:"it-lantern",type:"item",name:"Oil Lantern",text:"A small, stubborn circle of light against a very large dark.",effect:{kind:"item-passive",tag:"light"}},{id:"it-key",type:"item",name:"Iron Key",text:"Cold and far too heavy for its size. It fits something important.",effect:{kind:"item-passive",tag:"key"}},{id:"it-spiritboard",type:"item",name:"Spirit Board",text:"The planchette never quite stops moving. +1 Knowledge while carried.",effect:{kind:"item-passive",trait:"knowledge",bonus:1,tag:"occult"}},{id:"it-crucifix",type:"item",name:"Tarnished Crucifix",text:"Faith you don't have, in a shape you trust anyway. +1 Sanity while carried.",effect:{kind:"item-passive",trait:"sanity",bonus:1,tag:"holy"}},{id:"it-adrenaline",type:"item",name:"Adrenaline Syringe",text:"One good sprint left in it. +1 Speed while carried.",effect:{kind:"item-passive",trait:"speed",bonus:1}},{id:"it-salts",type:"item",name:"Smelling Salts",text:"Sharp enough to drag you back from the edge. +1 Sanity while carried.",effect:{kind:"item-passive",trait:"sanity",bonus:1}},{id:"it-armor",type:"item",name:"Suit of Armor Plate",text:"Dented, ancient, and reassuringly solid. +1 die when you defend.",effect:{kind:"item-passive",tag:"armor",bonus:1}},{id:"it-coin",type:"item",name:"Lucky Coin",text:"It has come up heads every time for a hundred years. So far.",effect:{kind:"item-passive",tag:"trinket"}},{id:"it-rope",type:"item",name:"Coil of Rope",text:"Long, strong, and only a little frayed. Good for climbing. Or worse.",effect:{kind:"item-passive",tag:"tool"}}];var R=[{id:"om-skull",type:"omen",name:"The Whispering Skull",text:"It tells you secrets. Most of them are true. That's the problem.",effect:{kind:"omen"}},{id:"om-locket",type:"omen",name:"Bloodstained Locket",text:"A portrait inside of someone who looks exactly like you.",effect:{kind:"omen"}},{id:"om-journal",type:"omen",name:"Madman's Journal",text:"The later pages are written in a hand that grows less and less human.",effect:{kind:"omen"}},{id:"om-cat",type:"omen",name:"The Black Cat",text:"It has decided to follow you. You are not sure this is luck.",effect:{kind:"omen"}},{id:"om-candle",type:"omen",name:"Ritual Candle",text:"It burns with a flame that casts shadows in the wrong direction.",effect:{kind:"omen"}},{id:"om-hand",type:"omen",name:"Severed Hand",text:"Still warm. Still, very occasionally, twitching.",effect:{kind:"omen"}},{id:"om-mask",type:"omen",name:"Funeral Mask",text:"When you hold it up, you can see who in the room is already dead.",effect:{kind:"omen"}},{id:"om-music",type:"omen",name:"The Music Box",text:"It plays a lullaby you have never heard but somehow always known.",effect:{kind:"omen"}}];function m(e,t){return{values:e,start:t}}function D(e,t,r,o){return{speed:e,might:t,sanity:r,knowledge:o}}var ee=[{id:"vance",name:"Dr. Mireille Vance",age:44,title:"the disgraced surgeon",color:"#4aa3a2",flavor:"Struck off for operations no medical board would sanction. She came to the manor chasing a rumor that the dead here do not always stay buried.",traits:D(m([0,2,3,3,4,5,5,6],3),m([0,2,2,3,4,4,5,6],2),m([0,3,4,5,6,6,7,8],4),m([0,4,5,5,6,7,7,8],5))},{id:"crow",name:"Silas Crow",age:38,title:"the carnival strongman",color:"#b5563a",flavor:"Bent iron bars for laughing crowds until the laughter turned to screaming. He doesn't scare easy. He's about to learn what easy means.",traits:D(m([0,3,4,4,5,6,6,7],4),m([0,4,5,6,6,7,8,8],4),m([0,2,3,3,4,4,5,6],3),m([0,2,2,3,3,4,5,5],2))},{id:"penny",name:"Penny Ashgrove",age:11,title:"the runaway child",color:"#d8b54a",flavor:"She slipped through the gate on a dare and found the front door already open. Small, quick, and far braver than is good for her.",traits:D(m([0,4,5,6,6,7,8,8],5),m([0,1,2,2,3,3,4,5],2),m([0,3,4,5,5,6,7,8],4),m([0,2,3,4,5,5,6,7],3))},{id:"tobias",name:"Brother Tobias",age:57,title:"the doubting monk",color:"#7a6db0",flavor:"Forty years of prayer left him certain of nothing but his own unworthiness. If anything in this house has a soul, he intends to find it.",traits:D(m([0,2,2,3,4,4,5,6],3),m([0,2,3,3,4,5,5,6],3),m([0,4,5,6,7,7,8,8],5),m([0,3,4,5,5,6,7,8],4))},{id:"odette",name:"Odette Lindqvist",age:33,title:"the s\xE9ance medium",color:"#c25a8f",flavor:"Half her clients were frauds and she knew it. The other half were not, and that is what keeps her awake. The manor is very loud tonight.",traits:D(m([0,2,3,4,4,5,6,6],3),m([0,2,2,3,3,4,4,5],2),m([0,3,4,5,6,6,7,8],4),m([0,4,5,6,7,7,8,8],5))},{id:"thorne",name:"Marcus Thorne",age:41,title:"the war photographer",color:"#5a8f5a",flavor:"He has photographed the worst things people do to each other and slept fine after. He brought a camera. He has a feeling he'll need the proof.",traits:D(m([0,3,4,4,5,5,6,7],4),m([0,3,3,4,4,5,6,6],3),m([0,3,4,4,5,6,6,7],4),m([0,3,4,4,5,6,6,7],4))}],C=Object.fromEntries(ee.map(e=>[e.id,e]));var F=["basement","ground","upper"],A=[{id:"entrance-hall",name:"Entrance Hall",floors:["ground"],doorways:["north"],symbols:[],special:"entrance-hall",start:!0,flavor:"The door slams shut behind you. Of course it does."},{id:"foyer",name:"Foyer",floors:["ground"],doorways:["north","south","east","west"],symbols:[],special:"foyer",start:!0,flavor:"A grand room gone to mildew. Four ways onward, none inviting."},{id:"grand-staircase",name:"Grand Staircase",floors:["ground"],doorways:["south"],symbols:[],special:"grand-staircase",start:!0,flavor:"Stairs climb into the dark above and descend into worse below."},{id:"upper-landing",name:"Upper Landing",floors:["upper"],doorways:["south","east","west"],symbols:[],special:"stairs-down",start:!0,flavor:"The boards up here remember every footstep ever taken on them."},{id:"basement-landing",name:"Basement Landing",floors:["basement"],doorways:["north","east","west"],symbols:[],special:"stairs-up",start:!0,flavor:"The air is wet and tastes of old pennies."},{id:"dusty-hallway",name:"Dusty Hallway",floors:F,doorways:["north","south"],symbols:[],special:"none",flavor:"Your footprints are the only ones in decades of dust. You hope."},{id:"creaking-corridor",name:"Creaking Corridor",floors:F,doorways:["north","east","south","west"],symbols:[],special:"none",flavor:"Something creaks. Then stops, as if listening for you."},{id:"portrait-gallery",name:"Portrait Gallery",floors:["ground","upper"],doorways:["north","south","east"],symbols:["event"],special:"none",flavor:"The eyes follow you. You tell yourself it's just good painting."},{id:"abandoned-nursery",name:"Abandoned Nursery",floors:["upper"],doorways:["south","west"],symbols:["omen"],special:"none",flavor:"A music box turns by itself, one note at a time."},{id:"servants-quarters",name:"Servants' Quarters",floors:["ground","upper"],doorways:["north","east"],symbols:["item"],special:"none",flavor:"Cots still made. Whoever left did so in a hurry."},{id:"larder",name:"Larder",floors:["ground","basement"],doorways:["north","west"],symbols:["event"],special:"none",flavor:"Jars of something dark. The labels have all peeled away."},{id:"cold-cellar",name:"Cold Cellar",floors:["basement"],doorways:["north","east","south"],symbols:["item"],special:"none",flavor:"Your breath fogs. It is colder here than outside ever was."},{id:"boiler-room",name:"Boiler Room",floors:["basement"],doorways:["north","west"],symbols:["event"],special:"drain-speed",flavor:"The boiler is stone cold, yet the pipes still groan and knock."},{id:"catacomb",name:"Catacomb",floors:["basement"],doorways:["north","east","south","west"],symbols:["omen"],special:"none",flavor:"Niches in the wall, each the size of a person. Most are occupied."},{id:"chapel",name:"Chapel",floors:["ground","upper"],doorways:["north","south"],symbols:["omen"],special:"heal-sanity",flavor:"A small altar. Whatever was worshipped here, it wasn't merciful."},{id:"conservatory",name:"Conservatory",floors:["ground"],doorways:["north","east","west"],symbols:["event"],special:"none",flavor:"Dead plants, every one of them turned to face the same window."},{id:"study",name:"Study",floors:["ground","upper"],doorways:["south","east"],symbols:["item"],special:"none",flavor:"An open journal, the last entry a single word repeated to the margin."},{id:"master-bedroom",name:"Master Bedroom",floors:["upper"],doorways:["north","south","west"],symbols:["omen"],special:"none",flavor:"The bed is unmade and still warm. You are quite alone."},{id:"attic",name:"Attic",floors:["upper"],doorways:["south"],symbols:["omen"],special:"pit",flavor:"Rafters vanish into black. Something up there shifts its weight."},{id:"kitchen",name:"Kitchen",floors:["ground","basement"],doorways:["north","east","south"],symbols:["event"],special:"heal-might",flavor:"Knives hang in a neat row. One is missing."},{id:"dining-room",name:"Dining Room",floors:["ground"],doorways:["north","east","south","west"],symbols:["event"],special:"none",flavor:"The table is set for far more guests than ever arrived."},{id:"library",name:"Library",floors:["ground","upper"],doorways:["north","south","east"],symbols:["item"],special:"none",flavor:"Ten thousand books, and every one of them about this house."},{id:"crypt",name:"Crypt",floors:["basement"],doorways:["north","south"],symbols:["omen"],special:"none",flavor:"A single sarcophagus, lid slid just slightly ajar."},{id:"mystic-elevator",name:"Mystic Elevator",floors:F,doorways:["north","east","south","west"],symbols:[],special:"mystic-elevator",flavor:"A cage of black iron. The dial spins on its own."},{id:"gymnasium",name:"Gymnasium",floors:["ground","upper"],doorways:["north","west"],symbols:["event"],special:"heal-might",flavor:"Rotting exercise equipment, and chalk handprints far too high up."},{id:"vault",name:"Vault",floors:F,doorways:["north"],symbols:["item"],special:"vault",flavor:"A great steel door, shut tight. It wants a key. It wants more."},{id:"pentagram-chamber",name:"Pentagram Chamber",floors:["basement"],doorways:["north","east","south","west"],symbols:["omen"],special:"draw-extra-omen",flavor:"The figure on the floor is painted in something that isn't paint."}],f=Object.fromEntries(A.map(e=>[e.id,e])),B=A.filter(e=>e.start),K=A.filter(e=>!e.start);function b(e){return e.players.filter(t=>t.side==="heroes"&&t.alive)}function re(e){return e.players.filter(t=>t.side==="traitor"&&t.alive)}function te(e){return e.haunt?e.haunt.monsters.filter(t=>t.hp>0):[]}var Ne=0;function M(e,t,r,o,n,a){if(!e.haunt)return;let i=t.roomKeys();for(let s=0;s<a;s++){let c=i.length?t.rng.pick(i):t.spawnKey();e.haunt.monsters.push({id:`m${Ne++}`,name:r,position:c,might:o,hp:n})}}function be(e){return b(e).length===0?"traitor":re(e).length===0?"heroes":null}var P=[{id:"crawling-dark",name:"The Crawling Dark",reveal:"The lanterns gutter out one by one. Where {traitor} stands, the shadow on the wall keeps moving after they stop \u2014 and then it peels away from the wall entirely.",heroGoal:"Destroy the traitor before the shades drag every last one of you into the dark.",traitorGoal:"Snuff out every hero.",setup:(e,t,r)=>{let o=Math.max(1,b(e).length);M(e,r,"Shade",3,3,o)},checkWin:e=>be(e)},{id:"blood-moon",name:"Blood Moon Ritual",reveal:"{traitor} draws a circle in chalk and salt and worse, and begins to chant. Outside, impossibly, the moon turns the color of an old wound.",heroGoal:"Kill the traitor before the ritual is completed.",traitorGoal:"Complete the ritual \u2014 survive four of your own turns \u2014 or kill all heroes.",setup:(e,t,r)=>{e.haunt&&(e.haunt.vars.ritualProgress=0,e.haunt.vars.ritualNeeded=4,M(e,r,"Acolyte",2,2,1))},checkWin:e=>{if(!e.haunt)return null;let t=Number(e.haunt.vars.ritualProgress??0),r=Number(e.haunt.vars.ritualNeeded??4);return t>=r?"traitor":be(e)}},{id:"hungering-house",name:"The Hungering House",reveal:"The walls flex like a throat. {traitor} smiles \u2014 they understand now that the house was never a building. It was always a mouth, and they are its tongue.",heroGoal:"Destroy the house's maws, or carry the Iron Key to the Entrance Hall and force the door open.",traitorGoal:"Devour every hero before they break free.",setup:(e,t,r)=>{M(e,r,"Gnashing Maw",4,4,2)},checkWin:e=>b(e).length===0?"traitor":te(e).length===0||b(e).some(r=>(r.position?e.house[r.position]:void 0)?.roomId==="entrance-hall"&&r.inventory.includes("it-key"))?"heroes":null},{id:"wake-of-the-drowned",name:"Wake of the Drowned",reveal:"Water seeps up between every floorboard, black and cold and rising. Something vast turns over beneath the house, and {traitor} wades toward it, unafraid, called home.",heroGoal:"Survive five full rounds, or destroy the Drowned.",traitorGoal:"Drown every hero.",setup:(e,t,r)=>{e.haunt&&(e.haunt.vars.surviveUntilTurn=e.turn+5,M(e,r,"The Drowned",6,8,1))},checkWin:e=>e.haunt?te(e).length===0||e.turn>=Number(e.haunt.vars.surviveUntilTurn??1/0)?"heroes":b(e).length===0?"traitor":null:null},{id:"the-hunt",name:"The Hunt",reveal:"{traitor}'s spine arches the wrong way. Teeth crowd a mouth that is suddenly too wide. The thing that was your friend drops to all fours, and grins, and the chase begins.",heroGoal:"Reach consecrated ground \u2014 get a living hero into a Chapel \u2014 or put the beast down.",traitorGoal:"Run down every last one of them.",setup:e=>{e.haunt&&(e.haunt.vars.theHunt=!0)},checkWin:e=>b(e).length===0?"traitor":re(e).length===0||b(e).some(r=>(r.position?e.house[r.position]:void 0)?.roomId==="chapel")?"heroes":null},{id:"plague-of-whispers",name:"Plague of Whispers",reveal:"{traitor} opens their mouth and no voice comes out \u2014 instead the room fills with whispering, dozens of small pale shapes unfolding from the corners where the candlelight can't quite reach.",heroGoal:"Silence every whisper, or destroy the one who set them loose.",traitorGoal:"Let the whispers drown the living.",setup:(e,t,r)=>{let o=Math.max(1,b(e).length);M(e,r,"Whisper",2,1,o*2)},checkWin:e=>b(e).length===0?"traitor":re(e).length===0||te(e).length===0?"heroes":null}],E=Object.fromEntries(P.map(e=>[e.id,e]));var we=[...T,...I,...R],xe=Object.fromEntries(we.map(e=>[e.id,e]));function x(e){return xe[e]}function oe(e){return{event:e.shuffle(T.map(t=>t.id)),item:e.shuffle(I.map(t=>t.id)),omen:e.shuffle(R.map(t=>t.id)),rooms:e.shuffle(K.map(t=>t.id))}}function W(e,t){if(e.decks[t].length===0){let o=e.discards[t];if(o.length===0||t==="omen")return null;let n=h.fromState(e.rngState);e.decks[t]=n.shuffle(o),e.discards[t]=[],e.rngState=n.state}return e.decks[t].shift()??null}function ne(e,t){let r=e.decks.rooms,o=r.length;for(let n=0;n<o;n++){let a=r.shift();if(!a)break;let i=f[a];if(i&&i.floors.includes(t))return a;r.push(a)}return null}function u(e,t){if(t)return e.players.find(r=>r.id===t)}function Fe(e){return u(e,e.activePlayerId)}function Be(e){return e.players.filter(t=>t.alive)}function Se(e,t){let r=e.characterId?C[e.characterId]:void 0;return r?r.traits[t].values:[0]}function Y(e,t){let r=Se(e,t),o=Math.max(0,Math.min(r.length-1,e.traitIndex[t]??0));return r[o]??0}function ke(e,t){let r=0;for(let o of e.inventory){let n=x(o);n?.effect.kind==="item-passive"&&n.effect.trait===t&&(r+=n.effect.bonus??0)}return r}function H(e,t){let r=0;for(let o of e.inventory){let n=x(o);n?.effect.kind==="item-passive"&&n.effect.tag===t&&(r+=n.effect.bonus??0)}return r}function ae(e,t){return e.inventory.some(r=>{let o=x(r);return o?.effect.kind==="item-passive"&&o.effect.tag===t})}function S(e,t){return Math.max(0,Y(e,t)+ke(e,t))}function l(e,t,r="info",o){e.log.push({id:e.nextLogId++,turn:e.turn,text:t,kind:r,dice:o}),e.log.length>250&&e.log.splice(0,e.log.length-250)}function p(e,t,r,o){if(!t.alive)return!1;let a=Se(t,r).length-1,i=Math.max(0,Math.min(a,(t.traitIndex[r]??0)+o));return t.traitIndex[r]=i,i<=0?(t.alive=!1,l(e,`${t.name} has been lost to the house.`,"death"),!0):!1}var ie=[[v("ground",0,0),v("upper",0,0)],[v("ground",0,0),v("basement",0,0)]],Ke={"grand-staircase":{floor:"ground",x:0,y:0},foyer:{floor:"ground",x:0,y:1},"entrance-hall":{floor:"ground",x:0,y:2},"upper-landing":{floor:"upper",x:0,y:0},"basement-landing":{floor:"basement",x:0,y:0}},Te=v("ground",0,2);function We(e,t){return{id:e,phase:"lobby",seed:t,rngState:t>>>0||305419896,turn:0,players:[],order:[],activePlayerId:null,movementLeft:0,house:{},decks:{event:[],item:[],omen:[],rooms:[]},discards:{event:[],item:[],omen:[]},omenCount:0,haunt:null,log:[],nextLogId:1,winner:null}}function Ye(){return{speed:0,might:0,sanity:0,knowledge:0}}function se(e,t,r){let o=u(e,t);if(o)return o.connected=!0,o.name=r||o.name,o;let n={id:t,name:r||"Wanderer",characterId:null,traitIndex:Ye(),position:null,inventory:[],alive:!0,side:null,connected:!0,isHost:e.players.length===0};return e.players.push(n),l(e,`${n.name} enters the foyer.`,"info"),n}function le(e,t,r){let o=u(e,t);o&&(o.connected=r)}function de(e,t,r){if(e.phase!=="lobby")return;let o=u(e,t);if(!o||e.players.some(i=>i.id!==t&&i.characterId===r))return;let a=C[r];if(a){o.characterId=r;for(let i of z)o.traitIndex[i]=a.traits[i].start}}function j(e){let t=u(e,e.activePlayerId);t&&(e.movementLeft=Math.max(1,Y(t,"speed")))}function me(e){if(e.phase!=="lobby")return!1;let t=e.players.filter(n=>n.characterId);if(t.length<1)return!1;let r=new h(e.rngState);for(let n of B){let a=Ke[n.id];if(!a)continue;let i=v(a.floor,a.x,a.y);e.house[i]={key:i,roomId:n.id,floor:a.floor,x:a.x,y:a.y,rotation:0,exploredBy:null}}e.decks=oe(r),e.rngState=r.state;let o=r.shuffle(t.map(n=>n.id));e.rngState=r.state,e.order=o,e.players=e.players.filter(n=>n.characterId);for(let n of e.players)n.position=Te;return e.activePlayerId=o[0]??null,e.turn=1,e.phase="explore",j(e),l(e,"The front door closes. The house begins to wake.","info"),!0}function U(e){let t=f[e.roomId];return t?G(t.doorways,e.rotation):new Set}function L(e,t){let r=e.house[t];if(!r)return[];let o=[];for(let n of U(r)){let a=k(r.floor,r.x,r.y,n),i=e.house[a];i&&U(i).has(X(n))&&o.push(a)}for(let[n,a]of ie)n===t&&e.house[a]?o.push(a):a===t&&e.house[n]&&o.push(n);return o}function q(e,t){let r=e.house[t];if(!r)return[];let o=[];for(let n of U(r)){let a=k(r.floor,r.x,r.y,n);e.house[a]||o.push(n)}return o}function ue(e,t,r){if(r.has(t))return t;let o=new Set([t]),n=[{key:t,first:null}];for(;n.length;){let a=[];for(let i of n)for(let s of L(e,i.key)){if(o.has(s))continue;o.add(s);let c=i.first??s;if(r.has(s))return c;a.push({key:s,first:c})}n=a}return null}function je(e){return e.players.filter(t=>t.side==="heroes"&&t.alive&&t.position)}function Ue(e){let t=h.fromState(e.rngState),r=P[t.int(P.length)];return e.rngState=t.state,r.id}function ce(e,t){let r=E[Ue(e)];if(!r)return;let o=r.chooseTraitors?r.chooseTraitors(e,t):[t],n=u(e,t);e.haunt={id:r.id,name:r.name,traitorIds:o,startedById:t,startRoomKey:n?.position??null,monsters:[],heroGoal:r.heroGoal,traitorGoal:r.traitorGoal,vars:{}};for(let s of e.players)s.side=o.includes(s.id)?"traitor":"heroes";let a={rng:h.fromState(e.rngState),roomKeys:()=>Object.keys(e.house),spawnKey:()=>e.haunt?.startRoomKey??Object.keys(e.house)[0]??null};r.setup(e,o,a),e.rngState=a.rng.state,e.phase="haunt";let i=o.map(s=>u(e,s)?.name??"someone").join(", ");l(e,`THE HAUNT BEGINS \u2014 ${r.name}`,"haunt"),l(e,r.reveal.replace("{traitor}",i),"haunt"),l(e,`Traitor: ${i}.`,"haunt"),l(e,`Heroes: ${r.heroGoal}`,"haunt"),g(e)}function g(e){if(!e.haunt||e.phase!=="haunt")return;let t=E[e.haunt.id];if(!t)return;let r=t.checkWin(e);r&&(e.winner=r,e.phase="ended",l(e,r==="heroes"?"The survivors stagger out into a grey, ordinary dawn. The heroes win.":"The house settles, sated, around its new heart. The traitor wins.","win"))}function he(e,t,r){if(e.phase!=="haunt"||!e.haunt)return;let o=u(e,t);if(!o?.alive||!o.position)return;let n=h.fromState(e.rngState),a=H(o,"weapon"),i=y(n,S(o,"might")+a);if(r.monsterId){let s=e.haunt.monsters.find(d=>d.id===r.monsterId&&d.hp>0);if(!s||s.position!==o.position){e.rngState=n.state;return}let c=y(n,s.might);if(i.total>=c.total){let d=Math.max(1,i.total-c.total);s.hp-=d,l(e,`${o.name} strikes the ${s.name} for ${d}.`,"combat",i.dice),s.hp<=0&&l(e,`The ${s.name} is destroyed!`,"combat")}else{let d=Math.max(1,c.total-i.total);l(e,`The ${s.name} turns on ${o.name}.`,"combat",c.dice),p(e,o,"might",-d)}}else if(r.targetPlayerId){let s=u(e,r.targetPlayerId);if(!s?.alive||s.position!==o.position){e.rngState=n.state;return}let c=H(s,"armor"),d=y(n,S(s,"might")+c);if(i.total>d.total){let w=Math.max(1,i.total-d.total);l(e,`${o.name} attacks ${s.name}!`,"combat",i.dice),p(e,s,"might",-w)}else{let w=Math.max(1,d.total-i.total);l(e,`${s.name} overpowers ${o.name}.`,"combat",d.dice),p(e,o,"might",-w)}}e.rngState=n.state,g(e)}function fe(e){if(e.phase!=="haunt"||!e.haunt)return;let t=h.fromState(e.rngState);for(let r of e.haunt.monsters){if(r.hp<=0||!r.position)continue;let o=je(e);if(o.length===0)break;let n=o.find(a=>a.position===r.position);if(!n){let a=new Set(o.map(s=>s.position)),i=ue(e,r.position,a);i&&i!==r.position&&(r.position=i),n=o.find(s=>s.position===r.position)}if(n){let a=y(t,r.might),i=H(n,"armor"),s=y(t,S(n,"might")+i);if(a.total>s.total){let c=Math.max(1,a.total-s.total);l(e,`The ${r.name} savages ${n.name}.`,"combat",a.dice),p(e,n,"might",-c)}else l(e,`${n.name} holds off the ${r.name}.`,"combat",s.dice)}}e.rngState=t.state,g(e)}function pe(e){if(!(e.phase!=="haunt"||!e.haunt)){if(e.haunt.id==="blood-moon"){let t=Number(e.haunt.vars.ritualProgress??0)+1;e.haunt.vars.ritualProgress=t;let r=Number(e.haunt.vars.ritualNeeded??4);l(e,`The ritual deepens... (${t}/${r})`,"haunt")}g(e)}}function O(e,t){return e.activePlayerId===t&&(e.phase==="explore"||e.phase==="haunt")}function qe(e,t){return t.position?e.house[t.position]:void 0}function Ve(e,t,r){let o=u(e,t);if(!o?.alive||!O(e,t)||e.movementLeft<=0||!o.position||!L(e,o.position).includes(r))return;o.position=r,e.movementLeft-=1;let n=e.house[r];n&&l(e,`${o.name} moves into the ${f[n.roomId]?.name??"room"}.`,"move"),g(e)}function ze(e,t){let r=f[e];if(!r)return 0;for(let o of Z)if(G(r.doorways,o).has(t))return o;return 0}function Je(e,t,r){let o=u(e,t);if(!o?.alive||!O(e,t)||e.movementLeft<=0)return;let n=qe(e,o);if(!n||!q(e,o.position).includes(r))return;let a=ne(e,n.floor);if(!a){l(e,"The doorway opens onto bare, impossible wall. There is nowhere left to go this way.","info");return}let{dx:i,dy:s}=N[r],c=n.x+i,d=n.y+s,w=k(n.floor,n.x,n.y,r),V={key:w,roomId:a,floor:n.floor,x:c,y:d,rotation:ze(a,Qe(r)),exploredBy:t};e.house[w]=V,o.position=w,e.movementLeft-=1;let Re=f[a];l(e,`${o.name} discovers the ${Re?.name??"room"}.`,"move"),Xe(e,o,V),(e.phase==="explore"||e.phase==="haunt")&&Ze(e,o,V),g(e)}function Qe(e){return e==="north"?"south":e==="south"?"north":e==="east"?"west":"east"}function Xe(e,t,r){let o=f[r.roomId];if(o)switch(o.special){case"heal-might":p(e,t,"might",1),l(e,`Something here steadies ${t.name}'s nerve. (+1 Might)`,"card");break;case"heal-sanity":p(e,t,"sanity",1),l(e,`A small mercy. ${t.name} breathes easier. (+1 Sanity)`,"card");break;case"drain-speed":p(e,t,"speed",-1),l(e,`The air is thick as syrup. (${t.name} -1 Speed)`,"card");break;case"pit":p(e,t,"might",-1),l(e,`${t.name} stumbles into the dark. (-1 Might)`,"card");break;case"vault":if(ae(t,"key")){let n=W(e,"item");n&&(t.inventory.push(n),l(e,`The Iron Key turns. ${t.name} loots the vault!`,"card"))}else l(e,"The vault is sealed. It wants a key.","info");break;case"draw-extra-omen":l(e,"The chamber drags the dark closer.","info"),ye(e,t,"omen");break;default:break}}function Ze(e,t,r){let o=f[r.roomId];if(o)for(let n of o.symbols){if(e.phase!=="explore"&&e.phase!=="haunt")return;ye(e,t,n)}}function ye(e,t,r){let o=W(e,r);if(!o){l(e,`The ${r} deck is spent.`,"info");return}et(e,t,o)}function et(e,t,r){let o=x(r);o&&(o.type==="event"?(l(e,`${t.name} triggers an Event \u2014 ${o.name}: ${o.text}`,"card"),Ie(e,t,o.effect),e.discards.event.push(r)):o.type==="item"?(l(e,`${t.name} picks up an Item \u2014 ${o.name}.`,"card"),t.inventory.push(r)):(l(e,`${t.name} uncovers an Omen \u2014 ${o.name}.`,"card"),t.inventory.push(r),e.omenCount+=1,tt(e,t)))}function Ie(e,t,r){switch(r.kind){case"narrative":break;case"trait-mod":case"heal":p(e,t,r.trait,r.delta);break;case"trait-roll":{let o=h.fromState(e.rngState),n=y(o,S(t,r.trait));e.rngState=o.state;let a=n.total>=r.difficulty;l(e,`${t.name} rolls ${r.trait} \u2014 ${n.total} vs ${r.difficulty}: ${a?"success":"failure"}.`,"roll",n.dice),Ie(e,t,a?r.onPass:r.onFail);break}case"draw":for(let o=0;o<r.count;o++)ye(e,t,r.deck);break;case"item-passive":case"omen":break}}function tt(e,t){let r=h.fromState(e.rngState),{roll:o,triggered:n}=Q(r,e.omenCount);e.rngState=r.state,l(e,`${t.name} makes the haunt roll: ${o.total} vs ${e.omenCount} omen(s) in play.`,"roll",o.dice),n&&ce(e,t.id)}function rt(e,t){if(!O(e,t))return;let r=u(e,t);e.phase==="haunt"&&r?.side==="traitor"&&(fe(e),pe(e)),e.phase!=="ended"&&ot(e)}function ot(e){let t=e.order;if(t.length===0)return;let r=e.activePlayerId?t.indexOf(e.activePlayerId):-1;for(let o=1;o<=t.length;o++){let n=(r+o)%t.length,a=u(e,t[n]);if(a?.alive){r+o>=t.length&&(e.turn+=1),e.activePlayerId=a.id,j(e),g(e);return}}g(e)}function nt(e,t){switch(t.type){case"join":se(e,t.playerId,t.name);break;case"leave":le(e,t.playerId,!1);break;case"choose-character":de(e,t.playerId,t.characterId);break;case"start-game":{u(e,t.playerId)?.isHost&&me(e);break}case"move-to":Ve(e,t.playerId,t.toKey);break;case"explore":Je(e,t.playerId,t.door);break;case"attack":O(e,t.playerId)&&he(e,t.playerId,{monsterId:t.targetMonsterId,targetPlayerId:t.targetPlayerId});break;case"end-turn":rt(e,t.playerId);break;case"resolve-card":break}return e}function at(e,t){let r={explored:[],doors:[],attackMonsters:[],attackPlayers:[],canEndTurn:!1},o=u(e,t);if(!o||!O(e,t)||!o.alive||!o.position)return r;let n=e.movementLeft>0,a=n?L(e,o.position):[],i=n?q(e,o.position):[],s=e.phase==="haunt"&&e.haunt?e.haunt.monsters.filter(d=>d.hp>0&&d.position===o.position).map(d=>d.id):[],c=e.phase==="haunt"?e.players.filter(d=>d.id!==o.id&&d.alive&&d.position===o.position&&d.side!==o.side).map(d=>d.id):[];return{explored:a,doors:i,attackMonsters:s,attackPlayers:c,canEndTurn:!0}}return Ee(it);})();
+
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+const DH = window.DH;
+const $ = (id) => document.getElementById(id);
+
+// ---- world layout (mirrors the React client) -----------------------------
+const TILE = 4;
+const WALL_H = 2.4;
+const FLOOR_GAP = 7;
+const FLOOR_Y = { basement: -FLOOR_GAP, ground: 0, upper: FLOOR_GAP };
+const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", knowledge: "#7a6db0" };
+const SPECIAL_GLOW = {
+  "heal-sanity": 0x6fb6b5, "heal-might": 0xe8a85a, "drain-speed": 0x5a6f9a,
+  pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
+};
+const DIRS = ["north", "east", "south", "west"];
+
+function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
+function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
+
+// ---- game state ----------------------------------------------------------
+let state = null;
+let lastHauntShown = null;
+const party = []; // { pid, charId }
+
+// ---- three.js objects ----------------------------------------------------
+let scene, camera, renderer, labelRenderer, controls, raycaster, pointer;
+let houseGroup, tokenGroup, arrowGroup;
+let dust, wisps = [];
+let anims = []; // per-render animated tokens
+
+// =========================================================================
+// LOBBY
+// =========================================================================
+function buildLobby() {
+  const grid = $("char-grid");
+  grid.innerHTML = "";
+  DH.CHARACTERS.forEach((c) => {
+    const chosen = party.some((p) => p.charId === c.id);
+    const card = document.createElement("button");
+    card.className = "char-card" + (chosen ? " mine" : "");
+    card.style.borderColor = c.color;
+    card.innerHTML =
+      `<div class="char-avatar" style="background:${c.color}">${c.name.charAt(0)}</div>` +
+      `<div class="char-info"><strong>${c.name}</strong><em>${c.title}</em>` +
+      `<div class="char-traits">` +
+      DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("") +
+      `</div></div>`;
+    card.onclick = () => {
+      const idx = party.findIndex((p) => p.charId === c.id);
+      if (idx >= 0) party.splice(idx, 1);
+      else party.push({ pid: "p" + c.id, charId: c.id });
+      buildLobby();
+    };
+    grid.appendChild(card);
+  });
+  $("begin-btn").disabled = party.length < 1;
+  $("party-count").textContent = party.length;
+}
+
+function beginGame() {
+  state = DH.createGame("local", (Math.random() * 1e9) | 0);
+  party.forEach((p, i) => {
+    const name = DH.CHARACTERS_BY_ID[p.charId].name;
+    DH.reduce(state, { type: "join", playerId: p.pid, name });
+    DH.reduce(state, { type: "choose-character", playerId: p.pid, characterId: p.charId });
+  });
+  DH.reduce(state, { type: "start-game", playerId: party[0].pid });
+  $("lobby").style.display = "none";
+  $("game").style.display = "block";
+  if (!renderer) initScene();
+  onResize();
+  render();
+}
+
+// =========================================================================
+// SCENE
+// =========================================================================
+function initScene() {
+  const wrap = $("canvas-wrap");
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x06060a);
+  scene.fog = new THREE.Fog(0x06060a, 14, 46);
+
+  camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
+  camera.position.set(12, 14, 18);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.shadowMap.enabled = true;
+  wrap.appendChild(renderer.domElement);
+
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.domElement.className = "label-layer";
+  wrap.appendChild(labelRenderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 4);
+  controls.maxPolarAngle = 1.45;
+  controls.minDistance = 6;
+  controls.maxDistance = 60;
+
+  scene.add(new THREE.AmbientLight(0x39507a, 0.5));
+  const hemi = new THREE.HemisphereLight(0x2a3550, 0x0a0806, 0.5);
+  scene.add(hemi);
+  const moon = new THREE.DirectionalLight(0x9fb4e0, 1.1);
+  moon.position.set(10, 24, 8);
+  scene.add(moon);
+
+  // dust
+  const N = 450;
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = (Math.random() - 0.5) * 44;
+    pos[i * 3 + 1] = (Math.random() - 0.5) * 26;
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 44 + 4;
+  }
+  const dg = new THREE.BufferGeometry();
+  dg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  dust = new THREE.Points(dg, new THREE.PointsMaterial({ size: 0.06, color: 0xc9b59a, transparent: true, opacity: 0.32, depthWrite: false }));
+  scene.add(dust);
+
+  // wandering candle-wisps
+  for (const base of [[0, 1.4, 0], [-2, 1.2, 6], [3, 1.6, 3]]) {
+    const l = new THREE.PointLight(0xe8975a, 18, 10, 2);
+    l.position.set(base[0], base[1], base[2]);
+    l.userData.base = base;
+    scene.add(l);
+    wisps.push(l);
+  }
+
+  // void
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 }));
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.set(0, -FLOOR_GAP - 2, 4);
+  scene.add(plane);
+
+  houseGroup = new THREE.Group();
+  tokenGroup = new THREE.Group();
+  arrowGroup = new THREE.Group();
+  scene.add(houseGroup, tokenGroup, arrowGroup);
+
+  raycaster = new THREE.Raycaster();
+  pointer = new THREE.Vector2();
+  renderer.domElement.addEventListener("pointerdown", onClick);
+  window.addEventListener("resize", onResize);
+  animate();
+}
+
+function clearGroup(g) {
+  for (let i = g.children.length - 1; i >= 0; i--) {
+    const c = g.children[i];
+    c.traverse?.((o) => {
+      o.geometry?.dispose?.();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
+    });
+    g.remove(c);
+  }
+}
+
+const WALL_MAT = () => new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1 });
+
+function buildHouse(legal) {
+  clearGroup(houseGroup);
+  const hi = new Set(legal.explored);
+  for (const room of Object.values(state.house)) {
+    const def = DH.ROOMS_BY_ID[room.roomId];
+    const g = new THREE.Group();
+    const [wx, wy, wz] = roomWorld(room);
+    g.position.set(wx, wy, wz);
+
+    const lit = hi.has(room.key);
+    const floor = new THREE.Mesh(
+      new THREE.BoxGeometry(TILE, 0.3, TILE),
+      new THREE.MeshStandardMaterial({ color: lit ? 0x3a4a3a : 0x1c1812, emissive: lit ? 0x5a8f5a : 0x000000, emissiveIntensity: lit ? 0.5 : 0, roughness: 0.95 }),
+    );
+    floor.position.y = -0.15;
+    floor.receiveShadow = true;
+    floor.userData = { kind: "room", key: room.key, lit };
+    g.add(floor);
+
+    const doors = DH.placedDoorways(room);
+    const H = TILE / 2;
+    for (const d of DIRS) {
+      if (doors.has(d)) continue;
+      const wall = new THREE.Mesh(
+        (d === "north" || d === "south") ? new THREE.BoxGeometry(TILE, WALL_H, 0.2) : new THREE.BoxGeometry(0.2, WALL_H, TILE),
+        WALL_MAT(),
+      );
+      wall.position.set(
+        d === "east" ? H : d === "west" ? -H : 0,
+        WALL_H / 2,
+        d === "south" ? H : d === "north" ? -H : 0,
+      );
+      g.add(wall);
+    }
+
+    const glow = SPECIAL_GLOW[def?.special];
+    if (glow) {
+      const pl = new THREE.PointLight(glow, 6, TILE * 2.2, 2);
+      pl.position.set(0, WALL_H * 0.7, 0);
+      g.add(pl);
+    }
+
+    const el = document.createElement("div");
+    el.className = "lbl3d" + (lit ? " lit" : "");
+    el.textContent = def?.name ?? "Room";
+    const lbl = new CSS2DObject(el);
+    lbl.position.set(0, WALL_H + 0.4, 0);
+    g.add(lbl);
+
+    houseGroup.add(g);
+  }
+}
+
+function playerToken(x, y, z, p, isActive) {
+  const char = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
+  const color = new THREE.Color(char?.color ?? "#aaaaaa");
+  const g = new THREE.Group();
+  g.position.set(x, y + 0.6, z);
+
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.22, 0.5, 4, 12),
+    new THREE.MeshStandardMaterial({ color, emissive: isActive ? color : 0x000000, emissiveIntensity: isActive ? 0.6 : 0, roughness: 0.5 }),
+  );
+  body.position.y = 0.35;
+  body.castShadow = true;
+  g.add(body);
+
+  const ringM = new THREE.Mesh(
+    new THREE.RingGeometry(0.3, 0.42, 24),
+    new THREE.MeshBasicMaterial({ color: isActive ? 0xe8a85a : color, transparent: true, opacity: isActive ? 0.9 : 0.35, side: THREE.DoubleSide }),
+  );
+  ringM.rotation.x = -Math.PI / 2;
+  g.add(ringM);
+
+  if (p.side === "traitor") g.add(new THREE.PointLight(0xc2412f, 4, 3, 2));
+
+  const el = document.createElement("div");
+  el.className = "tok-lbl" + (p.side === "traitor" ? " traitor" : "");
+  el.textContent = p.name + (p.side === "traitor" ? " ☠" : "");
+  const lbl = new CSS2DObject(el);
+  lbl.position.set(0, 1.1, 0);
+  g.add(lbl);
+
+  tokenGroup.add(g);
+  anims.push({ obj: g, baseY: y + 0.6, kind: isActive ? "bobA" : "bob", phase: Math.random() * 6 });
+}
+
+function monsterToken(x, y, z, m, attackable) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const mesh = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.5, 0),
+    new THREE.MeshStandardMaterial({ color: 0x1a0e0e, emissive: attackable ? 0xc2412f : 0x5a1d15, emissiveIntensity: attackable ? 1.1 : 0.5, roughness: 0.3, metalness: 0.4 }),
+  );
+  mesh.position.y = y + 0.9;
+  mesh.userData = { kind: "monster", monsterId: m.id, attackable };
+  g.add(mesh);
+  g.add(new THREE.PointLight(0xc2412f, 3, 3.5, 2));
+
+  const el = document.createElement("div");
+  el.className = "tok-lbl monster";
+  el.textContent = `${m.name} · ${m.hp}♥${attackable ? " — strike" : ""}`;
+  const lbl = new CSS2DObject(el);
+  lbl.position.set(0, y + 1.7, 0);
+  g.add(lbl);
+
+  tokenGroup.add(g);
+  anims.push({ obj: mesh, baseY: y + 0.9, kind: "spin", phase: 0 });
+}
+
+function buildTokens(legal) {
+  clearGroup(tokenGroup);
+  anims = [];
+  const byKey = {};
+  for (const p of state.players) if (p.alive && p.position) (byKey[p.position] ??= []).push({ kind: "p", p });
+  for (const m of state.haunt?.monsters ?? []) if (m.hp > 0 && m.position) (byKey[m.position] ??= []).push({ kind: "m", m });
+
+  const attackable = new Set(legal.attackMonsters);
+  for (const key in byKey) {
+    const occ = byKey[key];
+    const room = state.house[key];
+    if (!room) continue;
+    const [wx, wy, wz] = roomWorld(room);
+    occ.forEach((o, i) => {
+      const [ox, oz] = ring(i, occ.length, 1.1);
+      if (o.kind === "p") playerToken(wx + ox, wy, wz + oz, o.p, state.activePlayerId === o.p.id);
+      else monsterToken(wx + ox, wy, wz + oz, o.m, attackable.has(o.m.id));
+    });
+  }
+}
+
+function buildArrows(legal) {
+  clearGroup(arrowGroup);
+  const me = state.players.find((p) => p.id === state.activePlayerId);
+  const room = me?.position ? state.house[me.position] : null;
+  if (!room) return;
+  const [wx, wy, wz] = roomWorld(room);
+  const H = TILE / 2;
+  for (const dir of legal.doors) {
+    const { dx, dy } = DH.DIR_DELTA[dir];
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.3, 0.7, 4),
+      new THREE.MeshStandardMaterial({ color: 0xe8a85a, emissive: 0xe8a85a, emissiveIntensity: 1.2 }),
+    );
+    cone.position.set(wx + dx * (H + 0.4), wy + 0.9, wz + dy * (H + 0.4));
+    cone.rotation.set(
+      dir === "north" ? -Math.PI / 2 : dir === "south" ? Math.PI / 2 : 0,
+      0,
+      dir === "east" ? -Math.PI / 2 : dir === "west" ? Math.PI / 2 : 0,
+    );
+    cone.userData = { kind: "door", dir };
+    arrowGroup.add(cone);
+    const pl = new THREE.PointLight(0xe8a85a, 3, 2.5, 2);
+    pl.position.copy(cone.position);
+    arrowGroup.add(pl);
+  }
+}
+
+// =========================================================================
+// INPUT
+// =========================================================================
+function onClick(e) {
+  if (!state || state.phase === "ended") return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects([houseGroup, tokenGroup, arrowGroup], true);
+  const me = state.activePlayerId;
+  for (const h of hits) {
+    let o = h.object;
+    while (o && !o.userData?.kind) o = o.parent;
+    if (!o) continue;
+    const ud = o.userData;
+    if (ud.kind === "room" && ud.lit) return act({ type: "move-to", playerId: me, toKey: ud.key });
+    if (ud.kind === "door") return act({ type: "explore", playerId: me, door: ud.dir });
+    if (ud.kind === "monster" && ud.attackable) return act({ type: "attack", playerId: me, targetMonsterId: ud.monsterId });
+  }
+}
+
+function act(action) {
+  DH.reduce(state, action);
+  render();
+}
+
+// =========================================================================
+// RENDER (state -> scene + HUD)
+// =========================================================================
+function render() {
+  const me = state.activePlayerId;
+  const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [] };
+  buildHouse(legal);
+  buildTokens(legal);
+  buildArrows(legal);
+  updateHUD(legal);
+}
+
+function tagIcon(cardId) {
+  const c = DH.getCard(cardId);
+  if (!c) return "•";
+  if (c.type === "omen") return "☠";
+  if (c.effect.kind === "item-passive") {
+    return { weapon: "⚔", armor: "🛡", key: "🗝", light: "🔦", holy: "✝", occult: "👁" }[c.effect.tag] ?? "•";
+  }
+  return "•";
+}
+
+function updateHUD(legal) {
+  const me = state.players.find((p) => p.id === state.activePlayerId);
+  const active = me;
+  const ended = state.phase === "ended";
+  const haunt = state.phase === "haunt" || ended;
+
+  $("hud-top").innerHTML =
+    `<div class="hud-turn">${state.phase === "haunt" ? '<span class="haunt-tag">THE HAUNT · </span>' : ""}` +
+    `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}Round ${state.turn} — ${active?.name ?? "…"}` +
+    `${!ended ? ' <span class="you-tag">(acting)</span>' : ""}</div>` +
+    `${!ended ? `<div class="hud-move">Movement: ${state.movementLeft}</div>` : ""}`;
+
+  // party + log
+  let roster = state.players.map((p) => {
+    const c = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
+    const room = p.position ? state.house[p.position] : null;
+    const rn = room ? DH.ROOMS_BY_ID[room.roomId]?.name : "—";
+    return `<div class="roster-row ${state.activePlayerId === p.id ? "active" : ""} ${!p.alive ? "dead" : ""}">` +
+      `<span class="roster-dot" style="background:${c?.color ?? "#888"}"></span>` +
+      `<span class="roster-name">${p.name}</span>${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}` +
+      `<span class="roster-room">${p.alive ? rn : "lost"}</span></div>`;
+  }).join("");
+  const log = state.log.slice(-40).map((e) => {
+    const dice = e.dice?.length ? ` <span class="dice">${e.dice.map((v) => `<i class="die d${v}">${v}</i>`).join("")}</span>` : "";
+    return `<div class="log-entry k-${e.kind}">${e.text}${dice}</div>`;
+  }).join("");
+  $("hud-left").innerHTML =
+    `<div class="panel roster">${roster}</div>` +
+    `<div class="panel log"><div class="log-title">Chronicle</div><div class="log-scroll" id="log-scroll">${log}</div></div>`;
+  const ls = $("log-scroll"); if (ls) ls.scrollTop = ls.scrollHeight;
+
+  // trait panel for the active player
+  if (me && me.characterId) {
+    const c = DH.CHARACTERS_BY_ID[me.characterId];
+    const goal = state.haunt && me.side ? (me.side === "traitor" ? state.haunt.traitorGoal : state.haunt.heroGoal) : null;
+    $("hud-right").innerHTML =
+      `<div class="panel trait-panel ${!me.alive ? "dead" : ""}">` +
+      `<div class="tp-head" style="border-color:${c.color}"><div class="tp-av" style="background:${c.color}">${c.name.charAt(0)}</div>` +
+      `<div><strong>${c.name}</strong><div class="muted small">${c.title}</div></div>` +
+      `${me.side ? `<span class="side-tag ${me.side}">${me.side === "traitor" ? "TRAITOR" : "HERO"}</span>` : ""}</div>` +
+      (!me.alive ? `<div class="tp-dead">Lost to the house.</div>` : "") +
+      `<div class="tp-traits">` + DH.TRAITS.map((t) => {
+        const tr = c.traits[t]; const idx = me.traitIndex[t];
+        return `<div class="tp-trait"><div class="tp-th"><span style="color:${TRAIT_COLOR[t]}">${t}</span><strong>${tr.values[idx]}</strong></div>` +
+          `<div class="tp-track">` + tr.values.map((v, i) => `<span class="pip ${i === 0 ? "skull" : ""} ${i === idx ? "cur" : ""}" style="${i === idx ? `background:${TRAIT_COLOR[t]}` : ""}">${i === 0 ? "☠" : v}</span>`).join("") + `</div></div>`;
+      }).join("") + `</div>` +
+      `<div class="tp-inv"><div class="muted small">Carrying</div>` +
+      (me.inventory.length ? `<ul>${me.inventory.map((id) => `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}</li>`).join("")}</ul>` : `<div class="muted small">nothing</div>`) + `</div>` +
+      (goal ? `<div class="tp-goal ${me.side}"><div class="muted small">Goal</div>${goal}</div>` : "") +
+      `</div>`;
+  } else {
+    $("hud-right").innerHTML = "";
+  }
+
+  // bottom controls
+  let bottom = "";
+  if (!ended && me) {
+    for (const id of legal.attackPlayers) {
+      const name = state.players.find((p) => p.id === id)?.name ?? "foe";
+      bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${me.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;
+    }
+    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${me.id}'})">End turn (pass device)</button>`;
+  }
+  $("hud-bottom").innerHTML = bottom;
+
+  // overlays
+  const ov = $("overlay");
+  if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
+    const amT = me?.side === "traitor";
+    const tnames = state.haunt.traitorIds.map((id) => state.players.find((p) => p.id === id)?.name ?? "someone").join(", ");
+    ov.style.display = "grid";
+    ov.innerHTML =
+      `<div class="haunt-card"><div class="kick">The house turns…</div><h2>${state.haunt.name}</h2>` +
+      `<p>${amT ? '<strong class="tt">You are the traitor.</strong>' : `The traitor is <strong class="tt">${tnames}</strong>.`}</p>` +
+      `<div class="hgoals"><div class="${amT ? "ga" : ""}"><span class="muted small">Traitor</span>${state.haunt.traitorGoal}</div>` +
+      `<div class="${!amT ? "ga" : ""}"><span class="muted small">Heroes</span>${state.haunt.heroGoal}</div></div>` +
+      `<button class="btn primary" onclick="window.__dismiss()">${amT ? "Begin the betrayal" : "Survive"}</button></div>`;
+  } else if (ended) {
+    ov.style.display = "grid";
+    ov.innerHTML = `<div class="result"><div class="rtitle">${state.winner === "heroes" ? "The Heroes Survive" : "The Traitor Triumphs"}</div>` +
+      `<div class="muted">${state.haunt?.name ?? ""}</div><button class="btn" onclick="location.reload()">Play again</button></div>`;
+  } else {
+    ov.style.display = "none";
+    ov.innerHTML = "";
+  }
+}
+
+window.__act = act;
+window.__dismiss = () => { if (state.haunt) lastHauntShown = state.haunt.id; render(); };
+
+// =========================================================================
+// LOOP
+// =========================================================================
+function onResize() {
+  if (!renderer) return;
+  const wrap = $("canvas-wrap");
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = performance.now() / 1000;
+  controls.update();
+
+  if (dust) {
+    const a = dust.geometry.getAttribute("position");
+    const arr = a.array;
+    for (let i = 0; i < arr.length; i += 3) { arr[i + 1] += 0.012; if (arr[i + 1] > 14) arr[i + 1] = -12; }
+    a.needsUpdate = true;
+    dust.rotation.y += 0.0006;
+  }
+  for (const l of wisps) {
+    const b = l.userData.base;
+    l.intensity = 16 + Math.sin(t * 9 + b[0]) * 6 + Math.random() * 4;
+    l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.4, b[1] + Math.sin(t * 0.7) * 0.5, b[2] + Math.cos(t * 0.4 + b[0]) * 1.4);
+  }
+  for (const an of anims) {
+    if (an.kind === "spin") { an.obj.rotation.y = t * 0.6; an.obj.position.y = an.baseY + Math.sin(t * 3) * 0.1; }
+    else { an.obj.position.y = an.baseY + Math.sin(t * 2 + an.phase) * (an.kind === "bobA" ? 0.12 : 0.05); }
+  }
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+// boot
+$("begin-btn").onclick = beginGame;
+buildLobby();
+
+</script>
+</body>
+</html>
