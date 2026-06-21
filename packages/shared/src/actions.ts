@@ -5,9 +5,11 @@ import type { CharacterId, Direction, PlayerId } from "./types";
  * the current game state before applying it — clients can ask, but never tell.
  */
 export type Action =
-  | { type: "join"; playerId: PlayerId; name: string }
+  | { type: "join"; playerId: PlayerId; name: string; isBot?: boolean }
   | { type: "leave"; playerId: PlayerId }
   | { type: "choose-character"; playerId: PlayerId; characterId: CharacterId }
+  /** Host adds a computer-controlled player. */
+  | { type: "add-bot"; playerId: PlayerId }
   | { type: "start-game"; playerId: PlayerId }
   /** Walk into an already-placed, connected room (or take a stair link). */
   | { type: "move-to"; playerId: PlayerId; toKey: string }

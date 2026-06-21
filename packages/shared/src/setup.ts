@@ -8,7 +8,7 @@ import type {
 import { TRAITS } from "./types";
 import { Rng } from "./rng";
 import { buildDecks } from "./decks";
-import { CHARACTERS_BY_ID, START_ROOMS } from "./content";
+import { CHARACTERS, CHARACTERS_BY_ID, START_ROOMS } from "./content";
 import { key } from "./grid";
 import { addLog, baseTrait, getPlayer } from "./state";
 
@@ -56,7 +56,12 @@ function emptyTraitIndex(): Record<Trait, number> {
   return { speed: 0, might: 0, sanity: 0, knowledge: 0 };
 }
 
-export function addPlayer(s: GameState, id: PlayerId, name: string): PlayerState {
+export function addPlayer(
+  s: GameState,
+  id: PlayerId,
+  name: string,
+  isBot = false,
+): PlayerState {
   const existing = getPlayer(s, id);
   if (existing) {
     existing.connected = true;
@@ -74,10 +79,33 @@ export function addPlayer(s: GameState, id: PlayerId, name: string): PlayerState
     side: null,
     connected: true,
     isHost: s.players.length === 0,
+    isBot,
   };
   s.players.push(player);
   addLog(s, `${player.name} enters the foyer.`, "info");
   return player;
+}
+
+/** Minimum party size; smaller lobbies are topped up with bots on start. */
+export const MIN_PLAYERS = 3;
+
+/** Add one computer-controlled player, claiming the first free character. */
+export function addBot(s: GameState): PlayerState | null {
+  if (s.phase !== "lobby") return null;
+  const used = new Set(s.players.map((p) => p.characterId).filter(Boolean));
+  const char = CHARACTERS.find((c) => !used.has(c.id));
+  if (!char) return null; // every character is taken
+  const id = `bot-${char.id}`;
+  const bot = addPlayer(s, id, `${char.name.split(" ").pop()} (bot)`, true);
+  chooseCharacter(s, id, char.id);
+  return bot;
+}
+
+/** Top the lobby up with bots until it reaches `target` players. */
+export function fillWithBots(s: GameState, target: number): void {
+  while (s.players.length < target) {
+    if (!addBot(s)) break;
+  }
 }
 
 export function setConnected(s: GameState, id: PlayerId, connected: boolean): void {
@@ -118,6 +146,8 @@ export function beginTurn(s: GameState): void {
  */
 export function startGame(s: GameState): boolean {
   if (s.phase !== "lobby") return false;
+  // Top up to a minimum, watchable party with bots (e.g. 2 humans -> +1 bot).
+  fillWithBots(s, MIN_PLAYERS);
   const ready = s.players.filter((p) => p.characterId);
   if (ready.length < 1) return false;
 

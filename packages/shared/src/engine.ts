@@ -38,6 +38,7 @@ import {
   triggerHaunt,
 } from "./haunt";
 import {
+  addBot,
   addPlayer,
   beginTurn,
   chooseCharacter,
@@ -293,7 +294,7 @@ function advanceTurn(s: GameState): void {
 export function reduce(s: GameState, action: Action): GameState {
   switch (action.type) {
     case "join":
-      addPlayer(s, action.playerId, action.name);
+      addPlayer(s, action.playerId, action.name, action.isBot ?? false);
       break;
     case "leave":
       setConnected(s, action.playerId, false);
@@ -301,6 +302,11 @@ export function reduce(s: GameState, action: Action): GameState {
     case "choose-character":
       chooseCharacter(s, action.playerId, action.characterId);
       break;
+    case "add-bot": {
+      const host = getPlayer(s, action.playerId);
+      if (host?.isHost) addBot(s);
+      break;
+    }
     case "start-game": {
       const host = getPlayer(s, action.playerId);
       if (host?.isHost) startGame(s);

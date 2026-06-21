@@ -173,6 +173,8 @@ export interface PlayerState {
   side: Side | null; // assigned when the haunt begins
   connected: boolean;
   isHost: boolean;
+  /** A computer-controlled player whose turns are driven automatically. */
+  isBot: boolean;
 }
 
 export type LogKind =

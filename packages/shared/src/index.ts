@@ -15,4 +15,5 @@ export * from "./actions";
 export * from "./house";
 export * from "./haunt";
 export * from "./engine";
+export * from "./bot";
 export * from "./content";
