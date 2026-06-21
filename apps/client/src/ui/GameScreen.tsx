@@ -6,6 +6,7 @@ import { TraitPanel } from "./TraitPanel";
 import { EventLog } from "./EventLog";
 import { PartyRoster } from "./PartyRoster";
 import { HauntBanner } from "./HauntBanner";
+import { AudioToggle } from "./AudioToggle";
 
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
@@ -35,9 +36,12 @@ export function GameScreen() {
           Round {game.turn} — {active?.name ?? "…"}
           {myTurn && !ended && <span className="you-tag"> (your move)</span>}
         </div>
-        {myTurn && !ended && (
-          <div className="hud-move">Movement left: {game.movementLeft}</div>
-        )}
+        <div className="hud-top-right">
+          {myTurn && !ended && (
+            <div className="hud-move">Movement left: {game.movementLeft}</div>
+          )}
+          <AudioToggle />
+        </div>
       </div>
 
       <div className="hud-left">
