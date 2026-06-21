@@ -26,7 +26,7 @@ cards, characters and scenarios, so it can live happily as free software.
 - 🏚️ **A manor that assembles itself** — rooms are drawn from a shuffled deck and
   placed as you push through doorways, across Basement, Ground and Upper floors.
 - 👻 **The Haunt** — omens escalate until the house turns, splitting the party
-  into traitor(s) and heroes, each with secret objectives and four shipped
+  into traitor(s) and heroes, each with secret objectives and six shipped
   scenarios.
 - 🌐 **Online multiplayer** — an authoritative WebSocket server keeps every
   browser in sync and decides the rules; no client can cheat.

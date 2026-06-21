@@ -162,6 +162,46 @@ export const HAUNTS: HauntDef[] = [
       return null;
     },
   },
+  {
+    id: "the-hunt",
+    name: "The Hunt",
+    reveal:
+      "{traitor}'s spine arches the wrong way. Teeth crowd a mouth that is suddenly too wide. The thing that was your friend drops to all fours, and grins, and the chase begins.",
+    heroGoal:
+      "Reach consecrated ground — get a living hero into a Chapel — or put the beast down.",
+    traitorGoal: "Run down every last one of them.",
+    setup: (s) => {
+      // No summoned monsters — the traitor *is* the monster.
+      if (s.haunt) s.haunt.vars.theHunt = true;
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingTraitors(s).length === 0) return "heroes";
+      const sheltered = livingHeroes(s).some((p) => {
+        const room = p.position ? s.house[p.position] : undefined;
+        return room?.roomId === "chapel";
+      });
+      return sheltered ? "heroes" : null;
+    },
+  },
+  {
+    id: "plague-of-whispers",
+    name: "Plague of Whispers",
+    reveal:
+      "{traitor} opens their mouth and no voice comes out — instead the room fills with whispering, dozens of small pale shapes unfolding from the corners where the candlelight can't quite reach.",
+    heroGoal: "Silence every whisper, or destroy the one who set them loose.",
+    traitorGoal: "Let the whispers drown the living.",
+    setup: (s, _t, ctx) => {
+      const heroes = Math.max(1, livingHeroes(s).length);
+      spawn(s, ctx, "Whisper", 2, 1, heroes * 2);
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingTraitors(s).length === 0) return "heroes";
+      if (livingMonsters(s).length === 0) return "heroes";
+      return null;
+    },
+  },
 ];
 
 export const HAUNTS_BY_ID: Record<string, HauntDef> = Object.fromEntries(

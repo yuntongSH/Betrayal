@@ -94,7 +94,7 @@ The game ends the moment a side's victory condition is met.
 
 ## The scenarios
 
-Four original haunts ship today:
+Six original haunts ship today:
 
 - **The Crawling Dark** — shades pour into the house. Heroes must destroy the
   traitor; the traitor must extinguish every hero.
@@ -104,5 +104,9 @@ Four original haunts ship today:
   destroying its maws, or by carrying the Iron Key to the Entrance Hall.
 - **Wake of the Drowned** — a vast thing rises in black water. Heroes must
   survive five rounds or destroy it; the traitor must drown them all.
+- **The Hunt** — the traitor becomes a beast. Heroes reach consecrated ground
+  (a Chapel) or put the beast down; the traitor runs them all down.
+- **Plague of Whispers** — a swarm of weak whispers. Heroes silence every one
+  (or kill the traitor); the traitor lets them drown the living.
 
 More scenarios are easy to add — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).

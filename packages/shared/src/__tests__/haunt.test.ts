@@ -109,3 +109,57 @@ describe("scenario win conditions", () => {
     expect(s.winner).toBe("traitor");
   });
 });
+
+describe("additional scenarios", () => {
+  function mount(s: GameState, defId: string) {
+    const def = HAUNTS_BY_ID[defId]!;
+    s.haunt = {
+      id: def.id,
+      name: def.name,
+      traitorIds: ["a"],
+      startedById: "a",
+      startRoomKey: null,
+      monsters: [],
+      heroGoal: def.heroGoal,
+      traitorGoal: def.traitorGoal,
+      vars: {},
+    };
+    s.players.forEach((p) => (p.side = p.id === "a" ? "traitor" : "heroes"));
+    s.phase = "haunt";
+    def.setup(s, ["a"], {
+      rng: new Rng(1),
+      roomKeys: () => Object.keys(s.house),
+      spawnKey: () => Object.keys(s.house)[0] ?? null,
+    });
+    return def;
+  }
+
+  it("The Hunt: heroes win by reaching a Chapel", () => {
+    const s = startedGame();
+    const def = mount(s, "the-hunt");
+    expect(def.checkWin(s)).toBeNull();
+
+    // Drop a Chapel into the house and shelter a hero in it.
+    s.house["ground:9:9"] = {
+      key: "ground:9:9",
+      roomId: "chapel",
+      floor: "ground",
+      x: 9,
+      y: 9,
+      rotation: 0,
+      exploredBy: null,
+    };
+    getPlayer(s, "b")!.position = "ground:9:9";
+    expect(def.checkWin(s)).toBe("heroes");
+  });
+
+  it("Plague of Whispers: heroes win once every whisper is silenced", () => {
+    const s = startedGame();
+    const def = mount(s, "plague-of-whispers");
+    expect(s.haunt!.monsters.length).toBeGreaterThan(0);
+    expect(def.checkWin(s)).toBeNull();
+
+    s.haunt!.monsters.forEach((m) => (m.hp = 0));
+    expect(def.checkWin(s)).toBe("heroes");
+  });
+});
