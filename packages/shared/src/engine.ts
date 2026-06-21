@@ -114,7 +114,8 @@ function handleExplore(s: GameState, playerId: PlayerId, door: Direction): void 
   s.house[nKey] = placed;
 
   p.position = nKey;
-  s.movementLeft -= 1;
+  // Discovering a previously-unseen room ends your movement for the turn.
+  s.movementLeft = 0;
   const def = ROOMS_BY_ID[newRoomId];
   addLog(s, `${p.name} discovers the ${def?.name ?? "room"}.`, "move");
 
