@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -16,6 +17,11 @@ const SPECIAL_GLOW = {
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
 };
 const DIRS = ["north", "east", "south", "west"];
+const KEY_DIR = {
+  ArrowUp: "north", ArrowDown: "south", ArrowLeft: "west", ArrowRight: "east",
+  w: "north", s: "south", a: "west", d: "east",
+  W: "north", S: "south", A: "west", D: "east",
+};
 
 function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
 function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
@@ -31,6 +37,7 @@ let scene, camera, renderer, labelRenderer, controls, raycaster, pointer;
 let houseGroup, tokenGroup, arrowGroup;
 let dust, wisps = [];
 let anims = []; // per-render animated tokens
+const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
 
 // =========================================================================
 // LOBBY
@@ -159,7 +166,30 @@ function initScene() {
   pointer = new THREE.Vector2();
   renderer.domElement.addEventListener("pointerdown", onClick);
   window.addEventListener("resize", onResize);
+  window.addEventListener("keydown", onKeyMove);
   animate();
+}
+
+/** Arrow keys / WASD move the active human player. */
+function onKeyMove(e) {
+  if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
+  const active = state.players.find((p) => p.id === state.activePlayerId);
+  if (!active || active.isBot) return;
+  const dir = KEY_DIR[e.key];
+  if (!dir) return;
+  const legal = DH.legalMoves(state, active.id);
+  const room = active.position ? state.house[active.position] : null;
+  if (!room) return;
+  if (legal.doors.includes(dir)) {
+    e.preventDefault();
+    act({ type: "explore", playerId: active.id, door: dir });
+    return;
+  }
+  const nKey = DH.neighborKey(room.floor, room.x, room.y, dir);
+  if (legal.explored.includes(nKey)) {
+    e.preventDefault();
+    act({ type: "move-to", playerId: active.id, toKey: nKey });
+  }
 }
 
 function clearGroup(g) {
@@ -175,114 +205,117 @@ function clearGroup(g) {
 
 const WALL_MAT = () => new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1 });
 
+/** Build a room's static structure (floor, walls, themed decor) once. */
+function buildRoomGroup(room) {
+  const def = DH.ROOMS_BY_ID[room.roomId];
+  const theme = roomTheme(room.roomId);
+  const g = new THREE.Group();
+  const [wx, wy, wz] = roomWorld(room);
+  g.position.set(wx, wy, wz);
+
+  const floorMat = new THREE.MeshStandardMaterial({ color: theme.floor, roughness: 0.95, metalness: 0.05 });
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(TILE, 0.3, TILE), floorMat);
+  floor.position.y = -0.15;
+  floor.receiveShadow = true;
+  floor.userData = { kind: "room", key: room.key, lit: false };
+  g.add(floor);
+
+  const doors = DH.placedDoorways(room);
+  const H = TILE / 2;
+  for (const d of DIRS) {
+    if (doors.has(d)) continue;
+    const wall = new THREE.Mesh(
+      (d === "north" || d === "south") ? new THREE.BoxGeometry(TILE, WALL_H, 0.2) : new THREE.BoxGeometry(0.2, WALL_H, TILE),
+      new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 1 }),
+    );
+    wall.position.set(d === "east" ? H : d === "west" ? -H : 0, WALL_H / 2, d === "south" ? H : d === "north" ? -H : 0);
+    g.add(wall);
+  }
+
+  g.add(buildRoomDecor(room.roomId, TILE));
+
+  const accent = new THREE.PointLight(theme.accent, theme.accentIntensity * 6, TILE * 2.4, 2);
+  accent.position.set(0, WALL_H * 0.75, 0);
+  g.add(accent);
+
+  const el = document.createElement("div");
+  el.className = "lbl3d";
+  el.textContent = def?.name ?? "Room";
+  const lbl = new CSS2DObject(el);
+  lbl.position.set(0, WALL_H + 0.4, 0);
+  g.add(lbl);
+
+  houseGroup.add(g);
+  return { group: g, floor, floorMat, labelEl: el };
+}
+
+/** Sync the house: build new rooms once, then just refresh highlight state. */
 function buildHouse(legal) {
-  clearGroup(houseGroup);
   const hi = new Set(legal.explored);
   for (const room of Object.values(state.house)) {
-    const def = DH.ROOMS_BY_ID[room.roomId];
-    const g = new THREE.Group();
-    const [wx, wy, wz] = roomWorld(room);
-    g.position.set(wx, wy, wz);
-
+    let entry = roomCache.get(room.key);
+    if (!entry) {
+      entry = buildRoomGroup(room);
+      roomCache.set(room.key, entry);
+    }
     const lit = hi.has(room.key);
-    const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(TILE, 0.3, TILE),
-      new THREE.MeshStandardMaterial({ color: lit ? 0x3a4a3a : 0x1c1812, emissive: lit ? 0x5a8f5a : 0x000000, emissiveIntensity: lit ? 0.5 : 0, roughness: 0.95 }),
-    );
-    floor.position.y = -0.15;
-    floor.receiveShadow = true;
-    floor.userData = { kind: "room", key: room.key, lit };
-    g.add(floor);
-
-    const doors = DH.placedDoorways(room);
-    const H = TILE / 2;
-    for (const d of DIRS) {
-      if (doors.has(d)) continue;
-      const wall = new THREE.Mesh(
-        (d === "north" || d === "south") ? new THREE.BoxGeometry(TILE, WALL_H, 0.2) : new THREE.BoxGeometry(0.2, WALL_H, TILE),
-        WALL_MAT(),
-      );
-      wall.position.set(
-        d === "east" ? H : d === "west" ? -H : 0,
-        WALL_H / 2,
-        d === "south" ? H : d === "north" ? -H : 0,
-      );
-      g.add(wall);
-    }
-
-    const glow = SPECIAL_GLOW[def?.special];
-    if (glow) {
-      const pl = new THREE.PointLight(glow, 6, TILE * 2.2, 2);
-      pl.position.set(0, WALL_H * 0.7, 0);
-      g.add(pl);
-    }
-
-    const el = document.createElement("div");
-    el.className = "lbl3d" + (lit ? " lit" : "");
-    el.textContent = def?.name ?? "Room";
-    const lbl = new CSS2DObject(el);
-    lbl.position.set(0, WALL_H + 0.4, 0);
-    g.add(lbl);
-
-    houseGroup.add(g);
+    entry.floor.userData.lit = lit;
+    entry.floorMat.color.set(lit ? 0x3a4a3a : roomTheme(room.roomId).floor);
+    entry.floorMat.emissive.set(lit ? 0x5a8f5a : 0x000000);
+    entry.floorMat.emissiveIntensity = lit ? 0.5 : 0;
+    entry.labelEl.className = "lbl3d" + (lit ? " lit" : "");
   }
 }
 
 function playerToken(x, y, z, p, isActive) {
   const char = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
-  const color = new THREE.Color(char?.color ?? "#aaaaaa");
   const g = new THREE.Group();
-  g.position.set(x, y + 0.6, z);
+  g.position.set(x, y, z);
 
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.22, 0.5, 4, 12),
-    new THREE.MeshStandardMaterial({ color, emissive: isActive ? color : 0x000000, emissiveIntensity: isActive ? 0.6 : 0, roughness: 0.5 }),
-  );
-  body.position.y = 0.35;
-  body.castShadow = true;
-  g.add(body);
+  const fig = buildExplorerFigure(char?.color ?? "#aaaaaa");
+  g.add(fig);
 
-  const ringM = new THREE.Mesh(
-    new THREE.RingGeometry(0.3, 0.42, 24),
-    new THREE.MeshBasicMaterial({ color: isActive ? 0xe8a85a : color, transparent: true, opacity: isActive ? 0.9 : 0.35, side: THREE.DoubleSide }),
-  );
-  ringM.rotation.x = -Math.PI / 2;
-  g.add(ringM);
-
+  if (isActive) {
+    g.add(new THREE.PointLight(0xe8a85a, 5, 4, 2));
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.5, 3.2, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xe8a85a, transparent: true, opacity: 0.12, depthWrite: false }),
+    );
+    beam.position.y = 1.6;
+    g.add(beam);
+  }
   if (p.side === "traitor") g.add(new THREE.PointLight(0xc2412f, 4, 3, 2));
 
   const el = document.createElement("div");
   el.className = "tok-lbl" + (p.side === "traitor" ? " traitor" : "");
   el.textContent = p.name + (p.side === "traitor" ? " ☠" : "");
   const lbl = new CSS2DObject(el);
-  lbl.position.set(0, 1.1, 0);
+  lbl.position.set(0, 1.9, 0);
   g.add(lbl);
 
   tokenGroup.add(g);
-  anims.push({ obj: g, baseY: y + 0.6, kind: isActive ? "bobA" : "bob", phase: Math.random() * 6 });
+  anims.push({ obj: fig, baseY: 0.02, kind: isActive ? "bobA" : "bob", phase: Math.random() * 6 });
 }
 
 function monsterToken(x, y, z, m, attackable) {
   const g = new THREE.Group();
-  g.position.set(x, 0, z);
-  const mesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.5, 0),
-    new THREE.MeshStandardMaterial({ color: 0x1a0e0e, emissive: attackable ? 0xc2412f : 0x5a1d15, emissiveIntensity: attackable ? 1.1 : 0.5, roughness: 0.3, metalness: 0.4 }),
-  );
-  mesh.position.y = y + 0.9;
-  mesh.userData = { kind: "monster", monsterId: m.id, attackable };
-  g.add(mesh);
-  g.add(new THREE.PointLight(0xc2412f, 3, 3.5, 2));
+  g.position.set(x, y, z);
+
+  const fig = buildMonsterFigure(m.name);
+  fig.userData = { kind: "monster", monsterId: m.id, attackable };
+  fig.traverse((o) => (o.userData = { kind: "monster", monsterId: m.id, attackable }));
+  g.add(fig);
+  g.add(new THREE.PointLight(0xc2412f, attackable ? 5 : 2.5, 4, 2));
 
   const el = document.createElement("div");
   el.className = "tok-lbl monster";
   el.textContent = `${m.name} · ${m.hp}♥${attackable ? " — strike" : ""}`;
   const lbl = new CSS2DObject(el);
-  lbl.position.set(0, y + 1.7, 0);
+  lbl.position.set(0, 1.9, 0);
   g.add(lbl);
 
   tokenGroup.add(g);
-  anims.push({ obj: mesh, baseY: y + 0.9, kind: "spin", phase: 0 });
+  anims.push({ obj: fig, baseY: 0.05, kind: "spin", phase: 0 });
 }
 
 function buildTokens(legal) {
