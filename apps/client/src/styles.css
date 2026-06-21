@@ -301,6 +301,10 @@ input:focus {
   padding: 0.05rem 0.35rem;
   border-radius: 4px;
 }
+.badge.bot {
+  background: #3a4a66;
+  color: #cfe;
+}
 
 /* --- in-game shell ------------------------------------------------------ */
 .game-shell,
