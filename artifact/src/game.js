@@ -23,6 +23,7 @@ function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.P
 // ---- game state ----------------------------------------------------------
 let state = null;
 let lastHauntShown = null;
+let botTimer = null; // pending local bot step
 const party = []; // { pid, charId }
 
 // ---- three.js objects ----------------------------------------------------
@@ -60,19 +61,30 @@ function buildLobby() {
   $("party-count").textContent = party.length;
 }
 
-function beginGame() {
+function beginGame(solo) {
   state = DH.createGame("local", (Math.random() * 1e9) | 0);
-  party.forEach((p, i) => {
+  let roster = solo ? party.slice(0, 1) : party.slice();
+  if (roster.length === 0) {
+    roster = [{ pid: "p" + DH.CHARACTERS[0].id, charId: DH.CHARACTERS[0].id }];
+  }
+  roster.forEach((p) => {
     const name = DH.CHARACTERS_BY_ID[p.charId].name;
     DH.reduce(state, { type: "join", playerId: p.pid, name });
     DH.reduce(state, { type: "choose-character", playerId: p.pid, characterId: p.charId });
   });
-  DH.reduce(state, { type: "start-game", playerId: party[0].pid });
+  // Solo = 1 human + 3 bots; hotseat auto-fills to a minimum of 3 on start.
+  if (solo) {
+    for (let i = 0; i < 3; i++) {
+      DH.reduce(state, { type: "add-bot", playerId: roster[0].pid });
+    }
+  }
+  DH.reduce(state, { type: "start-game", playerId: state.players[0].id });
   $("lobby").style.display = "none";
   $("game").style.display = "block";
   if (!renderer) initScene();
   onResize();
   render();
+  driveBots();
 }
 
 // =========================================================================
@@ -344,8 +356,40 @@ function onClick(e) {
 }
 
 function act(action) {
+  const active = state.players.find((p) => p.id === state.activePlayerId);
+  if (active && active.isBot) return; // bots are driven automatically
   DH.reduce(state, action);
   render();
+  driveBots();
+}
+
+/** Local bot driver: step the active bot on a timer, then hand back to humans. */
+function driveBots() {
+  if (botTimer) return;
+  if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
+  const active = state.players.find((p) => p.id === state.activePlayerId);
+  if (!active || !active.isBot) return;
+  botTimer = setTimeout(() => {
+    botTimer = null;
+    const a = state.players.find((p) => p.id === state.activePlayerId);
+    if (!a || !a.isBot || (state.phase !== "explore" && state.phase !== "haunt")) {
+      render();
+      return;
+    }
+    const before = { pos: a.position, move: state.movementLeft };
+    const step = DH.botStep(state, a.id);
+    DH.reduce(state, step.action);
+    const stalled =
+      !step.endTurnAfter &&
+      step.action.type !== "end-turn" &&
+      a.position === before.pos &&
+      state.movementLeft === before.move;
+    if ((step.endTurnAfter && step.action.type !== "end-turn") || stalled) {
+      if (state.activePlayerId === a.id) DH.reduce(state, { type: "end-turn", playerId: a.id });
+    }
+    render();
+    driveBots();
+  }, 650);
 }
 
 // =========================================================================
@@ -371,15 +415,18 @@ function tagIcon(cardId) {
 }
 
 function updateHUD(legal) {
-  const me = state.players.find((p) => p.id === state.activePlayerId);
-  const active = me;
+  const active = state.players.find((p) => p.id === state.activePlayerId);
+  const humans = state.players.filter((p) => !p.isBot);
+  // Solo: always show the (single) human. Hotseat: whoever's turn it is.
+  const me = humans.length === 1 ? humans[0] : active;
   const ended = state.phase === "ended";
   const haunt = state.phase === "haunt" || ended;
+  const botActing = !!active && active.isBot && !ended;
 
   $("hud-top").innerHTML =
     `<div class="hud-turn">${state.phase === "haunt" ? '<span class="haunt-tag">THE HAUNT · </span>' : ""}` +
     `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}Round ${state.turn} — ${active?.name ?? "…"}` +
-    `${!ended ? ' <span class="you-tag">(acting)</span>' : ""}</div>` +
+    `${!ended ? (botActing ? ' <span class="muted">(bot…)</span>' : ' <span class="you-tag">(your move)</span>') : ""}</div>` +
     `${!ended ? `<div class="hud-move">Movement: ${state.movementLeft}</div>` : ""}`;
 
   // party + log
@@ -424,14 +471,14 @@ function updateHUD(legal) {
     $("hud-right").innerHTML = "";
   }
 
-  // bottom controls
+  // bottom controls — only on a human's turn
   let bottom = "";
-  if (!ended && me) {
+  if (!ended && active && !active.isBot) {
     for (const id of legal.attackPlayers) {
       const name = state.players.find((p) => p.id === id)?.name ?? "foe";
-      bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${me.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;
+      bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;
     }
-    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${me.id}'})">End turn (pass device)</button>`;
+    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${active.id}'})">End turn${humans.length > 1 ? " (pass device)" : ""}</button>`;
   }
   $("hud-bottom").innerHTML = bottom;
 
@@ -501,5 +548,6 @@ function animate() {
 }
 
 // boot
-$("begin-btn").onclick = beginGame;
+$("begin-btn").onclick = () => beginGame(false);
+$("solo-btn").onclick = () => beginGame(true);
 buildLobby();
