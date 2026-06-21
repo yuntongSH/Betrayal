@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { legalMoves } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { Scene } from "../three/Scene";
@@ -7,6 +7,7 @@ import { EventLog } from "./EventLog";
 import { PartyRoster } from "./PartyRoster";
 import { HauntBanner } from "./HauntBanner";
 import { AudioToggle } from "./AudioToggle";
+import { HelpButton } from "./HelpButton";
 
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
@@ -25,6 +26,15 @@ export function GameScreen() {
   );
   const attackTargets = legal?.attackPlayers ?? [];
 
+  // Press E to end your turn.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.key === "e" || e.key === "E") && myTurn && !ended) endTurn();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [myTurn, ended, endTurn]);
+
   return (
     <div className="game-shell">
       <Scene />
@@ -41,6 +51,7 @@ export function GameScreen() {
             <div className="hud-move">Movement left: {game.movementLeft}</div>
           )}
           <AudioToggle />
+          <HelpButton />
         </div>
       </div>
 

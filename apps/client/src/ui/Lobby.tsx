@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../state/store";
+import { HelpButton } from "./HelpButton";
 
 export function Lobby() {
   const name = useStore((s) => s.name);
@@ -14,6 +15,7 @@ export function Lobby() {
 
   return (
     <div className="lobby">
+      <HelpButton className="lobby-help" />
       <div className="lobby-card">
         <h1 className="title">
           <span className="title-flame">🕯️</span> Dread Hollow
