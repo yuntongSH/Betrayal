@@ -42,6 +42,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .char-info em{color:var(--dim);font-size:.8rem;display:block}
 .char-traits{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.35rem}
 .trait-chip{font-size:.68rem;padding:.1rem .4rem;border-radius:5px;background:rgba(0,0,0,.4);color:var(--dim)}
+.lobby-actions{display:flex;flex-direction:column;gap:.5rem;width:min(440px,100%)}
 
 /* game */
 #game{display:none;height:100%;position:relative}
@@ -114,8 +115,11 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
   <h1 class="title"><span class="f">🕯️</span> Dread Hollow</h1>
   <p class="tagline">A manor that builds itself, one dreadful room at a time — until one of you stops being a friend. Pick your party (pass-and-play on one screen) and begin the descent.</p>
   <div class="char-grid" id="char-grid"></div>
-  <button class="btn primary" id="begin-btn" disabled>Begin the descent (<span id="party-count">0</span>)</button>
-  <p class="muted small">This is an offline single-device build. The full online multiplayer version lives at the GitHub repo.</p>
+  <div class="lobby-actions">
+    <button class="btn primary" id="begin-btn" disabled>Begin the descent (<span id="party-count">0</span>)</button>
+    <button class="btn" id="solo-btn">Play solo vs 3 bots</button>
+  </div>
+  <p class="muted small">Pass-and-play on one screen, or play solo against bots. Small parties are topped up to 3 with bots. The full online multiplayer version lives in the GitHub repo.</p>
 </div>
 
 <div id="game">
