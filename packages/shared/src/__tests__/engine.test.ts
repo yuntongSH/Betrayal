@@ -71,6 +71,15 @@ describe("exploration", () => {
     expect(getPlayer(s, active)?.position).toBe(key("ground", 1, 1));
   });
 
+  it("discovering a new room ends the player's movement for the turn", () => {
+    const s = startedGame();
+    const active = s.activePlayerId!;
+    reduce(s, { type: "move-to", playerId: active, toKey: key("ground", 0, 1) });
+    expect(s.movementLeft).toBeGreaterThan(0);
+    reduce(s, { type: "explore", playerId: active, door: "east" });
+    expect(s.movementLeft).toBe(0);
+  });
+
   it("is fully deterministic for a fixed seed", () => {
     function play(seed: number): string | undefined {
       const s = startedGame(seed);
