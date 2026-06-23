@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { botStep, type Action } from "@dread-hollow/shared";
 import { RoomManager, type GameRoom } from "./rooms.js";
-import type { ClientMessage, ServerMessage } from "./protocol.js";
+import { ClientMessageSchema, type ServerMessage } from "./protocol.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 /** Delay between a bot's individual actions, so humans can watch it move. */
@@ -119,13 +119,20 @@ function leaveRoom(ws: WebSocket, session: Session): void {
 }
 
 function handleMessage(ws: WebSocket, session: Session, raw: string): void {
-  let msg: ClientMessage;
+  let json: unknown;
   try {
-    msg = JSON.parse(raw) as ClientMessage;
+    json = JSON.parse(raw);
   } catch {
-    send(ws, { t: "error", message: "Malformed message." });
+    send(ws, { t: "error", message: "Malformed JSON." });
     return;
   }
+  const parsed = ClientMessageSchema.safeParse(json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    send(ws, { t: "error", message: `Invalid message: ${issue?.message ?? "bad shape"}` });
+    return;
+  }
+  const msg = parsed.data;
 
   switch (msg.t) {
     case "ping":
