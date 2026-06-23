@@ -10,7 +10,8 @@ export function Scene() {
   return (
     <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
       <color attach="background" args={["#06060a"]} />
-      <fog attach="fog" args={["#06060a", 14, 46]} />
+      {/* fog pulled in so unexplored rooms dissolve into dread */}
+      <fog attach="fog" args={["#070710", 11, 42]} />
 
       <PerspectiveCamera makeDefault position={[12, 14, 18]} fov={48} />
       <OrbitControls
@@ -23,16 +24,21 @@ export function Scene() {
         maxDistance={60}
       />
 
-      {/* cold moonlight from above, a barely-there ambient fill */}
-      <ambientLight intensity={0.12} color="#39507a" />
-      <hemisphereLight args={["#2a3550", "#0a0806", 0.25]} />
+      {/* all darkness is blue, all light is amber: crushed cold ambient + one
+          cold moonlight key (the only shadow caster); warm practicals do the rest */}
+      <ambientLight intensity={0.08} color="#2a3a5e" />
+      <hemisphereLight args={["#26324f", "#080604", 0.18]} />
       <directionalLight
-        position={[10, 24, 8]}
-        intensity={0.5}
-        color="#9fb4e0"
+        position={[14, 28, 6]}
+        intensity={0.65}
+        color="#aebfe8"
         castShadow
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.03}
       />
+      {/* faint cold rim so silhouettes read against the void */}
+      <directionalLight position={[-12, 6, -10]} intensity={0.12} color="#3a4d78" />
 
       <Suspense fallback={null}>
         <HouseView />

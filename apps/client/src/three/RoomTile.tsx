@@ -77,13 +77,14 @@ export function RoomTile({
       {/* the room's themed furnishings */}
       <primitive object={decor} />
 
-      {/* a per-room accent light for vibe */}
+      {/* per-room candle-pool: lower + tighter falloff gives a bright pool with
+          a dark edge instead of a flat fill */}
       <pointLight
-        position={[0, WALL_H * 0.75, 0]}
+        position={[0, WALL_H * 0.55, 0]}
         color={theme.accent}
-        intensity={theme.accentIntensity * 6}
-        distance={TILE * 2.4}
-        decay={2}
+        intensity={theme.accentIntensity * 7}
+        distance={TILE * 1.7}
+        decay={2.4}
       />
 
       <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={14} occlude={false}>

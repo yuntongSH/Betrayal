@@ -101,7 +101,7 @@ function initScene() {
   const wrap = $("canvas-wrap");
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x06060a);
-  scene.fog = new THREE.Fog(0x06060a, 14, 46);
+  scene.fog = new THREE.Fog(0x070710, 11, 42);
 
   camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
   camera.position.set(12, 14, 18);
@@ -122,15 +122,15 @@ function initScene() {
   controls.minDistance = 6;
   controls.maxDistance = 60;
 
-  scene.add(new THREE.AmbientLight(0x39507a, 0.5));
-  const hemi = new THREE.HemisphereLight(0x2a3550, 0x0a0806, 0.5);
+  scene.add(new THREE.AmbientLight(0x2a3a5e, 0.12));
+  const hemi = new THREE.HemisphereLight(0x26324f, 0x080604, 0.22);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0x9fb4e0, 1.1);
-  moon.position.set(10, 24, 8);
+  const moon = new THREE.DirectionalLight(0xaebfe8, 0.9);
+  moon.position.set(14, 28, 6);
   scene.add(moon);
 
   // dust
-  const N = 450;
+  const N = 300;
   const pos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
     pos[i * 3] = (Math.random() - 0.5) * 44;
@@ -139,7 +139,7 @@ function initScene() {
   }
   const dg = new THREE.BufferGeometry();
   dg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  dust = new THREE.Points(dg, new THREE.PointsMaterial({ size: 0.06, color: 0xc9b59a, transparent: true, opacity: 0.32, depthWrite: false }));
+  dust = new THREE.Points(dg, new THREE.PointsMaterial({ size: 0.045, color: 0xb8a888, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   scene.add(dust);
 
   // wandering candle-wisps
@@ -234,8 +234,8 @@ function buildRoomGroup(room) {
 
   g.add(buildRoomDecor(room.roomId, TILE));
 
-  const accent = new THREE.PointLight(theme.accent, theme.accentIntensity * 6, TILE * 2.4, 2);
-  accent.position.set(0, WALL_H * 0.75, 0);
+  const accent = new THREE.PointLight(theme.accent, theme.accentIntensity * 7, TILE * 1.7, 2.4);
+  accent.position.set(0, WALL_H * 0.55, 0);
   g.add(accent);
 
   const el = document.createElement("div");
@@ -568,8 +568,11 @@ function animate() {
   }
   for (const l of wisps) {
     const b = l.userData.base;
-    l.intensity = 16 + Math.sin(t * 9 + b[0]) * 6 + Math.random() * 4;
-    l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.4, b[1] + Math.sin(t * 0.7) * 0.5, b[2] + Math.cos(t * 0.4 + b[0]) * 1.4);
+    const seed = b[0] + b[2];
+    let f = 1 + Math.sin(t * 23 + seed) * 0.1 + Math.sin(t * 7.3 + seed * 2.1) * 0.16 + Math.sin(t * 1.7 + seed * 0.7) * 0.06;
+    if (Math.random() < 0.015) f *= 0.55;
+    l.intensity = Math.max(8, 18 * f);
+    l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.0, b[1] + Math.sin(t * 0.7) * 0.4, b[2] + Math.cos(t * 0.4 + b[0]) * 1.0);
   }
   for (const an of anims) {
     if (an.kind === "spin") { an.obj.rotation.y = t * 0.6; an.obj.position.y = an.baseY + Math.sin(t * 3) * 0.1; }
