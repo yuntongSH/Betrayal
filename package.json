@@ -21,7 +21,8 @@
   },
   "devDependencies": {
     "@dread-hollow/decor": "workspace:*",
-    "esbuild": "0.21.5"
+    "esbuild": "0.21.5",
+    "playwright": "^1.48.2"
   },
   "keywords": [
     "board-game",
