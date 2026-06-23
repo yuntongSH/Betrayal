@@ -1,0 +1,43 @@
+name: Screenshots
+
+# Renders the standalone artifact in headless Chromium (software WebGL) and
+# uploads PNGs as a build artifact — so the 3D actually gets eyes on it.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the standalone artifact
+        run: pnpm build:artifact
+
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        run: node scripts/screenshot.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: warn
