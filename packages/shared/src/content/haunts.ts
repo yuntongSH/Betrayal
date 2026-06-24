@@ -204,6 +204,30 @@ export const HAUNTS: HauntDef[] = [
       return null;
     },
   },
+  {
+    id: "the-tide",
+    name: "The Tide Comes In",
+    reveal:
+      "Black water climbs the walls of its own accord and the house breathes out a cold with no source. There is no betrayer tonight — the house itself has woken, and it means to keep every one of you.",
+    heroGoal:
+      "Stand together: destroy every drowned thing, or carry the Iron Key to the Entrance Hall and force the flooded door.",
+    // No traitor: an "everyone vs. the house" haunt. The house wins if all drown.
+    traitorGoal: "",
+    chooseTraitors: () => [],
+    setup: (s, _t, ctx) => {
+      const heroes = Math.max(1, livingHeroes(s).length);
+      spawn(s, ctx, "Drowned Hand", 2, 3, heroes, "physical");
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor"; // the house prevails
+      if (livingMonsters(s).length === 0) return "heroes";
+      const escaped = livingHeroes(s).some((p) => {
+        const room = p.position ? s.house[p.position] : undefined;
+        return room?.roomId === "entrance-hall" && p.inventory.includes("it-key");
+      });
+      return escaped ? "heroes" : null;
+    },
+  },
 ];
 
 export const HAUNTS_BY_ID: Record<string, HauntDef> = Object.fromEntries(

@@ -132,7 +132,9 @@ export function GameScreen() {
         <div className="hud-result">
           {game.winner === "heroes"
             ? "The Heroes Survive"
-            : "The Traitor Triumphs"}
+            : game.haunt && game.haunt.traitorIds.length === 0
+              ? "The House Prevails"
+              : "The Traitor Triumphs"}
           <div className="hud-result-sub muted">{game.haunt?.name}</div>
         </div>
       )}

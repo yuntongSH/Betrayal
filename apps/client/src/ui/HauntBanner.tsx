@@ -28,7 +28,9 @@ export function HauntBanner() {
         <div className="haunt-kicker">The house turns…</div>
         <h2>{haunt.name}</h2>
         <p className="haunt-who">
-          {amTraitor ? (
+          {haunt.traitorIds.length === 0 ? (
+            <strong className="traitor-text">The house itself rises against you all.</strong>
+          ) : amTraitor ? (
             <strong className="traitor-text">You are the traitor.</strong>
           ) : (
             <>The traitor is <strong className="traitor-text">{traitorNames}</strong>.</>
