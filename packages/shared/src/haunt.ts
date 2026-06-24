@@ -218,14 +218,18 @@ export function monsterPhase(s: GameState): void {
     const heroes = livingHeroes(s);
     if (heroes.length === 0) break;
 
-    let target = heroes.find((h) => h.position === m.position);
-    if (!target) {
+    // Advance up to the monster's Speed, stopping the moment it shares a room
+    // with a hero. Fast creatures close the distance in a single phase.
+    let moves = Math.max(1, m.speed ?? 1);
+    while (moves > 0 && !heroes.some((h) => h.position === m.position)) {
       const targetKeys = new Set(heroes.map((h) => h.position as string));
       const step = stepToward(s, m.position, targetKeys);
-      if (step && step !== m.position) m.position = step;
-      target = heroes.find((h) => h.position === m.position);
+      if (!step || step === m.position) break;
+      m.position = step;
+      moves -= 1;
     }
 
+    const target = heroes.find((h) => h.position === m.position);
     if (target) {
       const c = monsterCombat(m);
       const atk = rollDice(rng, m.might);
@@ -244,6 +248,16 @@ export function monsterPhase(s: GameState): void {
       } else {
         addLog(s, `${target.name} holds off the ${m.name}.`, "combat", def.dice);
       }
+    }
+  }
+
+  // The dead that don't stay dead reform once the monsters have finished acting,
+  // so the heroes still get a clear round of relief from a kill.
+  for (const m of s.haunt.monsters) {
+    if (m.hp <= 0 && m.respawns) {
+      m.hp = m.maxHp ?? 1;
+      m.position = s.haunt.startRoomKey ?? m.position;
+      addLog(s, `The ${m.name} gathers itself out of the dark once more.`, "combat");
     }
   }
 
