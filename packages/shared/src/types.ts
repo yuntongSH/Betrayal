@@ -142,6 +142,9 @@ export interface MonsterState {
   position: string | null; // PlacedRoom.key
   might: number;
   hp: number;
+  /** Whether this creature assaults the body (Might) or the mind (Sanity).
+   *  Absent is treated as physical. */
+  attackType?: "physical" | "mental";
 }
 
 export interface HauntState {
