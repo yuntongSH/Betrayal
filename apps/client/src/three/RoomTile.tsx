@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Html } from "@react-three/drei";
 import { DIRECTIONS, placedDoorways } from "@dread-hollow/shared";
 import type { PlacedRoom, RoomDef } from "@dread-hollow/shared";
-import { buildRoomDecor, roomTheme } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, materials, surfaceFor } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
 
 const HALF = TILE / 2;
@@ -21,8 +21,35 @@ export function RoomTile({
   const [wx, wy, wz] = roomWorld(room);
   const doors = useMemo(() => placedDoorways(room), [room]);
   const theme = useMemo(() => roomTheme(room.roomId), [room.roomId]);
+  const surf = useMemo(() => surfaceFor(room.roomId), [room.roomId]);
   // The decorations are vanilla three Groups, memoized for the tile's lifetime.
   const decor = useMemo(() => buildRoomDecor(room.roomId, TILE), [room.roomId]);
+
+  // Procedural floor + wall materials (fresh per tile; cached textures shared).
+  const floorMat = useMemo(
+    () =>
+      surf.floor === "stone"
+        ? materials.crackedStone({ tint: theme.floor })
+        : materials.agedHardwood({ tint: theme.floor }),
+    [room.roomId, theme.floor]
+  );
+  const wallMat = useMemo(
+    () =>
+      surf.wall === "wallpaper"
+        ? materials.peelingWallpaper({ tint: theme.wall })
+        : surf.wall === "stone"
+          ? materials.crackedStone({ tint: theme.wall })
+          : materials.stainedPlaster({ tint: theme.wall }),
+    [room.roomId, theme.wall]
+  );
+
+  // Track the highlight on the (mutable) floor material each render.
+  if (highlighted) {
+    floorMat.emissive.set("#5a8f5a");
+    floorMat.emissiveIntensity = 0.5;
+  } else {
+    floorMat.emissiveIntensity = 0;
+  }
 
   return (
     <group position={[wx, wy, wz]}>
@@ -30,6 +57,8 @@ export function RoomTile({
       <mesh
         position={[0, -0.15, 0]}
         receiveShadow
+        material={floorMat}
+        userData={{ kind: "room", key: room.key }}
         onClick={(e) => {
           e.stopPropagation();
           onClick();
@@ -43,13 +72,6 @@ export function RoomTile({
         }}
       >
         <boxGeometry args={[TILE, 0.3, TILE]} />
-        <meshStandardMaterial
-          color={highlighted ? "#3a4a3a" : theme.floor}
-          emissive={highlighted ? "#5a8f5a" : "#000000"}
-          emissiveIntensity={highlighted ? 0.5 : 0}
-          roughness={0.95}
-          metalness={0.05}
-        />
       </mesh>
 
       {/* walls on every edge that has no doorway */}
@@ -67,9 +89,8 @@ export function RoomTile({
             ? [TILE, WALL_H, 0.2]
             : [0.2, WALL_H, TILE];
         return (
-          <mesh key={d} position={pos} castShadow receiveShadow>
+          <mesh key={d} position={pos} castShadow receiveShadow material={wallMat}>
             <boxGeometry args={size} />
-            <meshStandardMaterial color={theme.wall} roughness={1} />
           </mesh>
         );
       })}

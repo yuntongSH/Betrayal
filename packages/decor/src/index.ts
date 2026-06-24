@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+export * from "./materials";
+
 /**
  * @dread-hollow/decor
  *
