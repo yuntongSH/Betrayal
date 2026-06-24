@@ -24,6 +24,8 @@ export type Action =
       targetMonsterId?: string;
       targetPlayerId?: PlayerId;
     }
+  /** Spend a one-shot consumable from your inventory. */
+  | { type: "use-item"; playerId: PlayerId; cardId: CardId }
   /** Pick up an item lying on the floor of your current room. */
   | { type: "pickup-item"; playerId: PlayerId; cardId: CardId }
   /** Hand one of your items to another explorer sharing your room. */

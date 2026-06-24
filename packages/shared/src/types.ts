@@ -122,6 +122,8 @@ export type CardEffect =
     }
   | { kind: "draw"; deck: CardType; count: number }
   | { kind: "item-passive"; trait?: Trait; bonus?: number; tag?: string }
+  /** A one-shot item the holder actively spends; `use` is applied then discarded. */
+  | { kind: "consumable"; use: CardEffect }
   | { kind: "omen" };
 
 export interface CardDef {

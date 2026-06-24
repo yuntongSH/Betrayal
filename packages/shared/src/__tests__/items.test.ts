@@ -91,6 +91,58 @@ describe("trading items with an ally in the room", () => {
   });
 });
 
+describe("effective Speed extends movement", () => {
+  it("a Speed item grants extra movement at the start of a turn", () => {
+    const s = startedGame();
+    const a = getPlayer(s, "a")!;
+    s.activePlayerId = "a";
+    s.phase = "explore";
+    a.inventory = [];
+    beginTurn(s);
+    const base = s.movementLeft;
+    a.inventory = ["it-adrenaline"]; // +1 Speed while carried
+    beginTurn(s);
+    expect(s.movementLeft).toBe(base + 1);
+  });
+});
+
+describe("consumable items", () => {
+  it("lists only consumables as usable", () => {
+    const s = startedGame();
+    const a = getPlayer(s, "a")!;
+    a.inventory = ["it-stim", "it-revolver", "it-key"];
+    s.activePlayerId = "a";
+    s.phase = "explore";
+    beginTurn(s);
+    expect(legalMoves(s, "a").usableItems).toEqual(["it-stim"]);
+  });
+
+  it("spends a consumable and applies its effect", () => {
+    const s = startedGame();
+    const a = getPlayer(s, "a")!;
+    a.traitIndex.might = 1; // leave room for the heal to register
+    a.inventory = ["it-stim"]; // Use: +2 Might
+    s.activePlayerId = "a";
+    s.phase = "explore";
+    beginTurn(s);
+    reduce(s, { type: "use-item", playerId: "a", cardId: "it-stim" });
+    expect(a.traitIndex.might).toBe(3);
+    expect(a.inventory).not.toContain("it-stim");
+    expect(s.discards.item).toContain("it-stim");
+  });
+
+  it("refuses to 'use' a passive item", () => {
+    const s = startedGame();
+    const a = getPlayer(s, "a")!;
+    a.inventory = ["it-revolver"];
+    s.activePlayerId = "a";
+    s.phase = "explore";
+    beginTurn(s);
+    reduce(s, { type: "use-item", playerId: "a", cardId: "it-revolver" });
+    expect(a.inventory).toContain("it-revolver");
+  });
+});
+
 describe("one attack per turn", () => {
   function hauntWithMonsterOn(s: GameState, holderId: string): string {
     const holder = getPlayer(s, holderId)!;

@@ -14,6 +14,7 @@ function tagIcon(cardId: string): string {
   const card = getCard(cardId);
   if (!card) return "•";
   if (card.type === "omen") return "☠";
+  if (card.effect.kind === "consumable") return "🧪";
   if (card.effect.kind === "item-passive") {
     switch (card.effect.tag) {
       case "weapon":
@@ -39,7 +40,9 @@ export function TraitPanel() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const giveItem = useStore((s) => s.giveItem);
+  const useItem = useStore((s) => s.useItem);
   const me = game.players.find((p) => p.id === myId);
+  const myTurn = !!myId && game.activePlayerId === myId;
 
   // Allies sharing my room I can hand items to (only on my turn).
   const partners = useMemo(() => {
@@ -117,6 +120,11 @@ export function TraitPanel() {
               <li key={id}>
                 <span className="inv-icon">{tagIcon(id)}</span>
                 {getCard(id)?.name ?? id}
+                {myTurn && me.alive && getCard(id)?.effect.kind === "consumable" && (
+                  <button className="give-btn use" title="Use now" onClick={() => useItem(id)}>
+                    use
+                  </button>
+                )}
                 {partners.length > 0 && (
                   <span className="inv-give">
                     {partners.map((pt) => (

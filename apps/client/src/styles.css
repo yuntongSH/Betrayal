@@ -703,6 +703,8 @@ kbd {
   cursor: pointer;
 }
 .give-btn:hover { background: rgba(70, 90, 130, 0.7); }
+.give-btn.use { border-color: rgba(120, 200, 150, 0.4); color: #bfe8cd; }
+.give-btn.use:hover { background: rgba(60, 120, 90, 0.6); }
 .tp-goal {
   border-radius: 8px;
   padding: 0.5rem;

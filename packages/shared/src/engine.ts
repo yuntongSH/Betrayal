@@ -241,6 +241,7 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
       for (let i = 0; i < effect.count; i++) drawAndResolve(s, p, effect.deck);
       break;
     case "item-passive":
+    case "consumable":
     case "omen":
       break;
   }
@@ -262,6 +263,21 @@ function performHauntRoll(s: GameState, p: PlayerState, omenId?: CardId): void {
 // ---------------------------------------------------------------------------
 // Items on the floor — pickup & trade
 // ---------------------------------------------------------------------------
+
+function handleUseItem(s: GameState, playerId: PlayerId, cardId: CardId): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId)) return;
+  const idx = p.inventory.indexOf(cardId);
+  if (idx < 0) return;
+  const card = getCard(cardId);
+  if (!card || card.effect.kind !== "consumable") return;
+  // Spend it before applying, so an effect that draws can't re-trigger this one.
+  p.inventory.splice(idx, 1);
+  s.discards.item.push(cardId);
+  addLog(s, `${p.name} uses the ${card.name}.`, "card");
+  applyEffect(s, p, card.effect.use);
+  checkWinNow(s);
+}
 
 function handlePickup(s: GameState, playerId: PlayerId, cardId: CardId): void {
   const p = getPlayer(s, playerId);
@@ -375,6 +391,9 @@ export function reduce(s: GameState, action: Action): GameState {
         });
       }
       break;
+    case "use-item":
+      handleUseItem(s, action.playerId, action.cardId);
+      break;
     case "pickup-item":
       handlePickup(s, action.playerId, action.cardId);
       break;
@@ -403,6 +422,8 @@ export interface LegalMoves {
   pickupItems: CardId[];
   /** Living explorers sharing this room that the player may hand items to. */
   tradePartners: PlayerId[];
+  /** One-shot consumables in the player's inventory they can spend now. */
+  usableItems: CardId[];
   canEndTurn: boolean;
 }
 
@@ -414,6 +435,7 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     attackPlayers: [],
     pickupItems: [],
     tradePartners: [],
+    usableItems: [],
     canEndTurn: false,
   };
   const p = getPlayer(s, playerId);
@@ -443,6 +465,9 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
   const tradePartners = s.players
     .filter((o) => o.id !== p.id && o.alive && o.position === p.position)
     .map((o) => o.id);
+  const usableItems = p.inventory.filter(
+    (id) => getCard(id)?.effect.kind === "consumable",
+  );
 
   return {
     explored,
@@ -451,6 +476,7 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     attackPlayers,
     pickupItems,
     tradePartners,
+    usableItems,
     canEndTurn: true,
   };
 }

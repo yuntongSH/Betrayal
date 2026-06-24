@@ -90,4 +90,26 @@ export const ITEMS: CardDef[] = [
     text: "Long, strong, and only a little frayed. Good for climbing. Or worse.",
     effect: { kind: "item-passive", tag: "tool" },
   },
+  // --- Consumables: one-shot, actively spent on your turn ---
+  {
+    id: "it-tonic",
+    type: "item",
+    name: "Calming Tonic",
+    text: "Bitter and blue. Drink it and the whispers recede — for a while. Use: +2 Sanity.",
+    effect: { kind: "consumable", use: { kind: "heal", trait: "sanity", delta: 2 } },
+  },
+  {
+    id: "it-stim",
+    type: "item",
+    name: "Battlefield Stim",
+    text: "A soldier's last resort in a cracked glass vial. Use: +2 Might.",
+    effect: { kind: "consumable", use: { kind: "heal", trait: "might", delta: 2 } },
+  },
+  {
+    id: "it-elixir",
+    type: "item",
+    name: "Quicksilver Elixir",
+    text: "It tastes of lightning and bad ideas. Use: +2 Speed.",
+    effect: { kind: "consumable", use: { kind: "heal", trait: "speed", delta: 2 } },
+  },
 ];
