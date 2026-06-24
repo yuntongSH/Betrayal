@@ -52,7 +52,7 @@ function selectHauntId(s: GameState, omenId?: string, roomId?: string): string {
   if (omenId != null || roomId != null) {
     const oRank = omenId != null ? OMEN_RANK[omenId] ?? 0 : 0;
     const rRank = roomId != null ? ROOM_RANK[roomId] ?? 0 : 0;
-    const idx = (oRank * 7 + rRank) % HAUNTS.length;
+    const idx = (oRank * 3 + rRank) % HAUNTS.length;
     return HAUNTS[idx]!.id;
   }
   const rng = Rng.fromState(s.rngState);
@@ -109,7 +109,11 @@ export function triggerHaunt(
     .join(", ");
   addLog(s, `THE HAUNT BEGINS — ${def.name}`, "haunt");
   addLog(s, def.reveal.replace("{traitor}", traitorNames), "haunt");
-  addLog(s, `Traitor: ${traitorNames}.`, "haunt");
+  if (traitorIds.length > 0) {
+    addLog(s, `Traitor: ${traitorNames}.`, "haunt");
+  } else {
+    addLog(s, "No traitor walks among you — the house itself is the enemy.", "haunt");
+  }
   addLog(s, `Heroes: ${def.heroGoal}`, "haunt");
   checkWinNow(s);
 }

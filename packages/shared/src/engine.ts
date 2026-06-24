@@ -303,9 +303,14 @@ function handleEndTurn(s: GameState, playerId: PlayerId): void {
   if (!isActiveTurn(s, playerId)) return;
   const p = getPlayer(s, playerId);
 
-  if (s.phase === "haunt" && p?.side === "traitor") {
-    monsterPhase(s);
-    onTraitorTurnEnd(s);
+  // The monsters act on the traitor's turn — or, in a no-traitor "everyone vs.
+  // the house" haunt, after every explorer's turn, since the house never rests.
+  if (s.phase === "haunt") {
+    const noTraitor = !!s.haunt && s.haunt.traitorIds.length === 0;
+    if (p?.side === "traitor" || noTraitor) {
+      monsterPhase(s);
+      onTraitorTurnEnd(s);
+    }
   }
   if (s.phase === "ended") return;
 

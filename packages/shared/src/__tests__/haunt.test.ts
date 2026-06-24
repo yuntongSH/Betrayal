@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
-import { createGame } from "../setup";
+import { beginTurn, createGame, ENTRANCE_KEY } from "../setup";
 import { triggerHaunt, checkWinNow } from "../haunt";
 import { HAUNTS_BY_ID } from "../content";
 import type { HauntContext } from "../content";
 import { Rng } from "../rng";
+import { key } from "../grid";
 import type { GameState } from "../types";
 import { getPlayer, modTrait } from "../state";
 
@@ -161,5 +162,65 @@ describe("additional scenarios", () => {
 
     s.haunt!.monsters.forEach((m) => (m.hp = 0));
     expect(def.checkWin(s)).toBe("heroes");
+  });
+});
+
+describe("The Tide Comes In — a no-traitor haunt", () => {
+  function mountTide(s: GameState) {
+    const def = HAUNTS_BY_ID["the-tide"]!;
+    s.haunt = {
+      id: def.id,
+      name: def.name,
+      traitorIds: [],
+      startedById: "a",
+      startRoomKey: null,
+      monsters: [],
+      heroGoal: def.heroGoal,
+      traitorGoal: def.traitorGoal,
+      vars: {},
+    };
+    s.players.forEach((p) => (p.side = "heroes"));
+    s.phase = "haunt";
+    return def;
+  }
+
+  it("names no traitor — every explorer is a hero", () => {
+    const s = startedGame();
+    expect(HAUNTS_BY_ID["the-tide"]!.chooseTraitors!(s, "a")).toEqual([]);
+  });
+
+  it("heroes win by destroying the drowned; the house wins if all drown", () => {
+    const s = startedGame();
+    const def = mountTide(s);
+    def.setup(s, [], {
+      rng: new Rng(1),
+      roomKeys: () => Object.keys(s.house),
+      spawnKey: () => Object.keys(s.house)[0] ?? null,
+    });
+    expect(s.haunt!.monsters.length).toBeGreaterThan(0);
+    expect(def.checkWin(s)).toBeNull();
+
+    s.haunt!.monsters.forEach((m) => (m.hp = 0));
+    expect(def.checkWin(s)).toBe("heroes");
+
+    s.haunt!.monsters.forEach((m) => (m.hp = 5));
+    s.players.forEach((p) => (p.alive = false));
+    expect(def.checkWin(s)).toBe("traitor"); // the house prevails
+  });
+
+  it("wakes the monsters after a hero's turn even with no traitor", () => {
+    const s = startedGame();
+    mountTide(s);
+    const foyer = key("ground", 0, 1); // adjacent to the Entrance Hall
+    s.haunt!.monsters = [
+      { id: "m1", name: "Drowned Hand", position: foyer, might: 2, hp: 3, attackType: "physical" },
+    ];
+    s.activePlayerId = "a";
+    beginTurn(s);
+
+    reduce(s, { type: "end-turn", playerId: "a" });
+    // With no traitor, ending a hero's turn still advances the house: the
+    // monster steps from the foyer into the Entrance Hall toward the party.
+    expect(s.haunt!.monsters[0]!.position).toBe(ENTRANCE_KEY);
   });
 });

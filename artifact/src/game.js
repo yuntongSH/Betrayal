@@ -541,17 +541,26 @@ function updateHUD(legal) {
   const ov = $("overlay");
   if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
     const amT = me?.side === "traitor";
+    const noTraitor = state.haunt.traitorIds.length === 0;
     const tnames = state.haunt.traitorIds.map((id) => state.players.find((p) => p.id === id)?.name ?? "someone").join(", ");
+    const whoLine = noTraitor
+      ? '<strong class="tt">The house itself rises against you all.</strong>'
+      : amT
+        ? '<strong class="tt">You are the traitor.</strong>'
+        : `The traitor is <strong class="tt">${tnames}</strong>.`;
+    const goalsBlock = noTraitor
+      ? `<div class="hgoals"><div class="ga"><span class="muted small">Everyone</span>${state.haunt.heroGoal}</div></div>`
+      : `<div class="hgoals"><div class="${amT ? "ga" : ""}"><span class="muted small">Traitor</span>${state.haunt.traitorGoal}</div>` +
+        `<div class="${!amT ? "ga" : ""}"><span class="muted small">Heroes</span>${state.haunt.heroGoal}</div></div>`;
     ov.style.display = "grid";
     ov.innerHTML =
       `<div class="haunt-card"><div class="kick">The house turns…</div><h2>${state.haunt.name}</h2>` +
-      `<p>${amT ? '<strong class="tt">You are the traitor.</strong>' : `The traitor is <strong class="tt">${tnames}</strong>.`}</p>` +
-      `<div class="hgoals"><div class="${amT ? "ga" : ""}"><span class="muted small">Traitor</span>${state.haunt.traitorGoal}</div>` +
-      `<div class="${!amT ? "ga" : ""}"><span class="muted small">Heroes</span>${state.haunt.heroGoal}</div></div>` +
+      `<p>${whoLine}</p>` +
+      goalsBlock +
       `<button class="btn primary" onclick="window.__dismiss()">${amT ? "Begin the betrayal" : "Survive"}</button></div>`;
   } else if (ended) {
     ov.style.display = "grid";
-    ov.innerHTML = `<div class="result"><div class="rtitle">${state.winner === "heroes" ? "The Heroes Survive" : "The Traitor Triumphs"}</div>` +
+    ov.innerHTML = `<div class="result"><div class="rtitle">${state.winner === "heroes" ? "The Heroes Survive" : (state.haunt && state.haunt.traitorIds.length === 0 ? "The House Prevails" : "The Traitor Triumphs")}</div>` +
       `<div class="muted">${state.haunt?.name ?? ""}</div><button class="btn" onclick="location.reload()">Play again</button></div>`;
   } else {
     ov.style.display = "none";
