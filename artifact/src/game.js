@@ -252,7 +252,7 @@ function buildRoomGroup(room) {
 
   const el = document.createElement("div");
   el.className = "lbl3d";
-  el.textContent = def?.name ?? "Room";
+  el.textContent = (def?.name ?? "Room") + (def?.aura ? (def.aura > 0 ? " ✦" : " ☓") : "");
   const lbl = new CSS2DObject(el);
   lbl.position.set(0, WALL_H + 0.4, 0);
   g.add(lbl);

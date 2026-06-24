@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
 import { connections } from "../house";
-import { createGame } from "../setup";
+import { createGame, ENTRANCE_KEY } from "../setup";
+import { getPlayer, roomAura } from "../state";
 import { key } from "../grid";
 import type { GameState, PlacedRoom } from "../types";
 
@@ -55,5 +56,23 @@ describe("Mystic Elevator vertical movement", () => {
     place(s, "mystic-elevator", elevatorKey);
     const conns = connections(s, elevatorKey);
     expect(conns.length).toBe(new Set(conns).size);
+  });
+});
+
+describe("in-room dice auras", () => {
+  it("reports the standing modifier of the occupied room", () => {
+    const s = startedGame();
+    const p = getPlayer(s, "a")!;
+    place(s, "chapel", key("ground", 2, 2)); // consecrated: +1
+    place(s, "crypt", key("basement", 2, 2)); // dread: -1
+
+    p.position = key("ground", 2, 2);
+    expect(roomAura(s, p)).toBe(1);
+    p.position = key("basement", 2, 2);
+    expect(roomAura(s, p)).toBe(-1);
+    p.position = ENTRANCE_KEY; // no aura
+    expect(roomAura(s, p)).toBe(0);
+    p.position = null;
+    expect(roomAura(s, p)).toBe(0);
   });
 });

@@ -12,7 +12,7 @@ import type {
   Trait,
 } from "./types";
 import { CHARACTERS_BY_ID } from "./content/characters";
-import { getCard } from "./content";
+import { getCard, ROOMS_BY_ID } from "./content";
 
 export function getPlayer(s: GameState, id: PlayerId | null): PlayerState | undefined {
   if (!id) return undefined;
@@ -74,6 +74,13 @@ export function hasTag(p: PlayerState, tag: string): boolean {
 /** Effective trait value used for rolls: base track value + item bonuses. */
 export function effectiveTrait(p: PlayerState, trait: Trait): number {
   return Math.max(0, baseTrait(p, trait) + itemTraitBonus(p, trait));
+}
+
+/** Standing dice modifier from the room a player currently occupies (blessed/cursed). */
+export function roomAura(s: GameState, p: PlayerState): number {
+  if (!p.position) return 0;
+  const room = s.house[p.position];
+  return room ? ROOMS_BY_ID[room.roomId]?.aura ?? 0 : 0;
 }
 
 export function addLog(

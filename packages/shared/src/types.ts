@@ -87,6 +87,8 @@ export interface RoomDef {
   symbols: CardType[];
   special: RoomSpecial;
   flavor: string;
+  /** Standing dice modifier applied to an occupant's rolls (+ blessed / − cursed). */
+  aura?: number;
   /** Start tiles are pre-placed and never enter the draw deck. */
   start?: boolean;
 }

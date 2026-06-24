@@ -152,6 +152,7 @@ export const ROOMS: RoomDef[] = [
     doorways: ["north", "south"],
     symbols: ["omen"],
     special: "heal-sanity",
+    aura: 1,
     flavor: "A small altar. Whatever was worshipped here, it wasn't merciful.",
   },
   {
@@ -224,6 +225,7 @@ export const ROOMS: RoomDef[] = [
     doorways: ["north", "south"],
     symbols: ["omen"],
     special: "none",
+    aura: -1,
     flavor: "A single sarcophagus, lid slid just slightly ajar.",
   },
   {
@@ -260,6 +262,7 @@ export const ROOMS: RoomDef[] = [
     doorways: ["north", "east", "south", "west"],
     symbols: ["omen"],
     special: "draw-extra-omen",
+    aura: -1,
     flavor: "The figure on the floor is painted in something that isn't paint.",
   },
 ];
