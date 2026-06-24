@@ -34,14 +34,12 @@ export function HauntBanner() {
             <>The traitor is <strong className="traitor-text">{traitorNames}</strong>.</>
           )}
         </p>
+        {/* Each player sees only their own charge — the opposing side's
+            objective is secret (and the server never sends it to them). */}
         <div className="haunt-goals">
-          <div className={amTraitor ? "goal-active" : ""}>
-            <span className="muted small">Traitor</span>
-            {haunt.traitorGoal}
-          </div>
-          <div className={!amTraitor ? "goal-active" : ""}>
-            <span className="muted small">Heroes</span>
-            {haunt.heroGoal}
+          <div className="goal-active">
+            <span className="muted small">{amTraitor ? "Your charge" : "Your goal"}</span>
+            {amTraitor ? haunt.traitorGoal : haunt.heroGoal}
           </div>
         </div>
         <button className="btn primary" onClick={() => setDismissed(haunt.id)}>

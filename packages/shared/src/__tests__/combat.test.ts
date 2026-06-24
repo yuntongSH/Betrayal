@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
 import { monsterPhase, triggerHaunt } from "../haunt";
 import { beginTurn, createGame } from "../setup";
-import { getPlayer } from "../state";
+import { getPlayer, redactStateForPlayer } from "../state";
 import { HAUNTS_BY_ID, OMENS } from "../content";
 import type { GameState } from "../types";
 
@@ -95,5 +95,47 @@ describe("haunt selection by omen × room", () => {
     }
     // The mapping is a genuine function of the omen — not a constant.
     expect(ids.size).toBeGreaterThan(1);
+  });
+});
+
+describe("secret information (per-player redaction)", () => {
+  function hauntedGame(): GameState {
+    const s = startedGame(3);
+    s.phase = "haunt";
+    s.haunt = {
+      id: "crawling-dark",
+      name: "Test",
+      traitorIds: ["a"],
+      startedById: "a",
+      startRoomKey: null,
+      monsters: [],
+      heroGoal: "Survive the night.",
+      traitorGoal: "SECRET: open the seventh door.",
+      vars: {},
+    };
+    s.players.forEach((p) => (p.side = p.id === "a" ? "traitor" : "heroes"));
+    return s;
+  }
+
+  it("hides the traitor's objective from heroes and spectators", () => {
+    const s = hauntedGame();
+    expect(redactStateForPlayer(s, "b").haunt!.traitorGoal).not.toContain("SECRET");
+    expect(redactStateForPlayer(s, null).haunt!.traitorGoal).not.toContain("SECRET");
+    // The hero's own objective still comes through intact.
+    expect(redactStateForPlayer(s, "b").haunt!.heroGoal).toBe("Survive the night.");
+  });
+
+  it("shows the traitor their own objective", () => {
+    const s = hauntedGame();
+    expect(redactStateForPlayer(s, "a").haunt!.traitorGoal).toContain("SECRET");
+  });
+
+  it("never mutates the authoritative state and is a no-op before the haunt", () => {
+    const s = hauntedGame();
+    redactStateForPlayer(s, "b");
+    expect(s.haunt!.traitorGoal).toContain("SECRET"); // original untouched
+
+    const pre = startedGame(3);
+    expect(redactStateForPlayer(pre, "b")).toBe(pre); // nothing to hide pre-haunt
   });
 });

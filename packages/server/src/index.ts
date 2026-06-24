@@ -9,7 +9,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import { botStep, type Action } from "@dread-hollow/shared";
+import { botStep, redactStateForPlayer, type Action } from "@dread-hollow/shared";
 import { RoomManager, type GameRoom } from "./rooms.js";
 import { ClientMessageSchema, type ServerMessage } from "./protocol.js";
 
@@ -34,10 +34,15 @@ function send(ws: WebSocket, msg: ServerMessage): void {
 }
 
 function broadcast(room: GameRoom): void {
-  const payload: ServerMessage = { t: "state", state: room.state };
-  const data = JSON.stringify(payload);
-  for (const ws of room.sockets.values()) {
-    if (ws.readyState === ws.OPEN) ws.send(data);
+  // Each client gets only the slice of state it is allowed to see, so secret
+  // information (the traitor's objective) never crosses the wire to others.
+  for (const [playerId, ws] of room.sockets) {
+    if (ws.readyState !== ws.OPEN) continue;
+    const payload: ServerMessage = {
+      t: "state",
+      state: redactStateForPlayer(room.state, playerId),
+    };
+    ws.send(JSON.stringify(payload));
   }
   scheduleBots(room);
 }
@@ -96,7 +101,12 @@ function attachToRoom(
   const join: Action = { type: "join", playerId, name };
   room.apply(join);
 
-  send(ws, { t: "joined", code: room.code, playerId, state: room.state });
+  send(ws, {
+    t: "joined",
+    code: room.code,
+    playerId,
+    state: redactStateForPlayer(room.state, playerId),
+  });
   broadcast(room);
 }
 
