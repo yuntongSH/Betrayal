@@ -25,6 +25,7 @@ const ActionSchema = z.discriminatedUnion("type", [
     targetMonsterId: z.string().optional(),
     targetPlayerId: z.string().optional(),
   }),
+  z.object({ type: z.literal("use-item"), playerId: z.string(), cardId: z.string() }),
   z.object({ type: z.literal("pickup-item"), playerId: z.string(), cardId: z.string() }),
   z.object({
     type: z.literal("give-item"),

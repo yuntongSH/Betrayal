@@ -36,6 +36,7 @@ interface Store {
   attackPlayer: (targetPlayerId: string) => void;
   pickupItem: (cardId: string) => void;
   giveItem: (toPlayerId: string, cardId: string) => void;
+  useItem: (cardId: string) => void;
   endTurn: () => void;
 }
 
@@ -170,6 +171,7 @@ export const useStore = create<Store>((set, get) => {
     pickupItem: (cardId) => act((playerId) => ({ type: "pickup-item", playerId, cardId })),
     giveItem: (toPlayerId, cardId) =>
       act((playerId) => ({ type: "give-item", playerId, toPlayerId, cardId })),
+    useItem: (cardId) => act((playerId) => ({ type: "use-item", playerId, cardId })),
     endTurn: () => act((playerId) => ({ type: "end-turn", playerId })),
   };
 });

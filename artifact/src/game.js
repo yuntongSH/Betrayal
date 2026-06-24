@@ -460,6 +460,7 @@ function tagIcon(cardId) {
   const c = DH.getCard(cardId);
   if (!c) return "•";
   if (c.type === "omen") return "☠";
+  if (c.effect.kind === "consumable") return "🧪";
   if (c.effect.kind === "item-passive") {
     return { weapon: "⚔", armor: "🛡", key: "🗝", light: "🔦", holy: "✝", occult: "👁" }[c.effect.tag] ?? "•";
   }
@@ -516,7 +517,10 @@ function updateHUD(legal) {
           `<div class="tp-track">` + tr.values.map((v, i) => `<span class="pip ${i === 0 ? "skull" : ""} ${i === idx ? "cur" : ""}" style="${i === idx ? `background:${TRAIT_COLOR[t]}` : ""}">${i === 0 ? "☠" : v}</span>`).join("") + `</div></div>`;
       }).join("") + `</div>` +
       `<div class="tp-inv"><div class="muted small">Carrying</div>` +
-      (me.inventory.length ? `<ul>${me.inventory.map((id) => `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}</li>`).join("")}</ul>` : `<div class="muted small">nothing</div>`) + `</div>` +
+      (me.inventory.length ? `<ul>${me.inventory.map((id) => {
+        const usable = active && active.id === me.id && me.alive && DH.getCard(id)?.effect.kind === "consumable";
+        return `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}${usable ? `<button class="ibtn" onclick="window.__act({type:'use-item',playerId:'${me.id}',cardId:'${id}'})">use</button>` : ""}</li>`;
+      }).join("")}</ul>` : `<div class="muted small">nothing</div>`) + `</div>` +
       (goal ? `<div class="tp-goal ${me.side}"><div class="muted small">Goal</div>${goal}</div>` : "") +
       `</div>`;
   } else {

@@ -10,7 +10,7 @@ import { Rng } from "./rng";
 import { buildDecks } from "./decks";
 import { CHARACTERS, CHARACTERS_BY_ID, START_ROOMS } from "./content";
 import { key } from "./grid";
-import { addLog, baseTrait, getPlayer } from "./state";
+import { addLog, effectiveTrait, getPlayer } from "./state";
 
 /** Cross-floor stair connections from the central hub (the Grand Staircase). */
 export const STAIR_LINKS: ReadonlyArray<readonly [string, string]> = [
@@ -135,12 +135,12 @@ export function chooseCharacter(
   }
 }
 
-/** Begin the active player's turn: refresh movement from their Speed and the
- *  single attack the genre grants each turn. */
+/** Begin the active player's turn: refresh movement from their *effective*
+ *  Speed (so Speed-boosting items extend it) and the single attack each turn. */
 export function beginTurn(s: GameState): void {
   const active = getPlayer(s, s.activePlayerId);
   if (!active) return;
-  s.movementLeft = Math.max(1, baseTrait(active, "speed"));
+  s.movementLeft = Math.max(1, effectiveTrait(active, "speed"));
   s.attacksLeft = 1;
 }
 
