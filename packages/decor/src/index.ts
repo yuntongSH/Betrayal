@@ -1374,28 +1374,108 @@ export function buildRoomDecor(roomId: string, tile = 4): THREE.Group {
 // Character figures
 // ---------------------------------------------------------------------------
 
+/** Tagged limb references the shared animator reads off `g.userData.parts`. */
+interface FigureParts {
+  head?: THREE.Object3D;
+  torso?: THREE.Object3D;
+  leftArm?: THREE.Object3D;
+  rightArm?: THREE.Object3D;
+  /** Gnashing Maw's hinged lower jaw. */
+  jaw?: THREE.Object3D;
+}
+
+/** Deterministic 0..1 PRNG seeded from a string (shared by figure builders). */
+function seededRand(s: string): () => number {
+  let seed = 0;
+  for (let i = 0; i < s.length; i++) seed = (seed * 31 + s.charCodeAt(i)) >>> 0;
+  return () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+}
+
+/** A small deterministic per-figure phase (0..2π) derived from a string. */
+function phaseFromString(s: string): number {
+  const r = seededRand(s);
+  return r() * Math.PI * 2;
+}
+
 /**
  * A little explorer figure tinted by `colorHex` (head + torso), with a head,
  * torso, two arms, two legs, and a thin glowing base disc. Origin at the feet
  * (y = 0 at the bottom); roughly 1.4 units tall.
+ *
+ * Pass `opts.archetype` (a character id: "vance" | "crow" | "penny" | "tobias"
+ * | "odette" | "thorne") to render a distinct silhouette + signature prop while
+ * still reading the player's identity colour. Unknown/absent → generic explorer.
+ *
+ * The returned group is tagged for {@link animateFigure}:
+ *   g.userData.figKind = "explorer"
+ *   g.userData.parts   = { head, torso, leftArm, rightArm }
+ *   g.userData.phase   = small deterministic number
  */
-export function buildExplorerFigure(colorHex: string): THREE.Group {
-  const g = new THREE.Group();
-  g.name = "figure:explorer";
+export function buildExplorerFigure(
+  colorHex: string,
+  opts?: { archetype?: string },
+): THREE.Group {
+  const archetype = opts?.archetype;
+  switch (archetype) {
+    case "vance":
+      return buildVance(colorHex);
+    case "crow":
+      return buildCrow(colorHex);
+    case "penny":
+      return buildPenny(colorHex);
+    case "tobias":
+      return buildTobias(colorHex);
+    case "odette":
+      return buildOdette(colorHex);
+    case "thorne":
+      return buildThorne(colorHex);
+    default:
+      return buildGenericExplorer(colorHex);
+  }
+}
 
+/** Shared explorer palette + glowing identity base disc. */
+function explorerKit(colorHex: string, g: THREE.Group) {
   const tint = new THREE.Color(colorHex);
   const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.6, metalness: 0.05 });
   const limbMat = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.7), roughness: 0.7, metalness: 0.05 });
   const skin = new THREE.MeshStandardMaterial({ color: tint.clone().lerp(new THREE.Color(0xe8c9a0), 0.45), roughness: 0.6 });
+  const darkSkin = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xe8c9a0).clone().multiplyScalar(0.95), roughness: 0.65 });
+  const cloth = (mix: number, dark = 0.0) =>
+    new THREE.MeshStandardMaterial({
+      color: tint.clone().lerp(new THREE.Color(0xffffff), mix).multiplyScalar(1 - dark),
+      roughness: 0.7,
+      metalness: 0.04,
+    });
+  const metal = new THREE.MeshStandardMaterial({ color: 0xcdd2d6, roughness: 0.25, metalness: 0.85, emissive: 0x9fb0bf, emissiveIntensity: 0.12 });
 
-  // glowing base disc
-  const baseGlow = new THREE.Color(colorHex).lerp(new THREE.Color(0xffffff), 0.3);
+  // glowing identity base disc
+  const baseGlow = tint.clone().lerp(new THREE.Color(0xffffff), 0.3);
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(0.32, 0.34, 0.04, 24),
-    new THREE.MeshStandardMaterial({ color: baseGlow, emissive: baseGlow, emissiveIntensity: 0.9, roughness: 0.4 })
+    new THREE.MeshStandardMaterial({ color: baseGlow, emissive: baseGlow, emissiveIntensity: 0.9, roughness: 0.4 }),
   );
   base.position.y = 0.02;
   g.add(base);
+
+  return { tint, bodyMat, limbMat, skin, darkSkin, cloth, metal };
+}
+
+/** Tag a figure for the shared animator. */
+function tagFigure(g: THREE.Group, figKind: string, parts: FigureParts, seedStr: string) {
+  g.userData.figKind = figKind;
+  g.userData.parts = parts;
+  g.userData.phase = phaseFromString(seedStr);
+}
+
+/** The original generic explorer (used when no/unknown archetype). */
+function buildGenericExplorer(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer";
+  const { bodyMat, limbMat, skin } = explorerKit(colorHex, g);
 
   // legs
   const legH = 0.5;
@@ -1420,16 +1500,21 @@ export function buildExplorerFigure(colorHex: string): THREE.Group {
   shoulders.position.y = torsoY + torsoH / 2;
   g.add(shoulders);
 
-  // arms
+  // arms (pivot at the shoulder so the animator can swing them)
   const armH = 0.4;
+  const arms: THREE.Group[] = [];
   for (const sx of [-1, 1]) {
+    const armPivot = new THREE.Group();
+    armPivot.position.set(sx * 0.26, torsoY + 0.05 + armH / 2, 0);
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, armH, 10), bodyMat);
-    arm.position.set(sx * 0.26, torsoY + 0.05, 0);
+    arm.position.y = -armH / 2;
     arm.rotation.z = sx * 0.18;
-    g.add(arm);
+    armPivot.add(arm);
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), skin);
-    hand.position.set(sx * 0.31, torsoY - armH / 2 + 0.02, 0);
-    g.add(hand);
+    hand.position.set(0.05 * sx, -armH + 0.02, 0);
+    armPivot.add(hand);
+    g.add(armPivot);
+    arms.push(armPivot);
   }
 
   // neck + head
@@ -1448,29 +1533,535 @@ export function buildExplorerFigure(colorHex: string): THREE.Group {
   hatTop.position.y = headY + 0.18;
   g.add(hatTop);
 
+  tagFigure(g, "explorer", { head, torso, leftArm: arms[0], rightArm: arms[1] }, "explorer:" + colorHex);
+  return g;
+}
+
+/** Build a shoulder-pivoted arm so the animator can swing it. Returns the pivot. */
+function makeArm(
+  sx: number,
+  shoulderX: number,
+  shoulderY: number,
+  armH: number,
+  mat: THREE.Material,
+  handMat: THREE.Material,
+  restZ = 0.18,
+): THREE.Group {
+  const pivot = new THREE.Group();
+  pivot.position.set(sx * shoulderX, shoulderY, 0);
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, armH, 10), mat);
+  arm.position.y = -armH / 2;
+  arm.rotation.z = sx * restZ;
+  pivot.add(arm);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), handMat);
+  hand.position.set(sx * 0.06, -armH + 0.02, 0);
+  pivot.add(hand);
+  return pivot;
+}
+
+// --- vance — the disgraced surgeon ----------------------------------------
+function buildVance(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:vance";
+  const { bodyMat, limbMat, skin, metal, cloth } = explorerKit(colorHex, g);
+  const coatMat = cloth(0.25); // pale surgical coat tinted by identity colour
+
+  // slim legs
+  const legH = 0.5;
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, legH, 10), limbMat);
+    leg.position.set(sx * 0.09, 0.05 + legH / 2, 0);
+    g.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.2), limbMat);
+    foot.position.set(sx * 0.09, 0.08, 0.04);
+    g.add(foot);
+  }
+
+  // slim torso
+  const torsoH = 0.5;
+  const torsoY = 0.05 + legH + torsoH / 2;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, torsoH, 12), bodyMat);
+  torso.position.y = torsoY;
+  g.add(torso);
+  // long surgical apron/coat skirting to the knee
+  const apron = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.21, 0.42, 14, 1, true), coatMat);
+  apron.position.y = torsoY - 0.18;
+  g.add(apron);
+  // open coat front panel
+  const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.02, torsoH, 0.18), coatMat);
+  lapel.position.set(0, torsoY, 0.15);
+  g.add(lapel);
+
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), coatMat);
+  shoulders.scale.set(1, 0.5, 0.8);
+  shoulders.position.y = torsoY + torsoH / 2;
+  g.add(shoulders);
+
+  const armH = 0.42;
+  const leftArm = makeArm(-1, 0.21, torsoY + 0.1, armH, coatMat, skin, 0.16);
+  const rightArm = makeArm(1, 0.21, torsoY + 0.1, armH, coatMat, skin, 0.16);
+  g.add(leftArm, rightArm);
+
+  // glinting bonesaw in the right hand
+  const sawHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.16, 8), limbMat);
+  sawHandle.position.set(0, -armH + 0.02, 0.0);
+  sawHandle.rotation.x = Math.PI / 2;
+  const sawBlade = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.05, 0.22), metal);
+  sawBlade.position.set(0, -armH + 0.02, 0.18);
+  rightArm.add(sawHandle, sawBlade);
+
+  // neck + head with face mask
+  const headY = torsoY + torsoH / 2 + 0.2;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 8), skin);
+  neck.position.y = headY - 0.15;
+  g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 14), skin);
+  head.position.y = headY;
+  g.add(head);
+  // surgical face mask over the lower face
+  const mask = new THREE.Mesh(new THREE.SphereGeometry(0.155, 14, 10, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.4), cloth(0.55));
+  mask.position.set(0, headY - 0.02, 0.0);
+  head.add(mask);
+  // surgical cap
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cloth(0.4));
+  cap.position.y = headY;
+  g.add(cap);
+
+  tagFigure(g, "explorer", { head, torso, leftArm, rightArm }, "vance:" + colorHex);
+  return g;
+}
+
+// --- crow — the carnival strongman ----------------------------------------
+function buildCrow(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:crow";
+  const { tint, bodyMat, limbMat } = explorerKit(colorHex, g);
+  const muscleSkin = new THREE.MeshStandardMaterial({ color: tint.clone().lerp(new THREE.Color(0xe8c9a0), 0.6).multiplyScalar(0.95), roughness: 0.55 });
+
+  // heavy legs (tallest/heaviest)
+  const legH = 0.58;
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, legH, 10), limbMat);
+    leg.position.set(sx * 0.15, 0.05 + legH / 2, 0);
+    g.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.26), limbMat);
+    foot.position.set(sx * 0.15, 0.1, 0.05);
+    g.add(foot);
+  }
+
+  // barrel-chested torso (scaled wider)
+  const torsoH = 0.52;
+  const torsoY = 0.05 + legH + torsoH / 2;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.22, torsoH, 14), bodyMat);
+  torso.scale.set(1.25, 1.0, 0.95);
+  torso.position.y = torsoY;
+  g.add(torso);
+  // broad shoulders
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), muscleSkin);
+  shoulders.scale.set(1.35, 0.55, 0.9);
+  shoulders.position.y = torsoY + torsoH / 2 - 0.02;
+  g.add(shoulders);
+  // singlet strap hint (tinted)
+  const strapL = new THREE.Mesh(new THREE.BoxGeometry(0.05, torsoH, 0.03), bodyMat);
+  strapL.position.set(-0.1, torsoY, 0.2);
+  const strapR = strapL.clone();
+  strapR.position.x = 0.1;
+  g.add(strapL, strapR);
+
+  // thick bare muscular arms
+  const armH = 0.46;
+  const arms: THREE.Group[] = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.34, torsoY + 0.14, 0);
+    const upper = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), muscleSkin);
+    upper.scale.set(1, 1.4, 1);
+    upper.position.y = -0.12;
+    pivot.add(upper);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, armH * 0.7, 10), muscleSkin);
+    forearm.position.y = -armH * 0.6;
+    pivot.add(forearm);
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), muscleSkin);
+    fist.position.y = -armH * 0.95;
+    pivot.add(fist);
+    pivot.rotation.z = sx * 0.28;
+    g.add(pivot);
+    arms.push(pivot);
+  }
+
+  // a small dumbbell in the right fist
+  const barMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.4, metalness: 0.7 });
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 8), barMat);
+  bar.rotation.z = Math.PI / 2;
+  bar.position.y = -armH * 0.95;
+  arms[1].add(bar);
+  for (const dx of [-0.11, 0.11]) {
+    const weight = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), barMat);
+    weight.position.set(dx, -armH * 0.95, 0);
+    arms[1].add(weight);
+  }
+
+  // thick neck + bald head
+  const headY = torsoY + torsoH / 2 + 0.22;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.1, 10), muscleSkin);
+  neck.position.y = headY - 0.16;
+  g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 14), muscleSkin);
+  head.scale.set(1, 1.05, 1);
+  head.position.y = headY;
+  g.add(head);
+  // handlebar moustache hint
+  const stache = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 6, 10, Math.PI), new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.8 }));
+  stache.rotation.x = Math.PI;
+  stache.position.set(0, headY - 0.05, 0.15);
+  g.add(stache);
+
+  tagFigure(g, "explorer", { head, torso, leftArm: arms[0], rightArm: arms[1] }, "crow:" + colorHex);
+  return g;
+}
+
+// --- penny — the runaway child --------------------------------------------
+function buildPenny(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:penny";
+  const inner = new THREE.Group(); // scaled-down body; base disc stays full size
+  const { bodyMat, limbMat, skin } = explorerKit(colorHex, g);
+
+  // small legs
+  const legH = 0.42;
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, legH, 8), limbMat);
+    leg.position.set(sx * 0.08, 0.0 + legH / 2, 0);
+    inner.add(leg);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.16), limbMat);
+    shoe.position.set(sx * 0.08, 0.03, 0.03);
+    inner.add(shoe);
+  }
+
+  // little dress-like torso
+  const torsoH = 0.34;
+  const torsoY = legH + torsoH / 2;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, torsoH, 12), bodyMat);
+  torso.position.y = torsoY;
+  inner.add(torso);
+
+  // small arms
+  const armH = 0.3;
+  const leftArm = makeArm(-1, 0.16, torsoY + 0.08, armH, bodyMat, skin, 0.22);
+  const rightArm = makeArm(1, 0.16, torsoY + 0.08, armH, bodyMat, skin, 0.22);
+  inner.add(leftArm, rightArm);
+
+  // proportionally LARGE head
+  const headY = torsoY + torsoH / 2 + 0.24;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 14), skin);
+  head.position.y = headY;
+  inner.add(head);
+  // two pigtails
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.85 });
+  for (const sx of [-1, 1]) {
+    const tieBase = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), hairMat);
+    tieBase.position.set(sx * 0.2, headY + 0.06, -0.02);
+    inner.add(tieBase);
+    const pig = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), hairMat);
+    pig.position.set(sx * 0.27, headY - 0.02, -0.04);
+    inner.add(pig);
+  }
+  // fringe cap
+  const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.225, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), hairMat);
+  fringe.position.y = headY;
+  inner.add(fringe);
+
+  // a little rag doll clutched in the left hand
+  const dollMat = new THREE.MeshStandardMaterial({ color: 0x9a7b5a, roughness: 0.9 });
+  const dollBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.08, 4, 8), dollMat);
+  dollBody.position.set(0, -armH + 0.02, 0.04);
+  const dollHead = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), dollMat);
+  dollHead.position.set(0, -armH + 0.1, 0.04);
+  leftArm.add(dollBody, dollHead);
+
+  inner.scale.setScalar(0.7);
+  g.add(inner);
+
+  tagFigure(g, "explorer", { head, torso, leftArm, rightArm }, "penny:" + colorHex);
+  return g;
+}
+
+// --- tobias — the doubting monk -------------------------------------------
+function buildTobias(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:tobias";
+  const { tint, skin, cloth } = explorerKit(colorHex, g);
+  const robeMat = cloth(0.1, 0.25); // darker tinted robe
+
+  // floor-length robe: a tapered cone from feet up to the shoulders (no legs)
+  const robeH = 1.1;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.34, robeH, 16), robeMat);
+  torso.position.y = 0.05 + robeH / 2;
+  g.add(torso);
+  // shoulders
+  const shoulderY = 0.05 + robeH;
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10), robeMat);
+  shoulders.scale.set(1, 0.6, 0.85);
+  shoulders.position.y = shoulderY - 0.02;
+  g.add(shoulders);
+  // rope belt
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.022, 8, 18), new THREE.MeshStandardMaterial({ color: 0xb59a5a, roughness: 0.8 }));
+  belt.rotation.x = Math.PI / 2;
+  belt.position.y = 0.05 + robeH * 0.5;
+  g.add(belt);
+  // dangling knot
+  const knot = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.015, 0.16, 6), new THREE.MeshStandardMaterial({ color: 0xb59a5a, roughness: 0.8 }));
+  knot.position.set(0.16, 0.05 + robeH * 0.4, 0.12);
+  g.add(knot);
+
+  // draped sleeves with hands clasped at the waist
+  const armH = 0.5;
+  const arms: THREE.Group[] = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.18, shoulderY - 0.06, 0);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, armH, 10), robeMat);
+    sleeve.position.set(-sx * 0.06, -armH / 2 + 0.04, 0.06);
+    sleeve.rotation.z = sx * -0.5;
+    pivot.add(sleeve);
+    g.add(pivot);
+    arms.push(pivot);
+  }
+  // clasped hands at the waist
+  const hands = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), skin);
+  hands.scale.set(1.3, 0.8, 1);
+  hands.position.set(0, 0.05 + robeH * 0.48, 0.18);
+  g.add(hands);
+
+  // hood + shrouded head
+  const headY = shoulderY + 0.16;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 14), new THREE.MeshStandardMaterial({ color: tint.clone().lerp(new THREE.Color(0x000000), 0.6), roughness: 0.9 }));
+  head.position.y = headY;
+  g.add(head);
+  // hood shroud (open cone over the head)
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.4, 16, 1, true), robeMat);
+  hood.position.y = headY + 0.08;
+  g.add(hood);
+  // hood collar
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 8, 16), robeMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = headY - 0.06;
+  g.add(collar);
+
+  tagFigure(g, "explorer", { head, torso, leftArm: arms[0], rightArm: arms[1] }, "tobias:" + colorHex);
+  return g;
+}
+
+// --- odette — the séance medium -------------------------------------------
+function buildOdette(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:odette";
+  const { tint, skin, cloth } = explorerKit(colorHex, g);
+  const dressMat = cloth(0.2);
+  const shawlMat = cloth(0.35);
+
+  // long flowing dress: a tapered skirt to the floor
+  const skirtH = 0.78;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.34, skirtH, 18), dressMat);
+  torso.position.y = 0.05 + skirtH / 2;
+  g.add(torso);
+  // bodice
+  const bodiceH = 0.34;
+  const bodiceY = 0.05 + skirtH + bodiceH / 2;
+  const bodice = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, bodiceH, 14), dressMat);
+  bodice.position.y = bodiceY;
+  g.add(bodice);
+  // draped shawl over the shoulders
+  const shawl = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), shawlMat);
+  shawl.scale.set(1.1, 0.9, 1.1);
+  shawl.position.y = bodiceY + bodiceH / 2 - 0.04;
+  g.add(shawl);
+
+  // faint glowing crystal pendant at the chest
+  const pendant = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.05, 0),
+    new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x8fd0ff, emissiveIntensity: 1.4, roughness: 0.2 }),
+  );
+  pendant.position.set(0, bodiceY - 0.02, 0.16);
+  g.add(pendant);
+
+  // draped sleeves
+  const armH = 0.5;
+  const arms: THREE.Group[] = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.18, bodiceY + 0.08, 0);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.1, armH, 10), shawlMat);
+    sleeve.position.y = -armH / 2;
+    sleeve.rotation.z = sx * 0.2;
+    pivot.add(sleeve);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), skin);
+    hand.position.set(sx * 0.06, -armH + 0.02, 0);
+    pivot.add(hand);
+    g.add(pivot);
+    arms.push(pivot);
+  }
+
+  // veiled head
+  const headY = bodiceY + bodiceH / 2 + 0.2;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 14), skin);
+  head.position.y = headY;
+  g.add(head);
+  // veil draping over the head and down the back
+  const veilMat = new THREE.MeshStandardMaterial({
+    color: tint.clone().lerp(new THREE.Color(0xffffff), 0.5),
+    roughness: 0.5,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+  });
+  const veil = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.46, 16, 1, true), veilMat);
+  veil.position.y = headY + 0.04;
+  g.add(veil);
+
+  tagFigure(g, "explorer", { head, torso: bodice, leftArm: arms[0], rightArm: arms[1] }, "odette:" + colorHex);
+  return g;
+}
+
+// --- thorne — the war photographer ----------------------------------------
+function buildThorne(colorHex: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "figure:explorer:thorne";
+  const { bodyMat, limbMat, skin, cloth } = explorerKit(colorHex, g);
+  const coatMat = cloth(0.0, 0.15);
+
+  // legs
+  const legH = 0.5;
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, legH, 10), limbMat);
+    leg.position.set(sx * 0.11, 0.05 + legH / 2, 0);
+    g.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.22), limbMat);
+    foot.position.set(sx * 0.11, 0.09, 0.05);
+    g.add(foot);
+  }
+
+  // torso under a long coat
+  const torsoH = 0.46;
+  const torsoY = 0.05 + legH + torsoH / 2;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, torsoH, 12), bodyMat);
+  torso.position.y = torsoY;
+  g.add(torso);
+  const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.26, 0.5, 14, 1, true), coatMat);
+  coat.position.y = torsoY - 0.12;
+  g.add(coat);
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), coatMat);
+  shoulders.scale.set(1, 0.5, 0.8);
+  shoulders.position.y = torsoY + torsoH / 2;
+  g.add(shoulders);
+
+  // satchel strap across the body + bag at the hip
+  const strapMat = new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.85 });
+  const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 8), strapMat);
+  strap.position.set(0, torsoY, 0.19);
+  strap.rotation.z = 0.7;
+  strap.rotation.x = 0.05;
+  g.add(strap);
+  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.1), strapMat);
+  bag.position.set(0.22, torsoY - 0.18, 0.12);
+  g.add(bag);
+
+  // arms (raised to hold the camera at the chest)
+  const armH = 0.4;
+  const leftArm = makeArm(-1, 0.26, torsoY + 0.06, armH, bodyMat, skin, -0.1);
+  const rightArm = makeArm(1, 0.26, torsoY + 0.06, armH, bodyMat, skin, -0.1);
+  leftArm.rotation.x = -0.7;
+  rightArm.rotation.x = -0.7;
+  g.add(leftArm, rightArm);
+
+  // boxy camera held at the chest
+  const camMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.4, metalness: 0.5 });
+  const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.1), camMat);
+  camBody.position.set(0, torsoY + 0.04, 0.22);
+  g.add(camBody);
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 14), camMat);
+  lens.rotation.x = Math.PI / 2;
+  lens.position.set(0, torsoY + 0.04, 0.3);
+  g.add(lens);
+  // flash glint (faint emissive)
+  const flash = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.05, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xfff4d0, emissive: 0xfff0c0, emissiveIntensity: 1.2, roughness: 0.3 }),
+  );
+  flash.position.set(0, torsoY + 0.12, 0.23);
+  g.add(flash);
+
+  // neck + head with flat cap
+  const headY = torsoY + torsoH / 2 + 0.2;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.08, 8), skin);
+  neck.position.y = headY - 0.15;
+  g.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 14), skin);
+  head.position.y = headY;
+  g.add(head);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), coatMat);
+  cap.position.y = headY + 0.01;
+  g.add(cap);
+  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.12), coatMat);
+  brim.position.set(0, headY + 0.05, 0.13);
+  g.add(brim);
+
+  tagFigure(g, "explorer", { head, torso, leftArm, rightArm }, "thorne:" + colorHex);
   return g;
 }
 
 /**
- * A menacing monster figure: dark, irregular/spiky, with faint red emissive
- * accents (eyes + glow). Origin at the feet (y = 0); roughly 1.4 units tall.
- * The `name` seeds small deterministic variation in the silhouette.
+ * A menacing monster figure. Dispatches on `name` to a distinct builder for each
+ * of the five haunt monsters ("Shade", "Acolyte", "Gnashing Maw", "The Drowned",
+ * "Whisper"); unknown names fall back to the original generic dark/spiky brute so
+ * nothing regresses. Origin at the feet (y = 0; floaters hover above a faint
+ * ground glow instead). The `name` seeds deterministic variation.
+ *
+ * Each returned group is tagged for {@link animateFigure} via
+ * `g.userData.figKind` and `g.userData.parts`.
  */
 export function buildMonsterFigure(name: string): THREE.Group {
+  switch (name) {
+    case "Shade":
+      return buildShade(name);
+    case "Acolyte":
+      return buildAcolyte(name);
+    case "Gnashing Maw":
+      return buildGnashingMaw(name);
+    case "The Drowned":
+      return buildDrowned(name);
+    case "Whisper":
+      return buildWhisper(name);
+    default:
+      return buildGenericMonster(name);
+  }
+}
+
+const monsterDarkMat = () => new THREE.MeshStandardMaterial({ color: 0x14110f, roughness: 0.9, metalness: 0.1 });
+const monsterSpikeMat = () => new THREE.MeshStandardMaterial({ color: 0x0e0c0a, roughness: 0.85, metalness: 0.15 });
+const monsterEmberMat = (i = 0.9, color = 0xff1a1a) =>
+  new THREE.MeshStandardMaterial({ color: 0xaa1414, emissive: color, emissiveIntensity: i, roughness: 0.5 });
+
+/** A faint ground-glow decal for hovering monsters (replaces the solid disc). */
+function groundGlowDecal(color: number, intensity = 0.5): THREE.Mesh {
+  const m = new THREE.Mesh(
+    new THREE.CircleGeometry(0.36, 24),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity, roughness: 0.5, transparent: true, opacity: 0.5, depthWrite: false }),
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.012;
+  return m;
+}
+
+/** The original generic brute (used for unknown monster names). */
+function buildGenericMonster(name: string): THREE.Group {
   const g = new THREE.Group();
   g.name = `figure:monster:${name}`;
+  const rand = seededRand(name);
 
-  // deterministic seed from the name
-  let seed = 0;
-  for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) >>> 0;
-  const rand = () => {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return seed / 0x7fffffff;
-  };
-
-  const darkMat = () => new THREE.MeshStandardMaterial({ color: 0x14110f, roughness: 0.9, metalness: 0.1 });
-  const spikeMat = () => new THREE.MeshStandardMaterial({ color: 0x0e0c0a, roughness: 0.85, metalness: 0.15 });
-  const emberMat = (i = 0.9) => new THREE.MeshStandardMaterial({ color: 0xaa1414, emissive: 0xff1a1a, emissiveIntensity: i, roughness: 0.5 });
+  const darkMat = monsterDarkMat;
+  const spikeMat = monsterSpikeMat;
+  const emberMat = monsterEmberMat;
 
   // dark base disc with faint red glow
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.04, 20), emberMat(0.4));
@@ -1554,5 +2145,532 @@ export function buildMonsterFigure(name: string): THREE.Group {
   maw.rotation.x = Math.PI;
   g.add(maw);
 
+  // unknown names use the legacy spin+bob path
+  g.userData.figKind = "monster";
+  g.userData.parts = { head, torso };
+  g.userData.phase = phaseFromString(name);
   return g;
+}
+
+// --- Shade — tall wispy semi-transparent floating column -------------------
+function buildShade(name: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `figure:monster:${name}`;
+  const rand = seededRand(name);
+
+  // faint cold ground glow (it floats)
+  g.add(groundGlowDecal(0x2a3a55, 0.4));
+
+  const smokeMat = new THREE.MeshStandardMaterial({
+    color: 0x10131c,
+    emissive: 0x1a2640,
+    emissiveIntensity: 0.25,
+    roughness: 1.0,
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+  });
+
+  // tall wispy tapering column (no legs) — built from a few stacked lobes
+  const torso = new THREE.Group();
+  const colH = 1.2;
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.26, colH, 14, 1, true), smokeMat);
+  body.position.y = 0.4 + colH / 2;
+  torso.add(body);
+  const lobeCount = 3;
+  for (let i = 0; i < lobeCount; i++) {
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.18 - i * 0.03, 12, 10), smokeMat);
+    lobe.position.set((rand() - 0.5) * 0.1, 0.55 + i * 0.28, (rand() - 0.5) * 0.08);
+    lobe.scale.set(1, 1.3, 1);
+    torso.add(lobe);
+  }
+  g.add(torso);
+
+  // hooded shadowy head
+  const headY = 0.4 + colH + 0.05;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), smokeMat);
+  head.scale.set(1, 1.15, 1);
+  head.position.y = headY;
+  g.add(head);
+  // cold blue/white eyes
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xbfe0ff, emissive: 0xaaddff, emissiveIntensity: 1.8, roughness: 0.3 });
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), eyeMat);
+    eye.position.set(sx * 0.07, headY + 0.02, 0.16);
+    g.add(eye);
+  }
+
+  // trailing smoky tendrils at the base
+  for (let i = 0; i < 4; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.12 + rand() * 0.12;
+    const tendril = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.32 + rand() * 0.2, 8, 1, true), smokeMat);
+    tendril.position.set(Math.cos(a) * r, 0.28 + rand() * 0.1, Math.sin(a) * r);
+    tendril.rotation.x = Math.PI; // point downward, fading toward the floor
+    tendril.rotation.z = (rand() - 0.5) * 0.5;
+    g.add(tendril);
+  }
+
+  g.userData.figKind = "shadeFloat";
+  g.userData.parts = { head, torso };
+  g.userData.phase = phaseFromString(name);
+  return g;
+}
+
+// --- Gnashing Maw — low, wide, mostly mouth --------------------------------
+function buildGnashingMaw(name: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `figure:monster:${name}`;
+  const rand = seededRand(name);
+
+  // red base glow
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.04, 24), monsterEmberMat(0.45));
+  base.position.y = 0.02;
+  g.add(base);
+
+  const flesh = new THREE.MeshStandardMaterial({ color: 0x2a0e0c, roughness: 0.85, metalness: 0.05 });
+  const innerMat = new THREE.MeshStandardMaterial({ color: 0x7a0d0d, emissive: 0xff2a14, emissiveIntensity: 1.0, roughness: 0.6 });
+  const toothMat = new THREE.MeshStandardMaterial({ color: 0xe8e0d2, roughness: 0.5, metalness: 0.1 });
+
+  // small low body lump
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), flesh);
+  torso.scale.set(1.5, 0.7, 1.2);
+  torso.position.y = 0.28;
+  g.add(torso);
+
+  const mouthY = 0.36;
+  const mouthW = 0.42;
+
+  // upper jaw (fixed) — wide shallow dome with red inner roof
+  const upper = new THREE.Mesh(new THREE.SphereGeometry(mouthW, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), flesh);
+  upper.scale.set(1.3, 0.7, 1.1);
+  upper.position.y = mouthY + 0.06;
+  g.add(upper);
+  const roof = new THREE.Mesh(new THREE.SphereGeometry(mouthW * 0.85, 14, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5), innerMat);
+  roof.scale.set(1.3, 0.6, 1.1);
+  roof.position.y = mouthY + 0.06;
+  g.add(roof);
+
+  // lower jaw (hinged) — its own group pivoting at the back so it can chomp
+  const jaw = new THREE.Group();
+  jaw.position.set(0, mouthY, -0.2);
+  const jawBowl = new THREE.Mesh(new THREE.SphereGeometry(mouthW, 16, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5), innerMat);
+  jawBowl.scale.set(1.3, 0.7, 1.1);
+  jawBowl.position.set(0, 0, 0.2);
+  jaw.add(jawBowl);
+  const jawRim = new THREE.Mesh(new THREE.TorusGeometry(mouthW * 0.95, 0.04, 8, 20), flesh);
+  jawRim.rotation.x = Math.PI / 2;
+  jawRim.scale.set(1.3, 1.1, 1);
+  jawRim.position.set(0, 0, 0.2);
+  jaw.add(jawRim);
+
+  // many small cone teeth on both jaws
+  const teethN = 11;
+  for (let i = 0; i < teethN; i++) {
+    const a = (i / (teethN - 1) - 0.5) * Math.PI * 1.1;
+    const tx = Math.sin(a) * mouthW * 1.15;
+    const tz = Math.cos(a) * mouthW * 0.95;
+    // upper teeth (point down)
+    const ut = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.13 + rand() * 0.05, 6), toothMat);
+    ut.position.set(tx, mouthY + 0.02, tz);
+    ut.rotation.x = Math.PI;
+    g.add(ut);
+    // lower teeth (point up), attached to the jaw
+    const lt = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12 + rand() * 0.05, 6), toothMat);
+    lt.position.set(tx, 0.02, tz + 0.2);
+    jaw.add(lt);
+  }
+  g.add(jaw);
+
+  // a couple of small beady eyes on top
+  const eyeMat = monsterEmberMat(1.8);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), eyeMat);
+    eye.position.set(sx * 0.18, mouthY + 0.34, 0.08);
+    g.add(eye);
+  }
+
+  g.userData.figKind = "maw";
+  g.userData.parts = { jaw, torso };
+  g.userData.phase = phaseFromString(name);
+  return g;
+}
+
+// --- The Drowned — hunched, water-logged, sagging --------------------------
+function buildDrowned(name: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `figure:monster:${name}`;
+  const rand = seededRand(name);
+
+  // murky greenish ground glow
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.36, 0.38, 0.04, 22),
+    new THREE.MeshStandardMaterial({ color: 0x1c3a32, emissive: 0x244e42, emissiveIntensity: 0.5, roughness: 0.6 }),
+  );
+  base.position.y = 0.02;
+  g.add(base);
+
+  const fleshMat = new THREE.MeshStandardMaterial({ color: 0x2e4a44, emissive: 0x18302a, emissiveIntensity: 0.2, roughness: 0.9 });
+  const weedMat = new THREE.MeshStandardMaterial({ color: 0x1f3a22, roughness: 0.95 });
+
+  // heavy hunched legs
+  const legH = 0.4;
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, legH, 9), fleshMat);
+    leg.position.set(sx * 0.14, 0.05 + legH / 2, 0.02);
+    leg.rotation.x = 0.15;
+    g.add(leg);
+  }
+
+  // sagging, hunched torso leaning forward
+  const torsoY = 0.05 + legH + 0.26;
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 12), fleshMat);
+  torso.scale.set(1.1, 1.25, 1.0);
+  torso.position.set(0, torsoY, 0.06);
+  torso.rotation.x = 0.3; // hunched forward
+  g.add(torso);
+  // sagging belly/water-bloat lobes
+  for (let i = 0; i < 3; i++) {
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.12 + rand() * 0.05, 10, 8), fleshMat);
+    lobe.position.set((rand() - 0.5) * 0.3, torsoY - 0.18 - rand() * 0.1, 0.14 + rand() * 0.06);
+    g.add(lobe);
+  }
+
+  // long heavy dripping arms
+  const armH = 0.5;
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, armH, 8), fleshMat);
+    arm.position.set(sx * 0.28, torsoY - 0.05, 0.1);
+    arm.rotation.z = sx * 0.25;
+    arm.rotation.x = 0.4;
+    g.add(arm);
+  }
+
+  // hunched head with hollow dark eye sockets
+  const headY = torsoY + 0.28;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), fleshMat);
+  head.scale.set(1, 1.1, 1.05);
+  head.position.set(0, headY, 0.16);
+  head.rotation.x = 0.4;
+  g.add(head);
+  const socketMat = new THREE.MeshStandardMaterial({ color: 0x05100c, roughness: 1.0 });
+  for (const sx of [-1, 1]) {
+    const socket = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), socketMat);
+    socket.position.set(sx * 0.07, headY + 0.02, 0.31);
+    g.add(socket);
+  }
+
+  // dripping / seaweed strands hanging off the body
+  for (let i = 0; i < 7; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.16 + rand() * 0.18;
+    const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.005, 0.22 + rand() * 0.22, 5), weedMat);
+    const sy = torsoY - 0.05 - rand() * 0.2;
+    strand.position.set(Math.cos(a) * r, sy, Math.sin(a) * r * 0.8 + 0.08);
+    strand.rotation.z = (rand() - 0.5) * 0.4;
+    g.add(strand);
+  }
+
+  g.userData.figKind = "drowned";
+  g.userData.parts = { head, torso };
+  g.userData.phase = phaseFromString(name);
+  return g;
+}
+
+// --- Acolyte — sinister hooded cultist -------------------------------------
+function buildAcolyte(name: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `figure:monster:${name}`;
+
+  // faint red base glow
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.04, 22), monsterEmberMat(0.4));
+  base.position.y = 0.02;
+  g.add(base);
+
+  const robeMat = new THREE.MeshStandardMaterial({ color: 0x140e14, roughness: 0.92, metalness: 0.03 });
+
+  // floor-length dark robe (tapered cone, no legs)
+  const robeH = 1.08;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.34, robeH, 16), robeMat);
+  torso.position.y = 0.05 + robeH / 2;
+  g.add(torso);
+  const shoulderY = 0.05 + robeH;
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10), robeMat);
+  shoulders.scale.set(1, 0.6, 0.85);
+  shoulders.position.y = shoulderY - 0.02;
+  g.add(shoulders);
+
+  // glowing red sigil on the chest
+  const sigil = new THREE.Mesh(
+    new THREE.TorusGeometry(0.06, 0.012, 6, 18),
+    new THREE.MeshStandardMaterial({ color: 0xaa1010, emissive: 0xff2020, emissiveIntensity: 1.6, roughness: 0.4 }),
+  );
+  sigil.position.set(0, 0.05 + robeH * 0.62, 0.2);
+  g.add(sigil);
+  const sigilBar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.012, 0.14, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0xaa1010, emissive: 0xff2020, emissiveIntensity: 1.6, roughness: 0.4 }),
+  );
+  sigilBar.position.set(0, 0.05 + robeH * 0.62, 0.2);
+  g.add(sigilBar);
+
+  // sleeves
+  const armH = 0.5;
+  const leftArm = new THREE.Group();
+  leftArm.position.set(-0.18, shoulderY - 0.06, 0);
+  const lSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, armH, 9), robeMat);
+  lSleeve.position.set(0.04, -armH / 2 + 0.04, 0.06);
+  lSleeve.rotation.z = 0.4;
+  leftArm.add(lSleeve);
+  const lHand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9a8a82, roughness: 0.7 }));
+  lHand.position.set(0.06, -armH + 0.06, 0.12);
+  leftArm.add(lHand);
+  g.add(leftArm);
+
+  const rightArm = new THREE.Group();
+  rightArm.position.set(0.18, shoulderY - 0.06, 0);
+  const rSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, armH, 9), robeMat);
+  rSleeve.position.set(-0.04, -armH / 2 + 0.04, 0.08);
+  rSleeve.rotation.z = -0.4;
+  rSleeve.rotation.x = -0.3;
+  rightArm.add(rSleeve);
+  // small dagger in the right hand
+  const handMat = new THREE.MeshStandardMaterial({ color: 0x9a8a82, roughness: 0.7 });
+  const rHand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), handMat);
+  rHand.position.set(-0.06, -armH + 0.06, 0.16);
+  rightArm.add(rHand);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xcdd2d6, roughness: 0.25, metalness: 0.85, emissive: 0x551010, emissiveIntensity: 0.3 });
+  const blade = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.2, 6), bladeMat);
+  blade.position.set(-0.06, -armH + 0.18, 0.18);
+  rightArm.add(blade);
+  const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 6), new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.8 }));
+  hilt.position.set(-0.06, -armH + 0.03, 0.16);
+  rightArm.add(hilt);
+  g.add(rightArm);
+
+  // hood + shadowed head
+  const headY = shoulderY + 0.14;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), new THREE.MeshStandardMaterial({ color: 0x060406, roughness: 1.0 }));
+  head.position.y = headY;
+  g.add(head);
+  // glowing eyes in the shadow of the hood
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), monsterEmberMat(1.8));
+    eye.position.set(sx * 0.05, headY + 0.02, 0.12);
+    g.add(eye);
+  }
+  // hood shroud
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.23, 0.4, 16, 1, true), robeMat);
+  hood.position.y = headY + 0.08;
+  g.add(hood);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 8, 16), robeMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = headY - 0.06;
+  g.add(collar);
+
+  g.userData.figKind = "acolyte";
+  g.userData.parts = { head, torso, leftArm, rightArm };
+  g.userData.phase = phaseFromString(name);
+  return g;
+}
+
+// --- Whisper — a hovering swarm of little dark shards -----------------------
+function buildWhisper(name: string): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `figure:monster:${name}`;
+  const rand = seededRand(name);
+
+  // very faint pale ground glow
+  g.add(groundGlowDecal(0x3a3a48, 0.3));
+
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x14141c,
+    emissive: 0x2a2a3a,
+    emissiveIntensity: 0.3,
+    roughness: 0.95,
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false,
+  });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ff, emissive: 0xccccff, emissiveIntensity: 1.6, roughness: 0.3 });
+
+  // a tight cluster of small wisps/shards hovering around chest height
+  const torso = new THREE.Group();
+  torso.position.y = 0.78;
+  const shardN = 9;
+  for (let i = 0; i < shardN; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.06 + rand() * 0.24;
+    const h = (rand() - 0.5) * 0.5;
+    const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(0.06 + rand() * 0.06, 0), shardMat);
+    shard.position.set(Math.cos(a) * r, h, Math.sin(a) * r);
+    shard.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+    shard.scale.set(1, 1.6 + rand(), 1);
+    torso.add(shard);
+    // several faint eyes scattered among the shards
+    if (i % 2 === 0) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), eyeMat);
+      eye.position.set(Math.cos(a) * r, h, Math.sin(a) * r + 0.06);
+      torso.add(eye);
+    }
+  }
+  g.add(torso);
+
+  // a few trailing tiny wisps below
+  for (let i = 0; i < 4; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.1 + rand() * 0.18;
+    const wisp = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.18 + rand() * 0.12, 6, 1, true), shardMat);
+    wisp.position.set(Math.cos(a) * r, 0.35 + rand() * 0.15, Math.sin(a) * r);
+    wisp.rotation.x = Math.PI;
+    g.add(wisp);
+  }
+
+  g.userData.figKind = "whisperSwarm";
+  g.userData.parts = { torso };
+  g.userData.phase = phaseFromString(name);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// Shared figure animator
+// ---------------------------------------------------------------------------
+
+/**
+ * Skeleton-free idle animation shared by the React client and the standalone
+ * artifact so the two never drift. Reads `fig.userData.figKind` and
+ * `fig.userData.parts` (set by the figure builders) and mutates ONLY the
+ * figure's own local transform (`fig.position.y` / `fig.rotation.y` / tagged
+ * parts) — the CALLER owns the token's world position.
+ *
+ * Deterministic given `(t, phase)`, pure, node-safe, and never throws if parts
+ * are missing (every access is guarded). Unknown `figKind` (or a missing one)
+ * falls back to the original behaviour: explorers bob (0.05, or 0.12 when
+ * active), monsters spin (`rotation.y = t*0.6`) + bob 0.1 — so the generic path
+ * is byte-for-byte unchanged.
+ *
+ * @param fig   the figure group returned by buildExplorerFigure/buildMonsterFigure
+ * @param t     elapsed time in seconds
+ * @param opts.active  stronger/eager motion (explorer's turn)
+ * @param opts.phase   per-figure phase offset; falls back to fig.userData.phase
+ * @param opts.baseY   the figure's local rest height (default 0.02)
+ */
+export function animateFigure(
+  fig: THREE.Group,
+  t: number,
+  opts?: { active?: boolean; phase?: number; baseY?: number },
+): void {
+  if (!fig) return;
+  const ud = (fig.userData ?? {}) as {
+    figKind?: string;
+    parts?: FigureParts;
+    phase?: number;
+  };
+  const figKind: string | undefined = ud.figKind;
+  const parts: FigureParts = ud.parts ?? {};
+  const active = !!opts?.active;
+  const phase = opts?.phase ?? ud.phase ?? 0;
+  const baseY = opts?.baseY ?? 0.02;
+
+  switch (figKind) {
+    case "explorer": {
+      // gentle breathing (torso.scale.y), head bob, opposed arm sway, soft bob
+      const breath = 1 + Math.sin(t * 2.4 + phase) * (active ? 0.05 : 0.03);
+      if (parts.torso) parts.torso.scale.y = breath;
+      if (parts.head) {
+        parts.head.position.y = (parts.head.userData.baseY ??= parts.head.position.y)
+          + Math.sin(t * 2 + phase) * 0.012;
+        parts.head.rotation.z = Math.sin(t * 0.9 + phase) * 0.04;
+      }
+      const sway = Math.sin(t * 1.6 + phase) * (active ? 0.18 : 0.1);
+      if (parts.leftArm) {
+        parts.leftArm.rotation.x = (parts.leftArm.userData.baseRX ??= parts.leftArm.rotation.x) + sway;
+      }
+      if (parts.rightArm) {
+        parts.rightArm.rotation.x = (parts.rightArm.userData.baseRX ??= parts.rightArm.rotation.x) - sway;
+      }
+      fig.position.y = baseY + Math.sin(t * 2 + phase) * (active ? 0.08 : 0.04);
+      fig.rotation.y = Math.sin(t * 0.4 + phase) * 0.18 + (active ? 0.12 : 0);
+      // a faint eager forward lean when active
+      if (parts.torso) parts.torso.rotation.x = active ? 0.08 : 0;
+      break;
+    }
+
+    case "shadeFloat":
+    case "whisperSwarm": {
+      // hover (large vertical sine) + slow lateral drift + slow yaw
+      fig.position.y = baseY + 0.18 + Math.sin(t * 1.3 + phase) * 0.12;
+      fig.rotation.y = t * 0.25 + phase;
+      if (parts.torso) {
+        parts.torso.position.x = Math.sin(t * 0.6 + phase) * 0.06;
+        parts.torso.rotation.y = -t * 0.4;
+      }
+      // flicker opacity slightly if the body material is transparent
+      flickerOpacity(fig, t, phase);
+      if (parts.head) parts.head.position.x = Math.sin(t * 0.6 + phase) * 0.04;
+      break;
+    }
+
+    case "maw": {
+      // animate the jaw open/close (chomp)
+      const chomp = Math.max(0, Math.sin(t * 3 + phase));
+      if (parts.jaw) parts.jaw.rotation.x = chomp * 0.6;
+      fig.position.y = baseY + Math.sin(t * 2 + phase) * 0.03;
+      fig.rotation.y = Math.sin(t * 0.5 + phase) * 0.25;
+      break;
+    }
+
+    case "drowned": {
+      // slow heavy sway (rotation.z lilt) + bob
+      fig.rotation.z = Math.sin(t * 0.8 + phase) * 0.06;
+      fig.rotation.y = Math.sin(t * 0.3 + phase) * 0.15;
+      fig.position.y = baseY + Math.sin(t * 1.1 + phase) * 0.05;
+      if (parts.head) parts.head.rotation.z = Math.sin(t * 0.8 + phase + 0.5) * 0.05;
+      break;
+    }
+
+    case "acolyte": {
+      // breathing + slow menacing yaw
+      if (parts.torso) parts.torso.scale.y = 1 + Math.sin(t * 1.8 + phase) * 0.025;
+      fig.rotation.y = t * 0.35 + phase;
+      fig.position.y = baseY + Math.sin(t * 1.6 + phase) * 0.04;
+      break;
+    }
+
+    case "monster": {
+      // legacy generic monster: spin + bob 0.1
+      fig.rotation.y = t * 0.6;
+      fig.position.y = baseY + Math.sin(t * 3) * 0.1;
+      break;
+    }
+
+    default: {
+      // unknown/missing figKind: replicate the OLD fallback exactly.
+      // Explorers bob (0.05, or 0.12 active); monsters spin + bob 0.1. We can't
+      // know which without a tag, so treat as an explorer bob (the artifact only
+      // ever reaches here for untagged figures, which never happens now).
+      fig.position.y = baseY + Math.sin(t * 2 + phase) * (active ? 0.12 : 0.05);
+      break;
+    }
+  }
+}
+
+/** Flicker the opacity of transparent meshes slightly (for ghostly floaters). */
+function flickerOpacity(fig: THREE.Object3D, t: number, phase: number): void {
+  const f = 0.85 + Math.sin(t * 6 + phase) * 0.1 + Math.sin(t * 13.7 + phase * 2) * 0.05;
+  fig.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    if (!mat) return;
+    const apply = (m: THREE.Material) => {
+      // only flicker materials that were authored transparent (skip glow decals
+      // by leaving anything with depthWrite already off but opacity < 0.55 alone)
+      if (m.transparent) {
+        const base = (m.userData.baseOpacity ??= m.opacity);
+        m.opacity = Math.min(1, Math.max(0.15, base * f));
+      }
+    };
+    if (Array.isArray(mat)) mat.forEach(apply);
+    else apply(mat);
+  });
 }

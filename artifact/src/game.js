@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, materials, surfaceFor } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -285,7 +285,7 @@ function playerToken(x, y, z, p, isActive) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
 
-  const fig = buildExplorerFigure(char?.color ?? "#aaaaaa");
+  const fig = buildExplorerFigure(char?.color ?? "#aaaaaa", { archetype: p.characterId });
   g.add(fig);
 
   if (isActive) {
@@ -307,7 +307,7 @@ function playerToken(x, y, z, p, isActive) {
   g.add(lbl);
 
   tokenGroup.add(g);
-  anims.push({ obj: fig, baseY: 0.02, kind: isActive ? "bobA" : "bob", phase: Math.random() * 6 });
+  anims.push({ obj: fig, baseY: 0.02, active: isActive, phase: Math.random() * 6 });
 }
 
 function monsterToken(x, y, z, m, attackable) {
@@ -315,8 +315,13 @@ function monsterToken(x, y, z, m, attackable) {
   g.position.set(x, y, z);
 
   const fig = buildMonsterFigure(m.name);
-  fig.userData = { kind: "monster", monsterId: m.id, attackable };
-  fig.traverse((o) => (o.userData = { kind: "monster", monsterId: m.id, attackable }));
+  // tag for raycast click detection WITHOUT clobbering the figure's animation
+  // tags (figKind / parts on the group, baseRX caches on tagged parts).
+  fig.traverse((o) => {
+    o.userData.kind = "monster";
+    o.userData.monsterId = m.id;
+    o.userData.attackable = attackable;
+  });
   g.add(fig);
   g.add(new THREE.PointLight(0xc2412f, attackable ? 5 : 2.5, 4, 2));
 
@@ -328,7 +333,7 @@ function monsterToken(x, y, z, m, attackable) {
   g.add(lbl);
 
   tokenGroup.add(g);
-  anims.push({ obj: fig, baseY: 0.05, kind: "spin", phase: 0 });
+  anims.push({ obj: fig, baseY: 0.05, phase: 0 });
 }
 
 function buildTokens(legal) {
@@ -588,8 +593,7 @@ function animate() {
     l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.0, b[1] + Math.sin(t * 0.7) * 0.4, b[2] + Math.cos(t * 0.4 + b[0]) * 1.0);
   }
   for (const an of anims) {
-    if (an.kind === "spin") { an.obj.rotation.y = t * 0.6; an.obj.position.y = an.baseY + Math.sin(t * 3) * 0.1; }
-    else { an.obj.position.y = an.baseY + Math.sin(t * 2 + an.phase) * (an.kind === "bobA" ? 0.12 : 0.05); }
+    animateFigure(an.obj, t, { active: an.active, phase: an.phase, baseY: an.baseY });
   }
 
   renderer.render(scene, camera);
