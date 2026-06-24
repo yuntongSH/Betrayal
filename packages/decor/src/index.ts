@@ -1,4 +1,28 @@
 import * as THREE from "three";
+import {
+  peelingWallpaper,
+  wallCrack,
+  stainDecal,
+  moldPatch,
+  clawMarks,
+  cobwebFunnel,
+  cobwebStrand,
+  scatteredPaper,
+  glassShards,
+  dustPile,
+  rubblePile,
+  rats,
+  skull,
+  bonePile,
+  bottlesAndJars,
+  chain,
+  drippingCandle,
+  framedPortrait,
+  tornCurtain,
+  brokenChair,
+  debrisPlank,
+  floorPuddle,
+} from "./detail";
 
 export * from "./materials";
 
@@ -728,6 +752,53 @@ function placeOnWall(
   group.add(child);
 }
 
+/** Lay a stain/mold/soot decal flat on the floor at (x,z). */
+function placeFloorStain(
+  g: THREE.Group,
+  kind: "water" | "blood" | "mold" | "soot",
+  size: number,
+  x: number,
+  z: number,
+  tile: number,
+  seed: number
+): void {
+  const s = stainDecal(kind, size, seed);
+  s.rotation.x = -Math.PI / 2;
+  place(g, s as unknown as THREE.Group, x, z, tile);
+}
+
+/**
+ * Shared "decay kit": general dilapidation any room can wear — cobwebbed
+ * corners, a wall crack, peeling wallpaper, dust in a corner and a floor stain.
+ * Tuned to be cheap (instanced cracks/stains) and placed at the edges so the
+ * centre stays clear. `seed` varies the clutter per room.
+ */
+function decayKit(g: THREE.Group, t: RoomTheme, tile: number, seed = 1): void {
+  const edge = tile / 2 - 0.6;
+  placeOnWall(g, cobwebFunnel(0.6), "n", -edge, WALL_H - 0.4, tile);
+  placeOnWall(g, cobwebFunnel(0.5), "e", edge, WALL_H - 0.4, tile);
+  placeOnWall(g, wallCrack(0.9, seed) as unknown as THREE.Object3D, "w", 0.1, 1.4, tile);
+  placeOnWall(g, peelingWallpaper(0.5, 0.8, t.wall + 0x101010, t.floor), "s", edge - 0.2, 1.3, tile);
+  place(g, dustPile(0.16, t.floor + 0x080808) as unknown as THREE.Group, -edge, edge, tile);
+  placeFloorStain(g, "water", 0.5, edge * 0.6, -edge * 0.6, tile, seed + 7);
+}
+
+/**
+ * Shared "grime kit": service/storage filth — rats, scattered bottles, a mold
+ * patch, a hanging chain and rubble. Layered on top of the structural props of
+ * cellars, larders, kitchens, boiler/service rooms.
+ */
+function grimeKit(g: THREE.Group, t: RoomTheme, tile: number, seed = 1): void {
+  const edge = tile / 2 - 0.55;
+  g.add(rats(4, 1.4, seed));
+  place(g, bottlesAndJars(7, 0.5, seed), edge, edge, tile);
+  placeOnWall(g, moldPatch(0.6, seed + 3) as unknown as THREE.Object3D, "n", -edge + 0.2, 0.7, tile);
+  g.add(rubblePile(8, 0.6, t.wall, seed + 5));
+  const ch = chain(0.7, 0x2a2622);
+  placeOnWall(g, ch, "e", -edge * 0.4, WALL_H - 0.05, tile);
+  placeFloorStain(g, "mold", 0.5, -edge * 0.5, edge * 0.5, tile, seed + 9);
+}
+
 type Composer = (g: THREE.Group, theme: RoomTheme, tile: number) => void;
 
 const COMPOSERS: Record<string, Composer> = {
@@ -737,10 +808,16 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, pew(), 0.55, 0.3, tile);
     place(g, pew(), -0.55, 1.0, tile);
     place(g, pew(), 0.55, 1.0, tile);
-    place(g, candle(0.5), -0.6, -(tile / 2 - 0.7), tile);
-    place(g, candle(0.5), 0.6, -(tile / 2 - 0.7), tile);
+    place(g, drippingCandle(0.5, 0xe8dcc0, t.accent), -0.6, -(tile / 2 - 0.7), tile);
+    place(g, drippingCandle(0.5, 0xe8dcc0, t.accent), 0.6, -(tile / 2 - 0.7), tile);
     placeOnWall(g, glowWindow(t.accent), "n", -0.7, 1.45, tile);
     placeOnWall(g, glowWindow(t.accent), "n", 0.7, 1.45, tile);
+    // a fallen candelabrum and spilt holy water in the aisle
+    place(g, candlestick(t.accent), tile / 2 - 0.6, tile / 2 - 0.7, tile);
+    placeFloorStain(g, "water", 0.6, 0, 1.0, tile, 11);
+    placeOnWall(g, cobwebFunnel(0.6), "e", tile / 2 - 0.6, WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(1.0, 3) as unknown as THREE.Object3D, "w", 0.2, 1.5, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.8, t.wall, t.floor), "w", tile / 2 - 0.7, 1.3, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 4.0, 2);
     light.position.set(0, 1.1, -(tile / 2 - 0.7));
     g.add(light);
@@ -754,17 +831,30 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, table(0.9, 0.55, 0.55), 0.8, 0.9, tile, -0.4);
     place(g, chair(), 0.95, 1.25, tile, Math.PI);
     place(g, globe(), 0.95, 0.85, tile);
+    place(g, drippingCandle(0.18, 0xe8dcc0, t.accent), 0.6, 0.75, tile);
     place(g, rug(2.0, 1.6, 0x5a2222, t.accent), 0, 0.3, tile);
+    // toppled volumes, loose pages and creeping damp
+    place(g, crate(0.3, 0x4a3422), tile / 2 - 0.7, -(tile / 2 - 0.7), tile);
+    g.add(scatteredPaper(9, 1.5, 31));
+    placeFloorStain(g, "water", 0.5, -0.6, tile / 2 - 0.8, tile, 33);
+    placeOnWall(g, cobwebFunnel(0.5), "e", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.8, t.wall, t.floor), "e", tile / 2 - 0.7, 1.3, tile);
   },
 
   study: (g, t, tile) => {
     place(g, table(1.0, 0.6, 0.55, 0x3c2f20), 0, -(tile / 2 - 0.8), tile);
     place(g, chair(0x3c2f20), 0, -(tile / 2 - 1.3), tile, Math.PI);
     place(g, globe(), -0.35, -(tile / 2 - 0.8) + 0.1, tile);
-    place(g, candlestick(t.accent), 0.35, -(tile / 2 - 0.8) + 0.1, tile);
+    place(g, drippingCandle(0.2, 0xe8dcc0, t.accent), 0.35, -(tile / 2 - 0.8) + 0.1, tile);
     placeOnWall(g, bookshelf(0.9, 1.3), "e", 0, 0, tile);
-    placeOnWall(g, painting(0.5, 0.6), "w", 0.4, 1.4, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.6), "w", 0.4, 1.4, tile);
     place(g, rug(1.6, 1.4, 0x3a2a4a, t.accent), 0, 0.4, tile);
+    // the journal's pages strewn about, an overturned chair and dripped ink
+    place(g, brokenChair(0x3c2f20), tile / 2 - 0.7, tile / 2 - 0.7, tile, 0.5);
+    g.add(scatteredPaper(8, 1.3, 41));
+    placeFloorStain(g, "blood", 0.4, 0.1, -(tile / 2 - 0.8) + 0.4, tile, 43);
+    placeOnWall(g, cobwebFunnel(0.5), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(0.9, 9) as unknown as THREE.Object3D, "s", 0.3, 1.5, tile);
   },
 
   kitchen: (g, t, tile) => {
@@ -789,6 +879,12 @@ const COMPOSERS: Record<string, Composer> = {
       const u = cyl(0.012, 0.012, 0.22, 0x9a9690, 6, { metal: 0.6 });
       placeOnWall(g, u, "w", -0.6 + i * 0.25, WALL_H - 0.4, tile);
     }
+    // grime: rats, jars, hanging chain, mold, grease stain
+    g.add(rats(4, 1.4, 81));
+    place(g, bottlesAndJars(7, 0.5, 83), tile / 2 - 0.6, tile / 2 - 0.6, tile);
+    placeOnWall(g, chain(0.6, 0x2a2622), "w", 0.6, WALL_H - 0.05, tile);
+    placeFloorStain(g, "soot", 0.5, tile / 2 - 0.7, -(tile / 2 - 0.7) + 0.5, tile, 85);
+    placeOnWall(g, moldPatch(0.6, 87) as unknown as THREE.Object3D, "s", -0.4, 0.7, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 3.5, 2);
     light.position.set(tile / 2 - 0.7, 0.9, -(tile / 2 - 0.7));
     g.add(light);
@@ -796,30 +892,51 @@ const COMPOSERS: Record<string, Composer> = {
 
   "dining-room": (g, t, tile) => {
     place(g, table(1.8, 0.7, 0.6, 0x4a3220), 0, 0, tile);
-    for (const z of [-0.55, 0, 0.55]) {
+    for (const z of [-0.55, 0.55]) {
       place(g, chair(0x4a3220), -1.05, z, tile, Math.PI / 2);
       place(g, chair(0x4a3220), 1.05, z, tile, -Math.PI / 2);
     }
     place(g, candlestick(t.accent), -0.4, 0, tile);
-    place(g, candlestick(t.accent), 0.4, 0, tile);
+    place(g, drippingCandle(0.22, 0xe8dcc0, t.accent), 0.4, 0, tile);
     g.add(chandelier(t.accent));
+    // a feast long abandoned: a toppled chair, bottles, dust, a wine-dark stain
+    place(g, brokenChair(0x4a3220), 1.05, 0, tile, -Math.PI / 2);
+    place(g, bottlesAndJars(5, 0.4, 161), 0, -0.05, tile);
+    placeFloorStain(g, "blood", 0.5, 0.6, 0.7, tile, 163);
+    place(g, dustPile(0.15, t.floor + 0x080808), -(tile / 2 - 0.7), tile / 2 - 0.7, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "n", 0, 1.5, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.9, t.wall, t.floor), "e", 0, 1.35, tile);
   },
 
   "master-bedroom": (g, t, tile) => {
     place(g, bed(0.95, 1.5, 0x3a2538, 0x6a6478), 0, -(tile / 2 - 1.0), tile);
     place(g, wardrobe(0x3a2a3a), -(tile / 2 - 0.6), tile / 2 - 0.8, tile, Math.PI / 2);
     place(g, table(0.4, 0.4, 0.45), tile / 2 - 0.6, -(tile / 2 - 0.6), tile);
-    place(g, candlestick(t.accent), tile / 2 - 0.6, -(tile / 2 - 0.6) + 0.05, tile);
+    place(g, drippingCandle(0.18, 0xe8dcc0, t.accent), tile / 2 - 0.6, -(tile / 2 - 0.6) + 0.05, tile);
     place(g, rug(1.6, 1.4, 0x3a2a4a, t.accent), 0, 0.6, tile);
-    placeOnWall(g, painting(0.5, 0.6), "n", 0, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.6), "n", 0, 1.5, tile);
+    // a torn drape, dust at the bedfoot and damp staining the wall
+    placeOnWall(g, tornCurtain(0.6, 1.3, 0x3a2238), "e", 0, WALL_H / 2, tile);
+    place(g, dustPile(0.16, t.floor + 0x080808), tile / 2 - 0.8, tile / 2 - 0.7, tile);
+    placeFloorStain(g, "water", 0.5, -(tile / 2 - 0.8), -(tile / 2 - 0.8), tile, 51);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.9, t.wall, t.floor), "s", -(tile / 2 - 0.7), 1.35, tile);
   },
 
   "servants-quarters": (g, t, tile) => {
     place(g, bed(0.7, 1.3, 0x4a3424), -(tile / 2 - 0.7), -(tile / 2 - 1.0), tile, Math.PI / 2);
     place(g, bed(0.7, 1.3, 0x4a3424), tile / 2 - 0.7, -(tile / 2 - 1.0), tile, -Math.PI / 2);
     place(g, crate(0.35), 0, tile / 2 - 0.6, tile);
-    place(g, candlestick(t.accent), 0, -(tile / 2 - 0.6), tile);
+    place(g, drippingCandle(0.2, 0xe8dcc0, t.accent), 0, -(tile / 2 - 0.6), tile);
     place(g, rug(1.4, 1.2, 0x4a3a28, t.accent), 0, 0.4, tile);
+    // a hurried departure: scattered belongings, dust and creeping mold
+    g.add(scatteredPaper(7, 1.3, 61));
+    place(g, dustPile(0.15, t.floor + 0x080808), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    g.add(rats(3, 1.2, 6));
+    placeOnWall(g, moldPatch(0.6, 63) as unknown as THREE.Object3D, "n", 0, 0.8, tile);
+    placeOnWall(g, cobwebFunnel(0.5), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(0.9, 65) as unknown as THREE.Object3D, "e", 0.2, 1.4, tile);
   },
 
   "abandoned-nursery": (g, t, tile) => {
@@ -831,17 +948,32 @@ const COMPOSERS: Record<string, Composer> = {
     ball.position.set(clampInner(0.4, tile), 0.1, clampInner(0.6, tile));
     g.add(ball);
     place(g, rug(1.6, 1.4, 0x6a5a64, t.accent), 0, 0.3, tile);
-    const cw = cobweb(0.6);
-    placeOnWall(g, cw, "n", -(tile / 2 - 0.6), WALL_H - 0.3, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "n", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    // unsettling neglect: a tattered curtain, scattered toys, a ghost portrait
+    placeOnWall(g, tornCurtain(0.6, 1.1, 0x6a4a58), "e", 0.3, WALL_H / 2 + 0.2, tile);
+    placeOnWall(g, framedPortrait(0.4, 0.5, 0x5a4a52, 0x2a242c), "w", 0, 1.4, tile);
+    const ball2 = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), mat(0x8aa0c0, { rough: 0.6 }));
+    ball2.position.set(clampInner(-0.5, tile), 0.08, clampInner(-0.2, tile));
+    g.add(ball2);
+    place(g, dustPile(0.14, t.floor + 0x080808), -(tile / 2 - 0.7), 0.3, tile);
+    placeFloorStain(g, "mold", 0.45, tile / 2 - 0.8, -(tile / 2 - 0.7), tile, 71);
+    placeOnWall(g, wallCrack(0.8, 73) as unknown as THREE.Object3D, "s", -0.2, 1.4, tile);
   },
 
   crypt: (g, t, tile) => {
     place(g, sarcophagus(), 0, 0, tile);
     place(g, boneNiche(), -(tile / 2 - 0.4), -0.6, tile, Math.PI / 2);
     place(g, boneNiche(), -(tile / 2 - 0.4), 0.6, tile, Math.PI / 2);
-    place(g, candle(0.4), -(tile / 2 - 0.6), -(tile / 2 - 0.6), tile);
-    place(g, candle(0.4), tile / 2 - 0.6, -(tile / 2 - 0.6), tile);
+    place(g, drippingCandle(0.4, 0xe8dcc0, t.accent), -(tile / 2 - 0.6), -(tile / 2 - 0.6), tile);
+    place(g, drippingCandle(0.4, 0xe8dcc0, t.accent), tile / 2 - 0.6, -(tile / 2 - 0.6), tile);
     place(g, candle(0.4), tile / 2 - 0.6, tile / 2 - 0.6, tile);
+    // bones spilling from the ajar lid + grave dust and cobwebs
+    place(g, bonePile(9, 0.5, 5), tile / 2 - 0.7, tile / 2 - 0.9, tile);
+    place(g, skull(1.0), 0.2, 0.7, tile, 0.6);
+    placeFloorStain(g, "blood", 0.6, 0, 0.7, tile, 13);
+    placeOnWall(g, cobwebFunnel(0.6), "n", tile / 2 - 0.6, WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(1.1, 7) as unknown as THREE.Object3D, "e", 0, 1.4, tile);
+    g.add(rats(3, 1.2, 4));
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 3.5, 2);
     light.position.set(0, 0.9, 0);
     g.add(light);
@@ -854,7 +986,15 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, boneNiche(), tile / 2 - 0.4, 0.4, tile, -Math.PI / 2);
     place(g, boneNiche(), -(tile / 2 - 0.4), 1.1, tile, Math.PI / 2);
     place(g, sarcophagus(), 0, tile / 2 - 1.0, tile, Math.PI / 2);
-    place(g, candle(0.35), 0, 0, tile);
+    place(g, drippingCandle(0.35, 0xe8dcc0, t.accent), 0, 0, tile);
+    // ossuary clutter: bone heaps and scattered skulls between the pillars
+    place(g, bonePile(11, 0.6, 8), -(tile / 2 - 0.7), 0, tile);
+    place(g, bonePile(8, 0.5, 12), tile / 2 - 0.7, 1.0, tile);
+    place(g, skull(1.0), -0.4, -0.4, tile, 0.3);
+    place(g, skull(0.9), 0.5, -0.5, tile, 1.2);
+    placeOnWall(g, cobwebFunnel(0.6), "s", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, moldPatch(0.7, 14) as unknown as THREE.Object3D, "w", 0.4, 0.8, tile);
+    g.add(rats(4, 1.5, 6));
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 3.0, 2);
     light.position.set(0, 0.8, 0.3);
     g.add(light);
@@ -865,9 +1005,17 @@ const COMPOSERS: Record<string, Composer> = {
     const ringR = Math.min(1.45, tile / 2 - 0.45);
     for (let i = 0; i < 5; i++) {
       const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
-      place(g, candle(0.4, 0xf2e9d0, t.accent), Math.cos(a) * ringR, Math.sin(a) * ringR, tile);
+      place(g, drippingCandle(0.4, 0xf2e9d0, t.accent), Math.cos(a) * ringR, Math.sin(a) * ringR, tile);
     }
     place(g, cauldron(t.accent), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    // ritual aftermath: blood spatter, bones, scattered chants and skulls
+    placeFloorStain(g, "blood", 0.7, -(tile / 2 - 0.8), tile / 2 - 0.8, tile, 17);
+    placeFloorStain(g, "blood", 0.5, tile / 2 - 0.9, -(tile / 2 - 0.8), tile, 19);
+    place(g, bonePile(8, 0.5, 21), -(tile / 2 - 0.7), -(tile / 2 - 0.7), tile);
+    place(g, skull(1.1), -(tile / 2 - 0.8), tile / 2 - 0.7, tile, 0.8);
+    g.add(scatteredPaper(7, 1.6, 23));
+    placeOnWall(g, clawMarks(0.6, 4, 25) as unknown as THREE.Object3D, "n", 0, 1.3, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 4.0, 2);
     light.position.set(0, 0.6, 0);
     g.add(light);
@@ -895,6 +1043,14 @@ const COMPOSERS: Record<string, Composer> = {
     // valve wheels
     const valve = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.02, 6, 14), mat(0x8a8278, { metal: 0.7 }));
     placeOnWall(g, valve, "e", -0.6, 1.05, tile);
+    // industrial filth: soot stains, scattered coal/rubble, chains, rats
+    placeFloorStain(g, "soot", 0.7, -(tile / 2 - 0.8), -(tile / 2 - 0.8) + 0.7, tile, 111);
+    g.add(rubblePile(9, 0.7, 0x2a2622, 113));
+    placeOnWall(g, chain(0.8, 0x2a2622), "n", -0.7, WALL_H - 0.05, tile);
+    placeOnWall(g, chain(0.6, 0x2a2622), "n", -0.4, WALL_H - 0.05, tile);
+    place(g, barrel(0x4a3a2a), tile / 2 - 0.6, tile / 2 - 0.6, tile);
+    g.add(rats(3, 1.4, 115));
+    placeOnWall(g, moldPatch(0.6, 117) as unknown as THREE.Object3D, "s", -0.4, 0.7, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 4.0, 2);
     light.position.set(-(tile / 2 - 0.8), 0.7, -(tile / 2 - 0.8) + 0.4);
     g.add(light);
@@ -917,6 +1073,13 @@ const COMPOSERS: Record<string, Composer> = {
     }
     place(g, bench, 0, tile / 2 - 0.7, tile, Math.PI);
     placeOnWall(g, glowWindow(t.accent), "n", 0, 1.45, tile);
+    // overgrown ruin: spilled soil, broken glass under the window, mold, vines
+    place(g, deadPlant(), 0, -(tile / 2 - 0.6), tile);
+    g.add(glassShards(10, 1.2, 121));
+    placeFloorStain(g, "mold", 0.6, -0.5, 0.5, tile, 123);
+    placeOnWall(g, moldPatch(0.7, 125) as unknown as THREE.Object3D, "w", 0, 0.9, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "e", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(1.0, 127) as unknown as THREE.Object3D, "s", 0.3, 1.4, tile);
   },
 
   vault: (g, t, tile) => {
@@ -925,6 +1088,14 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, goldPile(), tile / 2 - 0.7, tile / 2 - 0.7, tile);
     place(g, goldPile(), 0, tile / 2 - 0.6, tile);
     place(g, crate(0.4, 0x5a4a2c), tile / 2 - 0.7, -(tile / 2 - 0.7), tile);
+    // someone (or something) tried to break in: claw-raked door, scattered
+    // coins, a fallen chain and a dark stain by the threshold
+    placeOnWall(g, clawMarks(0.7, 4, 131) as unknown as THREE.Object3D, "n", -0.5, 1.0, tile);
+    placeOnWall(g, clawMarks(0.6, 3, 133) as unknown as THREE.Object3D, "n", 0.5, 0.8, tile);
+    place(g, bonePile(6, 0.4, 135), -(tile / 2 - 0.7), -(tile / 2 - 0.7), tile);
+    placeOnWall(g, chain(0.7, 0x3a342c), "e", 0, WALL_H - 0.05, tile);
+    placeFloorStain(g, "blood", 0.45, 0, -0.2, tile, 137);
+    placeOnWall(g, cobwebFunnel(0.5), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 3.0, 2);
     light.position.set(0, 0.5, tile / 2 - 0.7);
     g.add(light);
@@ -958,6 +1129,13 @@ const COMPOSERS: Record<string, Composer> = {
     const bar = cyl(0.04, 0.04, 1.4, 0x8a8278, 10, { metal: 0.6 });
     bar.rotation.z = Math.PI / 2;
     placeOnWall(g, bar, "e", 0, 1.2, tile);
+    // rot and those handprints far too high up the wall
+    placeOnWall(g, clawMarks(0.5, 5, 141) as unknown as THREE.Object3D, "n", -0.3, 2.0, tile);
+    placeOnWall(g, clawMarks(0.5, 5, 143) as unknown as THREE.Object3D, "n", 0.4, 2.1, tile);
+    place(g, brokenChair(0x5a4636), -(tile / 2 - 0.7), tile / 2 - 0.7, tile, 0.8);
+    g.add(debrisPlank(6, 1.3, 0x4a3a2a, 145));
+    placeFloorStain(g, "mold", 0.6, 0.5, 0.4, tile, 147);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
   },
 
   attic: (g, _t, tile) => {
@@ -973,8 +1151,19 @@ const COMPOSERS: Record<string, Composer> = {
       g.add(beam);
     }
     // cobwebs in the corners
-    placeOnWall(g, cobweb(0.7), "n", -(tile / 2 - 0.6), WALL_H - 0.35, tile);
-    placeOnWall(g, cobweb(0.6), "s", tile / 2 - 0.6, WALL_H - 0.35, tile);
+    placeOnWall(g, cobwebFunnel(0.7), "n", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "s", tile / 2 - 0.6, WALL_H - 0.4, tile);
+    // forgotten junk under the rafters: a sheeted portrait, debris and dust
+    placeOnWall(g, framedPortrait(0.5, 0.6), "w", 0, 1.3, tile);
+    g.add(debrisPlank(7, 1.4, 0x3a2a1c, 151));
+    place(g, dustPile(0.18, 0x4a4238), 0, tile / 2 - 0.7, tile);
+    place(g, dustPile(0.14, 0x4a4238), -(tile / 2 - 0.7), 0.4, tile);
+    g.add(rats(3, 1.4, 153));
+    placeFloorStain(g, "water", 0.5, 0.5, -0.5, tile, 155);
+    // a strand of web drooping between two rafters
+    const strand = cobwebStrand(0.9);
+    strand.position.set(0, WALL_H - 0.25, 0);
+    g.add(strand);
   },
 
   "entrance-hall": (g, t, tile) => {
@@ -982,39 +1171,66 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, pillar(WALL_H, 0x6a6258), -(tile / 2 - 0.5), -(tile / 2 - 0.5), tile);
     place(g, pillar(WALL_H, 0x6a6258), tile / 2 - 0.5, -(tile / 2 - 0.5), tile);
     place(g, table(0.7, 0.35, 0.55), 0, -(tile / 2 - 0.6), tile);
-    place(g, candlestick(t.accent), 0, -(tile / 2 - 0.6) + 0.05, tile);
-    placeOnWall(g, painting(0.6, 0.8), "n", 0, 1.6, tile);
+    place(g, drippingCandle(0.22, 0xe8dcc0, t.accent), 0, -(tile / 2 - 0.6) + 0.05, tile);
+    placeOnWall(g, framedPortrait(0.6, 0.8), "n", 0, 1.6, tile);
+    // grand decay: leaves and dust blown in, a creeping stain, webs and a crack
+    g.add(scatteredPaper(6, 1.4, 181));
+    place(g, dustPile(0.18, t.floor + 0x080808), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    placeFloorStain(g, "water", 0.6, -(tile / 2 - 0.8), tile / 2 - 0.8, tile, 183);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, cobwebFunnel(0.6), "e", tile / 2 - 0.6, WALL_H - 0.4, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.9, t.wall, t.floor), "s", tile / 2 - 0.7, 1.35, tile);
   },
 
   foyer: (g, t, tile) => {
     place(g, rug(1.4, 1.4, 0x4a2a4a, t.accent), 0, 0, tile);
     place(g, table(0.6, 0.4, 0.55), -(tile / 2 - 0.7), -(tile / 2 - 0.7), tile);
-    place(g, candlestick(t.accent), -(tile / 2 - 0.7), -(tile / 2 - 0.7) + 0.05, tile);
+    place(g, drippingCandle(0.22, 0xe8dcc0, t.accent), -(tile / 2 - 0.7), -(tile / 2 - 0.7) + 0.05, tile);
     g.add(chandelier(t.accent));
-    placeOnWall(g, painting(0.5, 0.65), "e", 0, 1.5, tile);
-    placeOnWall(g, painting(0.5, 0.65), "w", 0, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "e", 0, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "w", 0, 1.5, tile);
+    // mildewed grandeur: a torn curtain, dust, scattered paper, webs, a stain
+    placeOnWall(g, tornCurtain(0.6, 1.2, 0x3a2a4a), "n", 0.5, WALL_H / 2 + 0.1, tile);
+    place(g, dustPile(0.16, t.floor + 0x080808), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    g.add(scatteredPaper(6, 1.3, 191));
+    placeFloorStain(g, "mold", 0.5, 0.6, -0.6, tile, 193);
+    placeOnWall(g, cobwebFunnel(0.6), "s", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(1.0, 195) as unknown as THREE.Object3D, "n", -0.4, 1.5, tile);
   },
 
   "grand-staircase": (g, t, tile) => {
     place(g, staircase(), 0, 0.2, tile);
-    placeOnWall(g, painting(0.5, 0.65), "w", 0.4, 1.6, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "w", 0.4, 1.6, tile);
     placeOnWall(g, sconce(t.accent), "e", -0.4, 1.5, tile);
     placeOnWall(g, sconce(t.accent), "e", 0.4, 1.5, tile);
     place(g, rug(1.0, 1.2, 0x5a2424, t.accent), 0, tile / 2 - 0.8, tile);
+    // splintered banister, fallen portraits and cobwebbed corners
+    g.add(debrisPlank(6, 1.1, 0x3a2a18, 201));
+    placeOnWall(g, framedPortrait(0.4, 0.5, 0x4a3826, 0x241f26), "w", -0.5, 1.0, tile);
+    place(g, dustPile(0.16, t.floor + 0x080808), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    placeFloorStain(g, "water", 0.5, -(tile / 2 - 0.8), tile / 2 - 0.8, tile, 203);
+    placeOnWall(g, cobwebFunnel(0.7), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(1.1, 205) as unknown as THREE.Object3D, "e", -0.5, 1.6, tile);
   },
 
   "portrait-gallery": (g, t, tile) => {
-    placeOnWall(g, painting(0.5, 0.65), "n", -0.7, 1.5, tile);
-    placeOnWall(g, painting(0.5, 0.65), "n", 0.0, 1.5, tile);
-    placeOnWall(g, painting(0.5, 0.65), "n", 0.7, 1.5, tile);
-    placeOnWall(g, painting(0.5, 0.65, 0x5a4326, 0x322838), "s", -0.7, 1.5, tile);
-    placeOnWall(g, painting(0.5, 0.65, 0x5a4326, 0x322838), "s", 0.7, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "n", -0.7, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "n", 0.0, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65), "n", 0.7, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65, 0x5a4326, 0x322838), "s", -0.7, 1.5, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.65, 0x5a4326, 0x322838), "s", 0.7, 1.5, tile);
     placeOnWall(g, sconce(t.accent), "w", -0.5, 1.5, tile);
     placeOnWall(g, sconce(t.accent), "w", 0.5, 1.5, tile);
     place(g, rug(0.9, tile - 0.8, 0x4a3320, t.accent), 0, 0, tile);
+    // one portrait has fallen and shattered; its frame lies cracked on the floor
+    place(g, framedPortrait(0.4, 0.5, 0x4a3826, 0x241f26), -(tile / 2 - 0.7), tile / 2 - 0.6, tile, 0.6);
+    g.add(glassShards(8, 1.0, 211));
+    placeFloorStain(g, "water", 0.5, tile / 2 - 0.8, -0.5, tile, 213);
+    placeOnWall(g, cobwebFunnel(0.6), "e", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(0.9, 215) as unknown as THREE.Object3D, "n", -0.35, 1.0, tile);
   },
 
-  larder: (g, _t, tile) => {
+  larder: (g, t, tile) => {
     placeOnWall(g, bookshelf(0.9, 1.3, 0x4a3422), "n", -0.55, 0, tile);
     placeOnWall(g, bookshelf(0.9, 1.3, 0x4a3422), "n", 0.55, 0, tile);
     place(g, barrel(), -(tile / 2 - 0.6), tile / 2 - 0.6, tile);
@@ -1025,6 +1241,10 @@ const COMPOSERS: Record<string, Composer> = {
       const m = cyl(0.05, 0.04, 0.3, 0x6a3a2a, 8, { rough: 0.8 });
       placeOnWall(g, m, "w", -0.5 + i * 0.4, WALL_H - 0.4, tile);
     }
+    // dark unlabeled jars (the flavor) + shared grime kit (rats, mold, chains)
+    place(g, bottlesAndJars(8, 0.55, 91), -(tile / 2 - 0.6), -(tile / 2 - 0.7), tile);
+    grimeKit(g, t, tile, 90);
+    placeOnWall(g, cobwebFunnel(0.5), "e", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
   },
 
   "cold-cellar": (g, t, tile) => {
@@ -1034,6 +1254,13 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, crate(0.4), tile / 2 - 0.7, tile / 2 - 0.7, tile);
     place(g, crate(0.3), 0, tile / 2 - 0.6, tile);
     placeOnWall(g, sconce(t.accent), "n", 0, 1.6, tile);
+    // damp cold: a standing puddle, mossy jars, hanging chain, rats
+    place(g, floorPuddle(0.4, 0x141c20), -0.4, 0.6, tile);
+    place(g, bottlesAndJars(6, 0.45, 101), tile / 2 - 0.6, -(tile / 2 - 1.1), tile);
+    placeOnWall(g, chain(0.7, 0x2a2622), "w", 0, WALL_H - 0.05, tile);
+    placeOnWall(g, moldPatch(0.7, 103) as unknown as THREE.Object3D, "e", 0, 0.8, tile);
+    g.add(rats(3, 1.3, 105));
+    placeOnWall(g, cobwebFunnel(0.5), "s", tile / 2 - 0.6, WALL_H - 0.4, tile);
   },
 
   "mystic-elevator": (g, t, tile) => {
@@ -1053,6 +1280,14 @@ const COMPOSERS: Record<string, Composer> = {
     placeOnWall(g, panel, "n", tile / 2 - 0.8, 1.1, tile);
     const dial = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), emissiveMat(t.accent, 1.2));
     placeOnWall(g, dial, "n", tile / 2 - 0.8, 1.2, tile);
+    // an iron cage gone to rust: hanging chains, a worn rug and clinging webs
+    placeOnWall(g, chain(1.6, 0x2a2826), "s", -0.6, WALL_H - 0.05, tile);
+    placeOnWall(g, chain(1.4, 0x2a2826), "s", 0.6, WALL_H - 0.05, tile);
+    place(g, rug(1.4, 1.4, 0x2a2e3a, t.accent), 0, 0, tile);
+    placeFloorStain(g, "soot", 0.5, -0.4, 0.4, tile, 171);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, cobwebFunnel(0.5), "e", tile / 2 - 0.6, WALL_H - 0.4, tile);
+    placeOnWall(g, wallCrack(0.9, 173) as unknown as THREE.Object3D, "w", 0.2, 1.4, tile);
     const light = new THREE.PointLight(t.accent, t.accentIntensity, 3.0, 2);
     light.position.set(0, 1.6, 0);
     g.add(light);
@@ -1061,9 +1296,16 @@ const COMPOSERS: Record<string, Composer> = {
   "upper-landing": (g, t, tile) => {
     place(g, rug(1.0, tile - 0.8, 0x3a3a5a, t.accent), 0, 0, tile);
     place(g, table(0.6, 0.35, 0.55), -(tile / 2 - 0.7), 0, tile, Math.PI / 2);
-    place(g, candlestick(t.accent), -(tile / 2 - 0.7), 0.05, tile);
-    placeOnWall(g, painting(0.5, 0.6), "n", 0, 1.5, tile);
+    place(g, drippingCandle(0.2, 0xe8dcc0, t.accent), -(tile / 2 - 0.7), 0.05, tile);
+    placeOnWall(g, framedPortrait(0.5, 0.6), "n", 0, 1.5, tile);
     placeOnWall(g, sconce(t.accent), "e", 0, 1.5, tile);
+    // those creaking boards: warped planks, dust and webbed corners
+    g.add(debrisPlank(5, 1.2, 0x3a322a, 221));
+    place(g, dustPile(0.16, t.floor + 0x080808), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+    placeFloorStain(g, "water", 0.5, tile / 2 - 0.8, -0.5, tile, 223);
+    placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    placeOnWall(g, peelingWallpaper(0.5, 0.8, t.wall, t.floor), "s", 0, 1.3, tile);
+    placeOnWall(g, wallCrack(0.9, 225) as unknown as THREE.Object3D, "e", -0.4, 1.4, tile);
   },
 
   "basement-landing": (g, t, tile) => {
@@ -1071,31 +1313,48 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, barrel(), tile / 2 - 0.6, -(tile / 2 - 0.6), tile);
     placeOnWall(g, sconce(t.accent), "n", 0, 1.6, tile);
     place(g, rug(0.9, tile - 1.0, 0x3a352e, t.accent), 0, 0.2, tile);
-    placeOnWall(g, cobweb(0.5), "w", -(tile / 2 - 0.6), WALL_H - 0.3, tile);
+    placeOnWall(g, cobwebFunnel(0.5), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
+    // wet stone tasting of old pennies: a puddle, mold, rats and rubble
+    place(g, floorPuddle(0.38, 0x141c20), 0.4, tile / 2 - 0.8, tile);
+    placeOnWall(g, moldPatch(0.7, 231) as unknown as THREE.Object3D, "e", 0, 0.8, tile);
+    g.add(rats(3, 1.3, 233));
+    g.add(rubblePile(7, 0.6, t.wall, 235));
+    place(g, bottlesAndJars(5, 0.4, 237), tile / 2 - 0.6, tile / 2 - 0.6, tile);
+    placeOnWall(g, chain(0.6, 0x2a2622), "n", -0.6, WALL_H - 0.05, tile);
   },
 };
 
 /** Generic runner-style corridor/hallway dressing used for several rooms. */
-function dressCorridor(g: THREE.Group, t: RoomTheme, tile: number): void {
+function dressCorridor(g: THREE.Group, t: RoomTheme, tile: number, seed = 1): void {
   place(g, rug(0.9, tile - 0.4, 0x5a2424, t.accent), 0, 0, tile);
   placeOnWall(g, sconce(t.accent), "w", -0.5, 1.5, tile);
   placeOnWall(g, sconce(t.accent), "e", 0.5, 1.5, tile);
-  placeOnWall(g, painting(0.45, 0.6), "n", 0, 1.5, tile);
-  placeOnWall(g, cobweb(0.5), "s", tile / 2 - 0.6, WALL_H - 0.3, tile);
+  placeOnWall(g, framedPortrait(0.45, 0.6), "n", 0, 1.5, tile);
+  // shared decay kit: cobwebbed corners, crack, peeling paper, dust, a stain
+  decayKit(g, t, tile, seed);
 }
 
-COMPOSERS["dusty-hallway"] = dressCorridor;
+COMPOSERS["dusty-hallway"] = (g, t, tile) => {
+  dressCorridor(g, t, tile, 301);
+  // decades of undisturbed dust and footprints
+  place(g, dustPile(0.16, t.floor + 0x080808), 0, tile / 2 - 0.7, tile);
+  g.add(scatteredPaper(6, 1.3, 303));
+};
 COMPOSERS["creaking-corridor"] = (g, t, tile) => {
-  dressCorridor(g, t, tile);
+  dressCorridor(g, t, tile, 311);
   place(g, crate(0.3), -(tile / 2 - 0.6), tile / 2 - 0.6, tile);
+  // warped, snapped floorboards (the source of the creak)
+  g.add(debrisPlank(6, 1.3, 0x3a322a, 313));
+  g.add(rats(3, 1.3, 315));
 };
 
-/** Generic tasteful dressing for unknown rooms: rug + candlestick + crate. */
+/** Generic tasteful dressing for unknown rooms: rug + candlestick + crate + decay. */
 function dressGeneric(g: THREE.Group, t: RoomTheme, tile: number): void {
   place(g, rug(1.4, 1.4, 0x4a3a2c, t.accent), 0, 0, tile);
-  place(g, candlestick(t.accent), -(tile / 2 - 0.7), -(tile / 2 - 0.7), tile);
+  place(g, drippingCandle(0.22, 0xe8dcc0, t.accent), -(tile / 2 - 0.7), -(tile / 2 - 0.7), tile);
   place(g, crate(0.38), tile / 2 - 0.7, tile / 2 - 0.7, tile);
-  placeOnWall(g, painting(0.45, 0.55), "n", 0, 1.5, tile);
+  placeOnWall(g, framedPortrait(0.45, 0.55), "n", 0, 1.5, tile);
+  decayKit(g, t, tile, 321);
 }
 
 /**
