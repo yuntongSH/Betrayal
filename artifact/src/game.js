@@ -449,7 +449,7 @@ function driveBots() {
 // =========================================================================
 function render() {
   const me = state.activePlayerId;
-  const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [] };
+  const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [], pickupItems: [], tradePartners: [] };
   buildHouse(legal);
   buildTokens(legal);
   buildArrows(legal);
@@ -526,6 +526,9 @@ function updateHUD(legal) {
   // bottom controls — only on a human's turn
   let bottom = "";
   if (!ended && active && !active.isBot) {
+    for (const cardId of legal.pickupItems ?? []) {
+      bottom += `<button class="btn" onclick="window.__act({type:'pickup-item',playerId:'${active.id}',cardId:'${cardId}'})">Take ${DH.getCard(cardId)?.name ?? "item"}</button>`;
+    }
     for (const id of legal.attackPlayers) {
       const name = state.players.find((p) => p.id === id)?.name ?? "foe";
       bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { legalMoves, neighborKey, type Direction } from "@dread-hollow/shared";
+import { getCard, legalMoves, neighborKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { Scene } from "../three/Scene";
 import { TraitPanel } from "./TraitPanel";
@@ -20,6 +20,7 @@ export function GameScreen() {
   const myId = useStore((s) => s.playerId);
   const endTurn = useStore((s) => s.endTurn);
   const attackPlayer = useStore((s) => s.attackPlayer);
+  const pickupItem = useStore((s) => s.pickupItem);
   const moveTo = useStore((s) => s.moveTo);
   const explore = useStore((s) => s.explore);
 
@@ -33,6 +34,7 @@ export function GameScreen() {
     [game, myId],
   );
   const attackTargets = legal?.attackPlayers ?? [];
+  const floorItems = legal?.pickupItems ?? [];
 
   // Keyboard: arrows / WASD to move, E to end turn.
   useEffect(() => {
@@ -95,6 +97,16 @@ export function GameScreen() {
       <div className="hud-bottom">
         {myTurn && !ended && (
           <>
+            {floorItems.map((cardId) => (
+              <button
+                key={cardId}
+                className="btn"
+                onClick={() => pickupItem(cardId)}
+                title="Pick up from the floor"
+              >
+                Take {getCard(cardId)?.name ?? "item"}
+              </button>
+            ))}
             {attackTargets.map((id) => {
               const name = game.players.find((p) => p.id === id)?.name ?? "foe";
               return (

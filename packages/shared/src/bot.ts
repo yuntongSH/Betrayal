@@ -48,6 +48,11 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
     return { action: { type: "attack", playerId: pid, targetPlayerId: legal.attackPlayers[0] }, endTurnAfter: true };
   }
 
+  // Scoop up anything left on the floor here (e.g. a dead explorer's key).
+  if (legal.pickupItems.length) {
+    return { action: { type: "pickup-item", playerId: pid, cardId: legal.pickupItems[0]! }, endTurnAfter: false };
+  }
+
   // Don't try to explore once the room deck is spent (avoids dead-door spinning).
   const canExplore = s.decks.rooms.length > 0 && legal.doors.length > 0;
   if (s.movementLeft > 0) {
@@ -72,6 +77,7 @@ export function runBotTurn(s: GameState, pid: PlayerId, maxSteps = 40): void {
     const { action, endTurnAfter } = botStep(s, pid);
     const beforePos = getPlayer(s, pid)?.position;
     const beforeMove = s.movementLeft;
+    const beforeInv = getPlayer(s, pid)?.inventory.length ?? 0;
     reduce(s, action);
     if (endTurnAfter) {
       if (action.type !== "end-turn" && s.activePlayerId === pid) {
@@ -79,8 +85,13 @@ export function runBotTurn(s: GameState, pid: PlayerId, maxSteps = 40): void {
       }
       return;
     }
-    // Safety: if a move made no progress, end the turn rather than spin.
-    if (getPlayer(s, pid)?.position === beforePos && s.movementLeft === beforeMove) {
+    // Safety: if a step made no progress (no move, no pickup), end the turn
+    // rather than spin.
+    if (
+      getPlayer(s, pid)?.position === beforePos &&
+      s.movementLeft === beforeMove &&
+      (getPlayer(s, pid)?.inventory.length ?? 0) === beforeInv
+    ) {
       reduce(s, { type: "end-turn", playerId: pid });
       return;
     }

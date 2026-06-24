@@ -253,6 +253,42 @@ function performHauntRoll(s: GameState, p: PlayerState): void {
 }
 
 // ---------------------------------------------------------------------------
+// Items on the floor — pickup & trade
+// ---------------------------------------------------------------------------
+
+function handlePickup(s: GameState, playerId: PlayerId, cardId: CardId): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || !p.position) return;
+  const pile = s.itemPiles[p.position];
+  if (!pile) return;
+  const idx = pile.indexOf(cardId);
+  if (idx < 0) return;
+  pile.splice(idx, 1);
+  if (pile.length === 0) delete s.itemPiles[p.position];
+  p.inventory.push(cardId);
+  addLog(s, `${p.name} takes the ${getCard(cardId)?.name ?? "item"} from the floor.`, "card");
+  checkWinNow(s);
+}
+
+function handleGive(
+  s: GameState,
+  playerId: PlayerId,
+  toPlayerId: PlayerId,
+  cardId: CardId,
+): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || !p.position) return;
+  const target = getPlayer(s, toPlayerId);
+  if (!target?.alive || target.id === p.id || target.position !== p.position) return;
+  const idx = p.inventory.indexOf(cardId);
+  if (idx < 0) return;
+  p.inventory.splice(idx, 1);
+  target.inventory.push(cardId);
+  addLog(s, `${p.name} hands the ${getCard(cardId)?.name ?? "item"} to ${target.name}.`, "card");
+  checkWinNow(s);
+}
+
+// ---------------------------------------------------------------------------
 // Turn flow
 // ---------------------------------------------------------------------------
 
@@ -327,6 +363,12 @@ export function reduce(s: GameState, action: Action): GameState {
         });
       }
       break;
+    case "pickup-item":
+      handlePickup(s, action.playerId, action.cardId);
+      break;
+    case "give-item":
+      handleGive(s, action.playerId, action.toPlayerId, action.cardId);
+      break;
     case "end-turn":
       handleEndTurn(s, action.playerId);
       break;
@@ -345,6 +387,10 @@ export interface LegalMoves {
   doors: Direction[];
   attackMonsters: string[];
   attackPlayers: PlayerId[];
+  /** Items lying on this room's floor that the player may pick up. */
+  pickupItems: CardId[];
+  /** Living explorers sharing this room that the player may hand items to. */
+  tradePartners: PlayerId[];
   canEndTurn: boolean;
 }
 
@@ -354,6 +400,8 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     doors: [],
     attackMonsters: [],
     attackPlayers: [],
+    pickupItems: [],
+    tradePartners: [],
     canEndTurn: false,
   };
   const p = getPlayer(s, playerId);
@@ -363,14 +411,15 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
   const explored = moving ? connections(s, p.position) : [];
   const doors = moving ? openDoors(s, p.position) : [];
 
+  const canAttack = s.attacksLeft > 0;
   const attackMonsters =
-    s.phase === "haunt" && s.haunt
+    canAttack && s.phase === "haunt" && s.haunt
       ? s.haunt.monsters
           .filter((m) => m.hp > 0 && m.position === p.position)
           .map((m) => m.id)
       : [];
   const attackPlayers =
-    s.phase === "haunt"
+    canAttack && s.phase === "haunt"
       ? s.players
           .filter(
             (o) => o.id !== p.id && o.alive && o.position === p.position && o.side !== p.side,
@@ -378,5 +427,18 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
           .map((o) => o.id)
       : [];
 
-  return { explored, doors, attackMonsters, attackPlayers, canEndTurn: true };
+  const pickupItems = s.itemPiles[p.position] ? [...s.itemPiles[p.position]!] : [];
+  const tradePartners = s.players
+    .filter((o) => o.id !== p.id && o.alive && o.position === p.position)
+    .map((o) => o.id);
+
+  return {
+    explored,
+    doors,
+    attackMonsters,
+    attackPlayers,
+    pickupItems,
+    tradePartners,
+    canEndTurn: true,
+  };
 }

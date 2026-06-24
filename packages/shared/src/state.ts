@@ -106,7 +106,21 @@ export function modTrait(
   if (next <= 0) {
     p.alive = false;
     addLog(s, `${p.name} has been lost to the house.`, "death");
+    dropInventory(s, p);
     return true;
   }
   return false;
+}
+
+/**
+ * When an explorer dies their belongings spill onto the floor of the room they
+ * fell in, where the living can recover them — so a haunt that needs a carried
+ * item (e.g. the Iron Key) can't be soft-locked by that carrier's death.
+ */
+export function dropInventory(s: GameState, p: PlayerState): void {
+  if (!p.position || p.inventory.length === 0) return;
+  const pile = (s.itemPiles[p.position] ??= []);
+  pile.push(...p.inventory);
+  addLog(s, `${p.name}'s belongings spill across the floor.`, "death");
+  p.inventory = [];
 }

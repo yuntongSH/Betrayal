@@ -109,6 +109,8 @@ export function playerAttack(
   if (s.phase !== "haunt" || !s.haunt) return;
   const attacker = getPlayer(s, attackerId);
   if (!attacker?.alive || !attacker.position) return;
+  // One attack per turn — refuse once this turn's attack is spent.
+  if (s.attacksLeft <= 0) return;
 
   const rng = Rng.fromState(s.rngState);
   const weapon = itemTagBonus(attacker, "weapon");
@@ -120,6 +122,7 @@ export function playerAttack(
       s.rngState = rng.state;
       return;
     }
+    s.attacksLeft -= 1;
     const def = rollDice(rng, m.might);
     if (atk.total >= def.total) {
       const dmg = Math.max(1, atk.total - def.total);
@@ -142,6 +145,7 @@ export function playerAttack(
       s.rngState = rng.state;
       return;
     }
+    s.attacksLeft -= 1;
     const armor = itemTagBonus(target, "armor");
     const def = rollDice(rng, effectiveTrait(target, "might") + armor);
     if (atk.total > def.total) {

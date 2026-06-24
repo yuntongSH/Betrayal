@@ -34,6 +34,8 @@ interface Store {
   explore: (door: Direction) => void;
   attackMonster: (monsterId: string) => void;
   attackPlayer: (targetPlayerId: string) => void;
+  pickupItem: (cardId: string) => void;
+  giveItem: (toPlayerId: string, cardId: string) => void;
   endTurn: () => void;
 }
 
@@ -165,6 +167,9 @@ export const useStore = create<Store>((set, get) => {
       act((playerId) => ({ type: "attack", playerId, targetMonsterId: monsterId })),
     attackPlayer: (targetPlayerId) =>
       act((playerId) => ({ type: "attack", playerId, targetPlayerId })),
+    pickupItem: (cardId) => act((playerId) => ({ type: "pickup-item", playerId, cardId })),
+    giveItem: (toPlayerId, cardId) =>
+      act((playerId) => ({ type: "give-item", playerId, toPlayerId, cardId })),
     endTurn: () => act((playerId) => ({ type: "end-turn", playerId })),
   };
 });

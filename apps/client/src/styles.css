@@ -692,6 +692,17 @@ kbd {
 .tp-inv ul { margin: 0.2rem 0 0; padding: 0; list-style: none; font-size: 0.82rem; }
 .tp-inv li { display: flex; gap: 0.4rem; align-items: center; }
 .inv-icon { width: 1.1em; text-align: center; }
+.inv-give { margin-left: auto; display: flex; gap: 0.25rem; }
+.give-btn {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 6px;
+  border: 1px solid rgba(180, 200, 230, 0.28);
+  background: rgba(40, 52, 79, 0.55);
+  color: #cdd7ec;
+  cursor: pointer;
+}
+.give-btn:hover { background: rgba(70, 90, 130, 0.7); }
 .tp-goal {
   border-radius: 8px;
   padding: 0.5rem;
