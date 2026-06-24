@@ -167,6 +167,13 @@ function applyRoomSpecial(s: GameState, p: PlayerState, room: PlacedRoom): void 
       addLog(s, "The chamber drags the dark closer.", "info");
       drawAndResolve(s, p, "omen");
       break;
+    case "mystic-elevator":
+      addLog(
+        s,
+        "The iron cage shudders. Its dial spins — it will carry you between floors.",
+        "info",
+      );
+      break;
     default:
       break;
   }
