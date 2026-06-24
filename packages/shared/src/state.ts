@@ -124,3 +124,27 @@ export function dropInventory(s: GameState, p: PlayerState): void {
   addLog(s, `${p.name}'s belongings spill across the floor.`, "death");
   p.inventory = [];
 }
+
+/**
+ * The view of the game a single player is allowed to see. The networked server
+ * sends each client only their own redaction, so secret information can't leak
+ * over the wire (e.g. via dev-tools): the traitor's objective is hidden from
+ * everyone but the traitor. The traitor's *identity* stays public — it's
+ * announced at the reveal — and there is nothing to hide before the haunt, so
+ * the original state is returned untouched in those cases.
+ */
+export function redactStateForPlayer(
+  s: GameState,
+  viewerId: PlayerId | null,
+): GameState {
+  if (!s.haunt) return s;
+  const viewer = getPlayer(s, viewerId);
+  if (viewer?.side === "traitor") return s;
+  return {
+    ...s,
+    haunt: {
+      ...s.haunt,
+      traitorGoal: "Unknown — the traitor's true purpose is hidden from you.",
+    },
+  };
+}
