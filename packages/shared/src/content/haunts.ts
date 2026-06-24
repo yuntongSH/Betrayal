@@ -49,6 +49,15 @@ function livingMonsters(s: GameState): MonsterState[] {
 }
 
 let monsterSeq = 0;
+interface SpawnOpts {
+  attackType?: "physical" | "mental";
+  /** Rooms moved per monster phase (default 1). */
+  speed?: number;
+  /** Reforms at the haunt's start room when slain. */
+  respawns?: boolean;
+  /** Where to place them: spread at random, or clustered at the start room. */
+  at?: "random" | "start";
+}
 function spawn(
   s: GameState,
   ctx: HauntContext,
@@ -56,19 +65,24 @@ function spawn(
   might: number,
   hp: number,
   count: number,
-  attackType: "physical" | "mental" = "physical",
+  opts: SpawnOpts = {},
 ): void {
   if (!s.haunt) return;
+  const { attackType = "physical", speed = 1, respawns = false, at = "random" } = opts;
   const keys = ctx.roomKeys();
   for (let i = 0; i < count; i++) {
-    const pos = keys.length ? ctx.rng.pick(keys) : ctx.spawnKey();
+    const pos =
+      at === "start" ? ctx.spawnKey() : keys.length ? ctx.rng.pick(keys) : ctx.spawnKey();
     s.haunt.monsters.push({
       id: `m${monsterSeq++}`,
       name,
       position: pos,
       might,
       hp,
+      maxHp: hp,
       attackType,
+      speed,
+      respawns,
     });
   }
 }
@@ -93,7 +107,14 @@ export const HAUNTS: HauntDef[] = [
     traitorGoal: "Snuff out every hero.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Shade", 3, 3, heroes, "mental");
+      // Spectral, quick, and they reform from the dark — the heroes must reach
+      // the traitor, not waste the night cutting down shades that won't stay dead.
+      spawn(s, ctx, "Shade", 3, 3, heroes, {
+        attackType: "mental",
+        speed: 2,
+        respawns: true,
+        at: "start",
+      });
     },
     checkWin: (s) => baseOutcome(s),
   },
@@ -109,7 +130,7 @@ export const HAUNTS: HauntDef[] = [
       if (!s.haunt) return;
       s.haunt.vars.ritualProgress = 0;
       s.haunt.vars.ritualNeeded = 4;
-      spawn(s, ctx, "Acolyte", 2, 2, 1);
+      spawn(s, ctx, "Acolyte", 2, 2, 1, { at: "start" });
     },
     checkWin: (s) => {
       if (!s.haunt) return null;
@@ -153,7 +174,8 @@ export const HAUNTS: HauntDef[] = [
     setup: (s, _t, ctx) => {
       if (!s.haunt) return;
       s.haunt.vars.surviveUntilTurn = s.turn + 5;
-      spawn(s, ctx, "The Drowned", 6, 8, 1);
+      // Vast and slow, but it does not stop coming.
+      spawn(s, ctx, "The Drowned", 6, 8, 1, { speed: 1, at: "start" });
     },
     checkWin: (s) => {
       if (!s.haunt) return null;
@@ -195,7 +217,8 @@ export const HAUNTS: HauntDef[] = [
     traitorGoal: "Let the whispers drown the living.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Whisper", 2, 1, heroes * 2, "mental");
+      // Many, fast, and they go for the mind — but they stay dead once silenced.
+      spawn(s, ctx, "Whisper", 2, 1, heroes * 2, { attackType: "mental", speed: 2 });
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor";
@@ -216,7 +239,7 @@ export const HAUNTS: HauntDef[] = [
     chooseTraitors: () => [],
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Drowned Hand", 2, 3, heroes, "physical");
+      spawn(s, ctx, "Drowned Hand", 2, 3, heroes, { attackType: "physical", at: "start" });
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor"; // the house prevails

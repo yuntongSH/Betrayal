@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
 import { monsterPhase, triggerHaunt } from "../haunt";
-import { beginTurn, createGame } from "../setup";
+import { beginTurn, createGame, ENTRANCE_KEY } from "../setup";
 import { getPlayer, redactStateForPlayer } from "../state";
 import { HAUNTS_BY_ID, OMENS } from "../content";
-import type { GameState } from "../types";
+import { key } from "../grid";
+import type { GameState, MonsterState } from "../types";
 
 function startedGame(seed = 11): GameState {
   const s = createGame("test", seed);
@@ -95,6 +96,69 @@ describe("haunt selection by omen × room", () => {
     }
     // The mapping is a genuine function of the omen — not a constant.
     expect(ids.size).toBeGreaterThan(1);
+  });
+});
+
+describe("richer monsters — speed & respawn", () => {
+  function hauntWithMonster(s: GameState, m: MonsterState, startRoom: string | null): void {
+    s.phase = "haunt";
+    s.haunt = {
+      id: "crawling-dark",
+      name: "Test",
+      traitorIds: ["c"],
+      startedById: "c",
+      startRoomKey: startRoom,
+      monsters: [m],
+      heroGoal: "",
+      traitorGoal: "",
+      vars: {},
+    };
+    s.players.forEach((p) => (p.side = p.id === "c" ? "traitor" : "heroes"));
+  }
+
+  it("a fast monster (speed 2) closes two rooms in one phase", () => {
+    const s = startedGame();
+    // Heroes start in the Entrance Hall; the monster starts two rooms away at
+    // the Grand Staircase (staircase → foyer → entrance).
+    hauntWithMonster(
+      s,
+      { id: "m1", name: "Runner", position: key("ground", 0, 0), might: 1, hp: 5, speed: 2 },
+      null,
+    );
+    monsterPhase(s);
+    expect(s.haunt!.monsters[0]!.position).toBe(ENTRANCE_KEY);
+  });
+
+  it("a slow monster (speed 1) only advances one room", () => {
+    const s = startedGame();
+    hauntWithMonster(
+      s,
+      { id: "m1", name: "Plodder", position: key("ground", 0, 0), might: 1, hp: 5, speed: 1 },
+      null,
+    );
+    monsterPhase(s);
+    expect(s.haunt!.monsters[0]!.position).toBe(key("ground", 0, 1)); // the foyer
+  });
+
+  it("a respawning monster reforms at the start room after it dies", () => {
+    const s = startedGame();
+    hauntWithMonster(
+      s,
+      {
+        id: "m1",
+        name: "Shade",
+        position: key("ground", 0, 1),
+        might: 3,
+        hp: 0, // already slain
+        maxHp: 3,
+        respawns: true,
+      },
+      ENTRANCE_KEY,
+    );
+    monsterPhase(s);
+    const m = s.haunt!.monsters[0]!;
+    expect(m.hp).toBe(3);
+    expect(m.position).toBe(ENTRANCE_KEY);
   });
 });
 

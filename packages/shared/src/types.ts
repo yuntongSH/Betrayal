@@ -147,6 +147,12 @@ export interface MonsterState {
   /** Whether this creature assaults the body (Might) or the mind (Sanity).
    *  Absent is treated as physical. */
   attackType?: "physical" | "mental";
+  /** Rooms it advances per monster phase. Absent is treated as 1. */
+  speed?: number;
+  /** If true, it reforms (back to maxHp at the haunt's start room) when slain. */
+  respawns?: boolean;
+  /** Starting hp, used to restore a respawning monster. */
+  maxHp?: number;
 }
 
 export interface HauntState {
