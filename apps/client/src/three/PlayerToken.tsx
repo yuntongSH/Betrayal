@@ -1,12 +1,12 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
-import { buildExplorerFigure } from "@dread-hollow/decor";
-import type { Group } from "three";
+import { buildExplorerFigure, animateFigure } from "@dread-hollow/decor";
 
 export function PlayerToken({
   position,
   color,
+  archetype,
   name,
   isActive,
   isMe,
@@ -14,27 +14,31 @@ export function PlayerToken({
 }: {
   position: [number, number, number];
   color: string;
+  archetype?: string;
   name: string;
   isActive: boolean;
   isMe: boolean;
   side: "heroes" | "traitor" | null;
 }) {
-  const ref = useRef<Group>(null);
-  const figure = useMemo(() => buildExplorerFigure(color), [color]);
+  const figure = useMemo(
+    () => buildExplorerFigure(color, { archetype }),
+    [color, archetype],
+  );
+  // a stable per-figure phase so identical figures don't bob in lockstep
+  const phase = useRef(Math.random() * 6);
 
   useFrame((state) => {
-    if (!ref.current) return;
     const t = state.clock.elapsedTime;
-    ref.current.position.y =
-      position[1] + 0.02 + Math.sin(t * 2) * (isActive ? 0.08 : 0.03);
-    ref.current.rotation.y = Math.sin(t * 0.4) * 0.25;
+    animateFigure(figure, t, {
+      active: isActive,
+      phase: phase.current,
+      baseY: position[1] + 0.02,
+    });
   });
 
   return (
     <group position={[position[0], position[1], position[2]]}>
-      <group ref={ref}>
-        <primitive object={figure} />
-      </group>
+      <primitive object={figure} />
 
       {/* a bright pillar of light marks whoever is up */}
       {isActive && (

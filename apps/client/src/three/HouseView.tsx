@@ -128,6 +128,7 @@ export function HouseView() {
                 key={o.id}
                 position={[wx + ox, wy, wz + oz]}
                 color={char?.color ?? "#aaaaaa"}
+                archetype={p.characterId ?? undefined}
                 name={p.name}
                 isActive={game.activePlayerId === p.id}
                 isMe={p.id === myId}
