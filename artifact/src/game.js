@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, materials, surfaceFor } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -213,12 +213,21 @@ function buildRoomGroup(room) {
   const [wx, wy, wz] = roomWorld(room);
   g.position.set(wx, wy, wz);
 
-  const floorMat = new THREE.MeshStandardMaterial({ color: theme.floor, roughness: 0.95, metalness: 0.05 });
+  const surf = surfaceFor(room.roomId);
+  const floorMat = surf.floor === "stone"
+    ? materials.crackedStone({ tint: theme.floor })
+    : materials.agedHardwood({ tint: theme.floor });
   const floor = new THREE.Mesh(new THREE.BoxGeometry(TILE, 0.3, TILE), floorMat);
   floor.position.y = -0.15;
   floor.receiveShadow = true;
   floor.userData = { kind: "room", key: room.key, lit: false };
   g.add(floor);
+
+  const wallMat = surf.wall === "wallpaper"
+    ? materials.peelingWallpaper({ tint: theme.wall })
+    : surf.wall === "stone"
+      ? materials.crackedStone({ tint: theme.wall })
+      : materials.stainedPlaster({ tint: theme.wall });
 
   const doors = DH.placedDoorways(room);
   const H = TILE / 2;
@@ -226,9 +235,11 @@ function buildRoomGroup(room) {
     if (doors.has(d)) continue;
     const wall = new THREE.Mesh(
       (d === "north" || d === "south") ? new THREE.BoxGeometry(TILE, WALL_H, 0.2) : new THREE.BoxGeometry(0.2, WALL_H, TILE),
-      new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 1 }),
+      wallMat,
     );
     wall.position.set(d === "east" ? H : d === "west" ? -H : 0, WALL_H / 2, d === "south" ? H : d === "north" ? -H : 0);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
     g.add(wall);
   }
 
@@ -260,7 +271,9 @@ function buildHouse(legal) {
     }
     const lit = hi.has(room.key);
     entry.floor.userData.lit = lit;
-    entry.floorMat.color.set(lit ? 0x3a4a3a : roomTheme(room.roomId).floor);
+    // Color now multiplies the procedural map: white keeps the texture intact
+    // while the emissive provides the lit highlight; otherwise tint by theme.
+    entry.floorMat.color.set(lit ? 0xffffff : roomTheme(room.roomId).floor);
     entry.floorMat.emissive.set(lit ? 0x5a8f5a : 0x000000);
     entry.floorMat.emissiveIntensity = lit ? 0.5 : 0;
     entry.labelEl.className = "lbl3d" + (lit ? " lit" : "");
