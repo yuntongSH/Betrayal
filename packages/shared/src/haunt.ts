@@ -13,6 +13,7 @@ import {
   getPlayer,
   itemTagBonus,
   modTrait,
+  roomAura,
 } from "./state";
 import { stepToward } from "./house";
 import { rollDice } from "./dice";
@@ -161,7 +162,10 @@ export function playerAttack(
     // Spectral foes are fought with the mind (Knowledge/occult), bodily foes
     // with the body (Might/weapon); a loss drains the matching trait.
     const c = monsterCombat(m);
-    const atk = rollDice(rng, effectiveTrait(attacker, c.heroAttack) + itemTagBonus(attacker, c.atkTag));
+    const atk = rollDice(
+      rng,
+      Math.max(0, effectiveTrait(attacker, c.heroAttack) + itemTagBonus(attacker, c.atkTag) + roomAura(s, attacker)),
+    );
     const def = rollDice(rng, m.might);
     if (atk.total >= def.total) {
       const dmg = Math.max(1, atk.total - def.total);
@@ -187,8 +191,14 @@ export function playerAttack(
       return;
     }
     s.attacksLeft -= 1;
-    const atk = rollDice(rng, effectiveTrait(attacker, "might") + itemTagBonus(attacker, "weapon"));
-    const def = rollDice(rng, effectiveTrait(target, "might") + itemTagBonus(target, "armor"));
+    const atk = rollDice(
+      rng,
+      Math.max(0, effectiveTrait(attacker, "might") + itemTagBonus(attacker, "weapon") + roomAura(s, attacker)),
+    );
+    const def = rollDice(
+      rng,
+      Math.max(0, effectiveTrait(target, "might") + itemTagBonus(target, "armor") + roomAura(s, target)),
+    );
     if (atk.total > def.total) {
       const dmg = Math.max(1, atk.total - def.total);
       addLog(s, `${attacker.name} attacks ${target.name}!`, "combat", atk.dice);
@@ -233,7 +243,10 @@ export function monsterPhase(s: GameState): void {
     if (target) {
       const c = monsterCombat(m);
       const atk = rollDice(rng, m.might);
-      const def = rollDice(rng, effectiveTrait(target, c.heroDefend) + itemTagBonus(target, c.defTag));
+      const def = rollDice(
+        rng,
+        Math.max(0, effectiveTrait(target, c.heroDefend) + itemTagBonus(target, c.defTag) + roomAura(s, target)),
+      );
       if (atk.total > def.total) {
         const dmg = Math.max(1, atk.total - def.total);
         addLog(

@@ -26,6 +26,7 @@ import {
   getPlayer,
   hasTag,
   modTrait,
+  roomAura,
 } from "./state";
 import { drawCard, drawRoomForFloor } from "./decks";
 import { connections, openDoors } from "./house";
@@ -177,6 +178,15 @@ function applyRoomSpecial(s: GameState, p: PlayerState, room: PlacedRoom): void 
     default:
       break;
   }
+  if (def.aura) {
+    addLog(
+      s,
+      def.aura > 0
+        ? `The air here is still and clean. Your hand steadies while you remain. (+${def.aura} die)`
+        : `Dread soaks these walls. Every effort falters while you remain. (${def.aura} dice)`,
+      "info",
+    );
+  }
 }
 
 function resolveRoomDraws(s: GameState, p: PlayerState, room: PlacedRoom): void {
@@ -225,7 +235,7 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
       break;
     case "trait-roll": {
       const rng = Rng.fromState(s.rngState);
-      const roll = rollDice(rng, effectiveTrait(p, effect.trait));
+      const roll = rollDice(rng, Math.max(0, effectiveTrait(p, effect.trait) + roomAura(s, p)));
       s.rngState = rng.state;
       const passed = roll.total >= effect.difficulty;
       addLog(

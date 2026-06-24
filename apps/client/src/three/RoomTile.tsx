@@ -109,7 +109,10 @@ export function RoomTile({
       />
 
       <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={14} occlude={false}>
-        <div className={`room-label ${highlighted ? "lit" : ""}`}>{def.name}</div>
+        <div className={`room-label ${highlighted ? "lit" : ""}`}>
+          {def.name}
+          {def.aura ? (def.aura > 0 ? " ✦" : " ☓") : ""}
+        </div>
       </Html>
     </group>
   );
