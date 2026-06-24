@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { HouseView } from "./HouseView";
 import { Atmosphere } from "./Atmosphere";
+import { CameraDirector } from "./CameraDirector";
 import { PostFX } from "./PostFX";
 import { FLOOR_GAP } from "./layout";
 
@@ -45,6 +46,7 @@ export function Scene() {
       </Suspense>
 
       <Atmosphere />
+      <CameraDirector />
 
       {/* the void the house floats in */}
       <mesh position={[0, -FLOOR_GAP - 2, 4]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

@@ -38,6 +38,7 @@ let houseGroup, tokenGroup, arrowGroup;
 let dust, wisps = [];
 let anims = []; // per-render animated tokens
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
+const camDesired = new THREE.Vector3(0, 0, 4); // soft camera-follow target
 
 // =========================================================================
 // LOBBY
@@ -575,6 +576,18 @@ function onResize() {
 function animate() {
   requestAnimationFrame(animate);
   const t = performance.now() / 1000;
+
+  // soft camera-follow: ease the orbit target toward the active player's room
+  // (only nudges `target`, so the user can still orbit/zoom freely)
+  if (state) {
+    const active = state.players.find((p) => p.id === state.activePlayerId);
+    const room = active && active.position ? state.house[active.position] : null;
+    if (room) {
+      const [cx, cy, cz] = roomWorld(room);
+      camDesired.set(cx, cy + 0.6, cz);
+    }
+    controls.target.lerp(camDesired, 0.025);
+  }
   controls.update();
 
   if (dust) {
