@@ -1,4 +1,5 @@
-import { CHARACTERS_BY_ID, TRAITS, getCard } from "@dread-hollow/shared";
+import { useMemo } from "react";
+import { CHARACTERS_BY_ID, TRAITS, getCard, legalMoves } from "@dread-hollow/shared";
 import type { Trait } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 
@@ -37,7 +38,18 @@ function tagIcon(cardId: string): string {
 export function TraitPanel() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
+  const giveItem = useStore((s) => s.giveItem);
   const me = game.players.find((p) => p.id === myId);
+
+  // Allies sharing my room I can hand items to (only on my turn).
+  const partners = useMemo(() => {
+    if (!myId || game.activePlayerId !== myId) return [];
+    return legalMoves(game, myId).tradePartners.map((id) => ({
+      id,
+      name: game.players.find((p) => p.id === id)?.name ?? "ally",
+    }));
+  }, [game, myId]);
+
   if (!me || !me.characterId) return null;
   const char = CHARACTERS_BY_ID[me.characterId];
   if (!char) return null;
@@ -105,6 +117,20 @@ export function TraitPanel() {
               <li key={id}>
                 <span className="inv-icon">{tagIcon(id)}</span>
                 {getCard(id)?.name ?? id}
+                {partners.length > 0 && (
+                  <span className="inv-give">
+                    {partners.map((pt) => (
+                      <button
+                        key={pt.id}
+                        className="give-btn"
+                        title={`Give to ${pt.name}`}
+                        onClick={() => giveItem(pt.id, id)}
+                      >
+                        → {pt.name.split(" ")[0]}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

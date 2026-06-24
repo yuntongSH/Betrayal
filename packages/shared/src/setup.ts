@@ -41,7 +41,9 @@ export function createGame(id: string, seed: number): GameState {
     order: [],
     activePlayerId: null,
     movementLeft: 0,
+    attacksLeft: 0,
     house: {},
+    itemPiles: {},
     decks: { event: [], item: [], omen: [], rooms: [] },
     discards: { event: [], item: [], omen: [] },
     omenCount: 0,
@@ -133,11 +135,13 @@ export function chooseCharacter(
   }
 }
 
-/** Begin the active player's turn: refresh movement from their Speed. */
+/** Begin the active player's turn: refresh movement from their Speed and the
+ *  single attack the genre grants each turn. */
 export function beginTurn(s: GameState): void {
   const active = getPlayer(s, s.activePlayerId);
   if (!active) return;
   s.movementLeft = Math.max(1, baseTrait(active, "speed"));
+  s.attacksLeft = 1;
 }
 
 /**

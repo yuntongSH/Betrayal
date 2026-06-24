@@ -1,4 +1,4 @@
-import type { CharacterId, Direction, PlayerId } from "./types";
+import type { CardId, CharacterId, Direction, PlayerId } from "./types";
 
 /**
  * Player intents. The authoritative engine validates every one of these against
@@ -24,6 +24,10 @@ export type Action =
       targetMonsterId?: string;
       targetPlayerId?: PlayerId;
     }
+  /** Pick up an item lying on the floor of your current room. */
+  | { type: "pickup-item"; playerId: PlayerId; cardId: CardId }
+  /** Hand one of your items to another explorer sharing your room. */
+  | { type: "give-item"; playerId: PlayerId; toPlayerId: PlayerId; cardId: CardId }
   | { type: "end-turn"; playerId: PlayerId };
 
 export type ActionType = Action["type"];

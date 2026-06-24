@@ -215,8 +215,12 @@ export interface GameState {
   order: PlayerId[];
   activePlayerId: PlayerId | null;
   movementLeft: number;
+  /** Attacks the active player may still make this turn (one per turn). */
+  attacksLeft: number;
   /** PlacedRoom keyed by location. */
   house: Record<string, PlacedRoom>;
+  /** Items left on the floor of a room (e.g. dropped by the dead), keyed by room. */
+  itemPiles: Record<string, CardId[]>;
   decks: Decks;
   discards: { event: CardId[]; item: CardId[]; omen: CardId[] };
   /** Omens drawn so far — the haunt roll compares against this. */
