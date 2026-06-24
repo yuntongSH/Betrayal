@@ -3,9 +3,9 @@
  * combat resolution. Depends only on state/house/content — never the engine —
  * so the engine can call into it without an import cycle.
  */
-import type { GameState, PlayerId, Side } from "./types";
+import type { GameState, MonsterState, PlayerId, Side, Trait } from "./types";
 import { Rng } from "./rng";
-import { HAUNTS, HAUNTS_BY_ID } from "./content";
+import { HAUNTS, HAUNTS_BY_ID, OMENS, ROOMS } from "./content";
 import type { HauntContext } from "./content";
 import {
   addLog,
@@ -21,8 +21,40 @@ function livingHeroes(s: GameState) {
   return s.players.filter((p) => p.side === "heroes" && p.alive && p.position);
 }
 
-/** Deterministically choose which scenario fires from the game's RNG. */
-function selectHauntId(s: GameState): string {
+/** How a creature fights: which trait a hero rolls to attack it and to defend,
+ *  and which carried item tag helps each. Mental foes are fought with the mind. */
+function monsterCombat(m: MonsterState): {
+  heroAttack: Trait;
+  heroDefend: Trait;
+  atkTag: string;
+  defTag: string;
+} {
+  return m.attackType === "mental"
+    ? { heroAttack: "knowledge", heroDefend: "sanity", atkTag: "occult", defTag: "holy" }
+    : { heroAttack: "might", heroDefend: "might", atkTag: "weapon", defTag: "armor" };
+}
+
+// Stable ranks so the (omen, room) pair maps to a scenario deterministically.
+const OMEN_RANK: Record<string, number> = Object.fromEntries(
+  OMENS.map((o, i) => [o.id, i]),
+);
+const ROOM_RANK: Record<string, number> = Object.fromEntries(
+  ROOMS.map((r, i) => [r.id, i]),
+);
+
+/**
+ * Choose which scenario fires. Faithful to the genre, the (omen, room) pair
+ * deterministically selects the haunt — tying the betrayal to the game's actual
+ * history rather than pure chance. Only when that context is missing (e.g. a
+ * direct test trigger with no room) do we fall back to the RNG.
+ */
+function selectHauntId(s: GameState, omenId?: string, roomId?: string): string {
+  if (omenId != null || roomId != null) {
+    const oRank = omenId != null ? OMEN_RANK[omenId] ?? 0 : 0;
+    const rRank = roomId != null ? ROOM_RANK[roomId] ?? 0 : 0;
+    const idx = (oRank * 7 + rRank) % HAUNTS.length;
+    return HAUNTS[idx]!.id;
+  }
   const rng = Rng.fromState(s.rngState);
   const def = HAUNTS[rng.int(HAUNTS.length)]!;
   s.rngState = rng.state;
@@ -37,15 +69,16 @@ function selectHauntId(s: GameState): string {
 export function triggerHaunt(
   s: GameState,
   triggerPlayerId: PlayerId,
+  omenId?: string,
 ): void {
-  const def = HAUNTS_BY_ID[selectHauntId(s)];
+  const trigger = getPlayer(s, triggerPlayerId);
+  const roomId = trigger?.position ? s.house[trigger.position]?.roomId : undefined;
+  const def = HAUNTS_BY_ID[selectHauntId(s, omenId, roomId)];
   if (!def) return;
 
   const traitorIds = def.chooseTraitors
     ? def.chooseTraitors(s, triggerPlayerId)
     : [triggerPlayerId];
-
-  const trigger = getPlayer(s, triggerPlayerId);
   s.haunt = {
     id: def.id,
     name: def.name,
@@ -113,8 +146,6 @@ export function playerAttack(
   if (s.attacksLeft <= 0) return;
 
   const rng = Rng.fromState(s.rngState);
-  const weapon = itemTagBonus(attacker, "weapon");
-  const atk = rollDice(rng, effectiveTrait(attacker, "might") + weapon);
 
   if (opts.monsterId) {
     const m = s.haunt.monsters.find((x) => x.id === opts.monsterId && x.hp > 0);
@@ -123,21 +154,27 @@ export function playerAttack(
       return;
     }
     s.attacksLeft -= 1;
+    // Spectral foes are fought with the mind (Knowledge/occult), bodily foes
+    // with the body (Might/weapon); a loss drains the matching trait.
+    const c = monsterCombat(m);
+    const atk = rollDice(rng, effectiveTrait(attacker, c.heroAttack) + itemTagBonus(attacker, c.atkTag));
     const def = rollDice(rng, m.might);
     if (atk.total >= def.total) {
       const dmg = Math.max(1, atk.total - def.total);
       m.hp -= dmg;
-      addLog(
-        s,
-        `${attacker.name} strikes the ${m.name} for ${dmg}.`,
-        "combat",
-        atk.dice,
-      );
+      addLog(s, `${attacker.name} strikes the ${m.name} for ${dmg}.`, "combat", atk.dice);
       if (m.hp <= 0) addLog(s, `The ${m.name} is destroyed!`, "combat");
     } else {
       const dmg = Math.max(1, def.total - atk.total);
-      addLog(s, `The ${m.name} turns on ${attacker.name}.`, "combat", def.dice);
-      modTrait(s, attacker, "might", -dmg);
+      addLog(
+        s,
+        m.attackType === "mental"
+          ? `The ${m.name} claws at ${attacker.name}'s mind.`
+          : `The ${m.name} turns on ${attacker.name}.`,
+        "combat",
+        def.dice,
+      );
+      modTrait(s, attacker, c.heroDefend, -dmg);
     }
   } else if (opts.targetPlayerId) {
     const target = getPlayer(s, opts.targetPlayerId);
@@ -146,20 +183,15 @@ export function playerAttack(
       return;
     }
     s.attacksLeft -= 1;
-    const armor = itemTagBonus(target, "armor");
-    const def = rollDice(rng, effectiveTrait(target, "might") + armor);
+    const atk = rollDice(rng, effectiveTrait(attacker, "might") + itemTagBonus(attacker, "weapon"));
+    const def = rollDice(rng, effectiveTrait(target, "might") + itemTagBonus(target, "armor"));
     if (atk.total > def.total) {
       const dmg = Math.max(1, atk.total - def.total);
       addLog(s, `${attacker.name} attacks ${target.name}!`, "combat", atk.dice);
       modTrait(s, target, "might", -dmg);
     } else {
       const dmg = Math.max(1, def.total - atk.total);
-      addLog(
-        s,
-        `${target.name} overpowers ${attacker.name}.`,
-        "combat",
-        def.dice,
-      );
+      addLog(s, `${target.name} overpowers ${attacker.name}.`, "combat", def.dice);
       modTrait(s, attacker, "might", -dmg);
     }
   }
@@ -191,20 +223,22 @@ export function monsterPhase(s: GameState): void {
     }
 
     if (target) {
+      const c = monsterCombat(m);
       const atk = rollDice(rng, m.might);
-      const armor = itemTagBonus(target, "armor");
-      const def = rollDice(rng, effectiveTrait(target, "might") + armor);
+      const def = rollDice(rng, effectiveTrait(target, c.heroDefend) + itemTagBonus(target, c.defTag));
       if (atk.total > def.total) {
         const dmg = Math.max(1, atk.total - def.total);
-        addLog(s, `The ${m.name} savages ${target.name}.`, "combat", atk.dice);
-        modTrait(s, target, "might", -dmg);
-      } else {
         addLog(
           s,
-          `${target.name} holds off the ${m.name}.`,
+          m.attackType === "mental"
+            ? `The ${m.name} worms into ${target.name}'s thoughts.`
+            : `The ${m.name} savages ${target.name}.`,
           "combat",
-          def.dice,
+          atk.dice,
         );
+        modTrait(s, target, c.heroDefend, -dmg);
+      } else {
+        addLog(s, `${target.name} holds off the ${m.name}.`, "combat", def.dice);
       }
     }
   }

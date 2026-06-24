@@ -140,7 +140,7 @@ export function GameScreen() {
       <div className="hud-hint">
         Drag to orbit · arrow keys / WASD to move · click a glowing room or a
         flame arrow · E ends your turn
-        {game.phase === "haunt" ? " · click a monster to strike" : ""}
+        {game.phase === "haunt" ? " · click a monster to strike · ✦ spectral foes are fought with the mind" : ""}
       </div>
     </div>
   );

@@ -204,7 +204,7 @@ function resolveCard(s: GameState, p: PlayerState, cardId: CardId): void {
     addLog(s, `${p.name} uncovers an Omen — ${card.name}.`, "card");
     p.inventory.push(cardId);
     s.omenCount += 1;
-    performHauntRoll(s, p);
+    performHauntRoll(s, p, cardId);
   }
 }
 
@@ -239,7 +239,7 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
   }
 }
 
-function performHauntRoll(s: GameState, p: PlayerState): void {
+function performHauntRoll(s: GameState, p: PlayerState, omenId?: CardId): void {
   const rng = Rng.fromState(s.rngState);
   const { roll, triggered } = hauntRoll(rng, s.omenCount);
   s.rngState = rng.state;
@@ -249,7 +249,7 @@ function performHauntRoll(s: GameState, p: PlayerState): void {
     "roll",
     roll.dice,
   );
-  if (triggered) triggerHaunt(s, p.id);
+  if (triggered) triggerHaunt(s, p.id, omenId);
 }
 
 // ---------------------------------------------------------------------------

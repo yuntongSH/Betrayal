@@ -56,6 +56,7 @@ function spawn(
   might: number,
   hp: number,
   count: number,
+  attackType: "physical" | "mental" = "physical",
 ): void {
   if (!s.haunt) return;
   const keys = ctx.roomKeys();
@@ -67,6 +68,7 @@ function spawn(
       position: pos,
       might,
       hp,
+      attackType,
     });
   }
 }
@@ -91,7 +93,7 @@ export const HAUNTS: HauntDef[] = [
     traitorGoal: "Snuff out every hero.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Shade", 3, 3, heroes);
+      spawn(s, ctx, "Shade", 3, 3, heroes, "mental");
     },
     checkWin: (s) => baseOutcome(s),
   },
@@ -193,7 +195,7 @@ export const HAUNTS: HauntDef[] = [
     traitorGoal: "Let the whispers drown the living.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Whisper", 2, 1, heroes * 2);
+      spawn(s, ctx, "Whisper", 2, 1, heroes * 2, "mental");
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor";

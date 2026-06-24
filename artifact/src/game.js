@@ -328,7 +328,7 @@ function monsterToken(x, y, z, m, attackable) {
 
   const el = document.createElement("div");
   el.className = "tok-lbl monster";
-  el.textContent = `${m.name} · ${m.hp}♥${attackable ? " — strike" : ""}`;
+  el.textContent = `${m.name}${m.attackType === "mental" ? " ✦" : ""} · ${m.hp}♥${attackable ? " — strike" : ""}`;
   const lbl = new CSS2DObject(el);
   lbl.position.set(0, 1.9, 0);
   g.add(lbl);

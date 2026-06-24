@@ -145,6 +145,7 @@ export function HouseView() {
               name={m.name}
               hp={m.hp}
               attackable={attackable.has(m.id)}
+              mental={m.attackType === "mental"}
               onClick={() => attackMonster(m.id)}
             />
           );

@@ -8,12 +8,14 @@ export function MonsterToken({
   name,
   hp,
   attackable,
+  mental,
   onClick,
 }: {
   position: [number, number, number];
   name: string;
   hp: number;
   attackable: boolean;
+  mental?: boolean;
   onClick: () => void;
 }) {
   const figure = useMemo(() => buildMonsterFigure(name), [name]);
@@ -43,7 +45,8 @@ export function MonsterToken({
       <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={4} decay={2} />
       <Html position={[0, 1.9, 0]} center distanceFactor={12} occlude={false}>
         <div className="token-label monster">
-          {name} · {hp}♥{attackable ? " — strike" : ""}
+          {name}
+          {mental ? " ✦" : ""} · {hp}♥{attackable ? " — strike" : ""}
         </div>
       </Html>
     </group>
