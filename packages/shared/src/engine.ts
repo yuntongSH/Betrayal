@@ -267,7 +267,14 @@ function performHauntRoll(s: GameState, p: PlayerState, omenId?: CardId): void {
     "roll",
     roll.dice,
   );
-  if (triggered) triggerHaunt(s, p.id, omenId);
+  // Safety against an explore-phase soft-lock: once the omen deck is spent there
+  // can be no further haunt rolls, so the final omen must always turn the house
+  // even on an unlucky roll — otherwise the game could wander forever.
+  const forced = !triggered && s.decks.omen.length === 0;
+  if (forced) {
+    addLog(s, "The last omen falls into place — the house can hold back no longer.", "haunt");
+  }
+  if (triggered || forced) triggerHaunt(s, p.id, omenId);
 }
 
 // ---------------------------------------------------------------------------
