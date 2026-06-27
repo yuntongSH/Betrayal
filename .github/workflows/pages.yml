@@ -1,0 +1,68 @@
+name: Deploy game to GitHub Pages
+
+# Publishes the self-contained standalone game (artifact/dread-hollow.html) to
+# GitHub Pages as the site root. The artifact needs no backend — it loads
+# three.js from a CDN and plays solo / pass-and-play entirely in the browser.
+#
+# One-time setup: in the repo, Settings → Pages → "Build and deployment" →
+# Source: "GitHub Actions". After that, every push to the default branch
+# republishes the latest build.
+
+on:
+  push:
+    branches: ["claude/wizardly-darwin-l5087u"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; newer pushes supersede in-progress ones.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the standalone game (rebuilds from source)
+        run: pnpm build:artifact
+
+      - name: Assemble the site (game = index.html)
+        run: |
+          mkdir -p _site
+          cp artifact/dread-hollow.html _site/index.html
+          # avoid Jekyll processing of the static file
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
