@@ -119,12 +119,24 @@ export function triggerHaunt(
   checkWinNow(s);
 }
 
+/** How many rounds a haunt may run before dawn forces a resolution. Prevents a
+ *  stalemate (e.g. an endless chase between equal-speed figures) soft-locking. */
+const HAUNT_ROUND_LIMIT = 40;
+
 /** Consult the active haunt's win condition; end the game if it's decided. */
 export function checkWinNow(s: GameState): void {
   if (!s.haunt || s.phase !== "haunt") return;
   const def = HAUNTS_BY_ID[s.haunt.id];
   if (!def) return;
-  const result: Side | null = def.checkWin(s);
+  if (s.haunt.vars.startTurn === undefined) s.haunt.vars.startTurn = s.turn;
+  let result: Side | null = def.checkWin(s);
+  // Dawn breaker: if no side can force a result in a reasonable span, the night
+  // ends — any surviving explorers escape. Guarantees the game terminates.
+  if (!result && s.turn - Number(s.haunt.vars.startTurn) > HAUNT_ROUND_LIMIT) {
+    const anyHeroAlive = s.players.some((p) => p.side === "heroes" && p.alive);
+    result = anyHeroAlive ? "heroes" : "traitor";
+    addLog(s, "Grey dawn seeps through the shutters. The long night is finally over.", "haunt");
+  }
   if (result) {
     s.winner = result;
     s.phase = "ended";
