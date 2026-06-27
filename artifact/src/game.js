@@ -199,6 +199,10 @@ function clearGroup(g) {
     c.traverse?.((o) => {
       o.geometry?.dispose?.();
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
+      // CSS2DRenderer leaves a label's DOM node in the page when its object is
+      // removed from the graph — pull it out by hand or labels pile up as the
+      // tokens rebuild each render.
+      if (o.isCSS2DObject) o.element?.remove?.();
     });
     g.remove(c);
   }
