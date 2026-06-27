@@ -25,6 +25,8 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn.primary{background:linear-gradient(180deg,var(--blood2),var(--blood));border-color:#5a1d15;color:#f4e7dd}
 .btn.danger{background:linear-gradient(180deg,#7a2018,#561009);border-color:#3a0c06;color:#f4d7d0}
+#toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);padding:.5rem 1rem;border-radius:10px;background:rgba(20,16,14,.88);border:1px solid rgba(226,168,90,.45);color:#f0e2d2;font-size:.9rem;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;z-index:50}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .muted{color:var(--dim)} .small{font-size:.78rem}
 
 /* lobby */

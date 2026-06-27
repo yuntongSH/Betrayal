@@ -17,11 +17,26 @@ const SPECIAL_GLOW = {
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
 };
 const DIRS = ["north", "east", "south", "west"];
-const KEY_DIR = {
-  ArrowUp: "north", ArrowDown: "south", ArrowLeft: "west", ArrowRight: "east",
-  w: "north", s: "south", a: "west", d: "east",
-  W: "north", S: "south", A: "west", D: "east",
+// Arrows/WASD are interpreted relative to the camera, then snapped to a grid dir.
+const SCREEN_KEY = {
+  ArrowUp: "up", w: "up", W: "up",
+  ArrowDown: "down", s: "down", S: "down",
+  ArrowLeft: "left", a: "left", A: "left",
+  ArrowRight: "right", d: "right", D: "right",
 };
+const GRID_AXIS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
+function snapGrid(vx, vz) {
+  let best = "north", bd = -Infinity;
+  for (const d in GRID_AXIS) { const [ax, az] = GRID_AXIS[d]; const dot = vx * ax + vz * az; if (dot > bd) { bd = dot; best = d; } }
+  return best;
+}
+let _toastT;
+function toast(msg) {
+  let el = document.getElementById("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(_toastT); _toastT = setTimeout(() => el.classList.remove("show"), 1500);
+}
 
 function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
 function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
@@ -172,26 +187,37 @@ function initScene() {
   animate();
 }
 
-/** Arrow keys / WASD move the active human player. */
+/** Arrow keys / WASD move the active human player (camera-relative); E ends the turn. */
 function onKeyMove(e) {
   if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
   const active = state.players.find((p) => p.id === state.activePlayerId);
-  if (!active || active.isBot) return;
-  const dir = KEY_DIR[e.key];
-  if (!dir) return;
-  const legal = DH.legalMoves(state, active.id);
-  const room = active.position ? state.house[active.position] : null;
-  if (!room) return;
-  if (legal.doors.includes(dir)) {
-    e.preventDefault();
-    act({ type: "explore", playerId: active.id, door: dir });
+  if (e.key === "e" || e.key === "E") {
+    if (active && !active.isBot) act({ type: "end-turn", playerId: active.id });
     return;
   }
+  const which = SCREEN_KEY[e.key];
+  if (!which) return;
+  if (!active || active.isBot) { toast("Hold on — it isn't your turn yet."); return; }
+  const room = active.position ? state.house[active.position] : null;
+  if (!room) return;
+
+  // Camera-relative basis projected on the ground: "up" = away from the camera.
+  let fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;
+  const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+  const rx = -fz, rz = fx;
+  let vx, vz;
+  if (which === "up") { vx = fx; vz = fz; }
+  else if (which === "down") { vx = -fx; vz = -fz; }
+  else if (which === "right") { vx = rx; vz = rz; }
+  else { vx = -rx; vz = -rz; }
+  const dir = snapGrid(vx, vz);
+
+  const legal = DH.legalMoves(state, active.id);
+  if (legal.doors.includes(dir)) { e.preventDefault(); act({ type: "explore", playerId: active.id, door: dir }); return; }
   const nKey = DH.neighborKey(room.floor, room.x, room.y, dir);
-  if (legal.explored.includes(nKey)) {
-    e.preventDefault();
-    act({ type: "move-to", playerId: active.id, toKey: nKey });
-  }
+  if (legal.explored.includes(nKey)) { e.preventDefault(); act({ type: "move-to", playerId: active.id, toKey: nKey }); return; }
+  e.preventDefault();
+  toast(state.movementLeft <= 0 ? "No movement left — press E to end your turn." : "No way through there.");
 }
 
 function clearGroup(g) {
