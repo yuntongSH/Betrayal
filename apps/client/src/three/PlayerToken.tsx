@@ -2,6 +2,14 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { buildExplorerFigure, animateFigure } from "@dread-hollow/decor";
+import * as THREE from "three";
+import type { Group } from "three";
+
+/** Shortest-arc angle lerp so a turn never spins the long way round. */
+function lerpAngle(a: number, b: number, t: number): number {
+  const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  return a + d * t;
+}
 
 export function PlayerToken({
   position,
@@ -24,20 +32,44 @@ export function PlayerToken({
     () => buildExplorerFigure(color, { archetype }),
     [color, archetype],
   );
+  const group = useRef<Group>(null);
   // a stable per-figure phase so identical figures don't bob in lockstep
   const phase = useRef(Math.random() * 6);
+  const yaw = useRef(0);
+  const placed = useRef(false);
+  // the world-space spot we ease toward (refreshed whenever the prop changes)
+  const target = useRef(new THREE.Vector3(position[0], position[1], position[2]));
+  target.current.set(position[0], position[1], position[2]);
+  const prev = useRef(new THREE.Vector3());
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
+    const g = group.current;
+    if (!g) return;
     const t = state.clock.elapsedTime;
-    animateFigure(figure, t, {
-      active: isActive,
-      phase: phase.current,
-      baseY: position[1] + 0.02,
-    });
+
+    // Snap into place on the first frame; glide thereafter, so a move between
+    // rooms reads as travel rather than a teleport.
+    if (!placed.current) {
+      g.position.copy(target.current);
+      placed.current = true;
+    }
+    prev.current.copy(g.position);
+    g.position.lerp(target.current, 1 - Math.exp(-9 * dt));
+
+    // Turn to face the direction of travel while actually moving.
+    const dx = g.position.x - prev.current.x;
+    const dz = g.position.z - prev.current.z;
+    if (dx * dx + dz * dz > 1e-6) {
+      yaw.current = lerpAngle(yaw.current, Math.atan2(dx, dz), 1 - Math.exp(-12 * dt));
+    }
+    g.rotation.y = yaw.current;
+
+    // Local idle animation (breathing / sway / bob) layered on top, around y≈0.
+    animateFigure(figure, t, { active: isActive, phase: phase.current, baseY: 0.02 });
   });
 
   return (
-    <group position={[position[0], position[1], position[2]]}>
+    <group ref={group}>
       <primitive object={figure} />
 
       {/* a bright pillar of light marks whoever is up */}

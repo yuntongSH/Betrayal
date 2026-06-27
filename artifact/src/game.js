@@ -36,7 +36,8 @@ const party = []; // { pid, charId }
 let scene, camera, renderer, labelRenderer, controls, raycaster, pointer;
 let houseGroup, tokenGroup, arrowGroup;
 let dust, wisps = [];
-let anims = []; // per-render animated tokens
+const tokenCache = new Map(); // entity id -> persistent token group (lerped toward its target)
+let lastFrameT = 0;
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
 const camDesired = new THREE.Vector3(0, 0, 4); // soft camera-follow target
 
@@ -285,70 +286,72 @@ function buildHouse(legal) {
   }
 }
 
-function playerToken(x, y, z, p, isActive) {
+function makePlayerToken(p) {
   const char = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
   const g = new THREE.Group();
-  g.position.set(x, y, z);
-
   const fig = buildExplorerFigure(char?.color ?? "#aaaaaa", { archetype: p.characterId });
   g.add(fig);
 
-  if (isActive) {
-    g.add(new THREE.PointLight(0xe8a85a, 5, 4, 2));
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.5, 3.2, 12, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xe8a85a, transparent: true, opacity: 0.12, depthWrite: false }),
-    );
-    beam.position.y = 1.6;
-    g.add(beam);
-  }
-  if (p.side === "traitor") g.add(new THREE.PointLight(0xc2412f, 4, 3, 2));
+  const beamLight = new THREE.PointLight(0xe8a85a, 5, 4, 2);
+  beamLight.position.y = 1.6;
+  beamLight.visible = false;
+  g.add(beamLight);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.5, 3.2, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xe8a85a, transparent: true, opacity: 0.12, depthWrite: false }),
+  );
+  beam.position.y = 1.6;
+  beam.visible = false;
+  g.add(beam);
+  const traitorLight = new THREE.PointLight(0xc2412f, 4, 3, 2);
+  traitorLight.position.y = 1;
+  traitorLight.visible = false;
+  g.add(traitorLight);
 
   const el = document.createElement("div");
-  el.className = "tok-lbl" + (p.side === "traitor" ? " traitor" : "");
-  el.textContent = p.name + (p.side === "traitor" ? " ☠" : "");
+  el.className = "tok-lbl";
   const lbl = new CSS2DObject(el);
   lbl.position.set(0, 1.9, 0);
   g.add(lbl);
 
   tokenGroup.add(g);
-  anims.push({ obj: fig, baseY: 0.02, active: isActive, phase: Math.random() * 6 });
+  return { kind: "p", group: g, fig, el, beam, beamLight, traitorLight, target: new THREE.Vector3(), yaw: 0, baseY: 0.02, phase: Math.random() * 6, active: false, placed: false };
 }
 
-function monsterToken(x, y, z, m, attackable) {
+function makeMonsterToken(m) {
   const g = new THREE.Group();
-  g.position.set(x, y, z);
-
   const fig = buildMonsterFigure(m.name);
-  // tag for raycast click detection WITHOUT clobbering the figure's animation
-  // tags (figKind / parts on the group, baseRX caches on tagged parts).
-  fig.traverse((o) => {
-    o.userData.kind = "monster";
-    o.userData.monsterId = m.id;
-    o.userData.attackable = attackable;
-  });
   g.add(fig);
-  g.add(new THREE.PointLight(0xc2412f, attackable ? 5 : 2.5, 4, 2));
-
+  const light = new THREE.PointLight(0xc2412f, 2.5, 4, 2);
+  g.add(light);
   const el = document.createElement("div");
   el.className = "tok-lbl monster";
-  el.textContent = `${m.name}${m.attackType === "mental" ? " ✦" : ""} · ${m.hp}♥${attackable ? " — strike" : ""}`;
   const lbl = new CSS2DObject(el);
   lbl.position.set(0, 1.9, 0);
   g.add(lbl);
-
   tokenGroup.add(g);
-  anims.push({ obj: fig, baseY: 0.05, phase: 0 });
+  return { kind: "m", group: g, fig, el, light, target: new THREE.Vector3(), yaw: 0, baseY: 0.05, phase: 0, active: false, placed: false };
 }
 
-function buildTokens(legal) {
-  clearGroup(tokenGroup);
-  anims = [];
+function disposeToken(tok) {
+  tok.group.traverse((o) => {
+    o.geometry?.dispose?.();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
+    if (o.isCSS2DObject) o.element?.remove?.();
+  });
+  tokenGroup.remove(tok.group);
+}
+
+// Reconcile the persistent token set against the current state: create new
+// tokens, retire vanished ones, and update each token's TARGET (the animate
+// loop eases the actual position toward it, so movement reads as travel).
+function syncTokens(legal) {
   const byKey = {};
-  for (const p of state.players) if (p.alive && p.position) (byKey[p.position] ??= []).push({ kind: "p", p });
-  for (const m of state.haunt?.monsters ?? []) if (m.hp > 0 && m.position) (byKey[m.position] ??= []).push({ kind: "m", m });
+  for (const p of state.players) if (p.alive && p.position) (byKey[p.position] ??= []).push({ kind: "p", id: p.id, p });
+  for (const m of state.haunt?.monsters ?? []) if (m.hp > 0 && m.position) (byKey[m.position] ??= []).push({ kind: "m", id: m.id, m });
 
   const attackable = new Set(legal.attackMonsters);
+  const seen = new Set();
   for (const key in byKey) {
     const occ = byKey[key];
     const room = state.house[key];
@@ -356,9 +359,31 @@ function buildTokens(legal) {
     const [wx, wy, wz] = roomWorld(room);
     occ.forEach((o, i) => {
       const [ox, oz] = ring(i, occ.length, 1.1);
-      if (o.kind === "p") playerToken(wx + ox, wy, wz + oz, o.p, state.activePlayerId === o.p.id);
-      else monsterToken(wx + ox, wy, wz + oz, o.m, attackable.has(o.m.id));
+      seen.add(o.id);
+      let tok = tokenCache.get(o.id);
+      if (o.kind === "p") {
+        if (!tok) { tok = makePlayerToken(o.p); tokenCache.set(o.id, tok); }
+        tok.target.set(wx + ox, wy, wz + oz);
+        tok.active = state.activePlayerId === o.p.id;
+        tok.beam.visible = tok.active;
+        tok.beamLight.visible = tok.active;
+        const traitor = o.p.side === "traitor";
+        tok.traitorLight.visible = traitor;
+        tok.el.className = "tok-lbl" + (traitor ? " traitor" : "");
+        tok.el.textContent = o.p.name + (traitor ? " ☠" : "");
+      } else {
+        if (!tok) { tok = makeMonsterToken(o.m); tokenCache.set(o.id, tok); }
+        tok.target.set(wx + ox, wy, wz + oz);
+        const atk = attackable.has(o.m.id);
+        tok.light.intensity = atk ? 5 : 2.5;
+        tok.el.className = "tok-lbl monster";
+        tok.el.textContent = `${o.m.name}${o.m.attackType === "mental" ? " ✦" : ""} · ${o.m.hp}♥${atk ? " — strike" : ""}`;
+        tok.fig.traverse((x) => { x.userData.kind = "monster"; x.userData.monsterId = o.m.id; x.userData.attackable = atk; });
+      }
     });
+  }
+  for (const [id, tok] of tokenCache) {
+    if (!seen.has(id)) { disposeToken(tok); tokenCache.delete(id); }
   }
 }
 
@@ -455,7 +480,7 @@ function render() {
   const me = state.activePlayerId;
   const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [], pickupItems: [], tradePartners: [] };
   buildHouse(legal);
-  buildTokens(legal);
+  syncTokens(legal);
   buildArrows(legal);
   updateHUD(legal);
 }
@@ -596,6 +621,8 @@ function onResize() {
 function animate() {
   requestAnimationFrame(animate);
   const t = performance.now() / 1000;
+  const dt = lastFrameT ? Math.min(0.05, t - lastFrameT) : 0.016;
+  lastFrameT = t;
 
   // soft camera-follow: ease the orbit target toward the active player's room
   // (only nudges `target`, so the user can still orbit/zoom freely)
@@ -625,8 +652,21 @@ function animate() {
     l.intensity = Math.max(8, 18 * f);
     l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.0, b[1] + Math.sin(t * 0.7) * 0.4, b[2] + Math.cos(t * 0.4 + b[0]) * 1.0);
   }
-  for (const an of anims) {
-    animateFigure(an.obj, t, { active: an.active, phase: an.phase, baseY: an.baseY });
+  // Ease each token toward its target room/offset and turn it to face the way
+  // it's travelling, so a move reads as walking rather than a teleport.
+  for (const tok of tokenCache.values()) {
+    const g = tok.group;
+    if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; }
+    const px = g.position.x, pz = g.position.z;
+    g.position.lerp(tok.target, 1 - Math.exp(-9 * dt));
+    const dx = g.position.x - px, dz = g.position.z - pz;
+    if (dx * dx + dz * dz > 1e-6) {
+      const desired = Math.atan2(dx, dz);
+      const d = ((desired - tok.yaw + Math.PI) % (Math.PI * 2)) - Math.PI;
+      tok.yaw += d * (1 - Math.exp(-12 * dt));
+    }
+    g.rotation.y = tok.yaw;
+    animateFigure(tok.fig, t, { active: tok.active, phase: tok.phase, baseY: tok.baseY });
   }
 
   renderer.render(scene, camera);
