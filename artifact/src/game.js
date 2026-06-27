@@ -187,6 +187,12 @@ function initScene() {
 /** Arrow keys / WASD move the active human player (camera-relative); E ends the turn. */
 function onKeyMove(e) {
   if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
+  // A pending haunt reveal is a blocking modal: swallow movement/end-turn keys
+  // until it's dismissed, so the board can't be acted on behind the overlay.
+  if (state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
+    e.preventDefault();
+    return;
+  }
   const active = state.players.find((p) => p.id === state.activePlayerId);
   if (e.key === "e" || e.key === "E") {
     if (active && !active.isBot) act({ type: "end-turn", playerId: active.id });
@@ -213,6 +219,18 @@ function onKeyMove(e) {
   if (legal.doors.includes(dir)) { e.preventDefault(); act({ type: "explore", playerId: active.id, door: dir }); return; }
   const nKey = DH.neighborKey(room.floor, room.x, room.y, dir);
   if (legal.explored.includes(nKey)) { e.preventDefault(); act({ type: "move-to", playerId: active.id, toKey: nKey }); return; }
+  // Vertical fallback: stairs and the elevator have no compass direction, so
+  // "up"/"down" (away-from / toward the camera) also ascend/descend to a
+  // reachable landing on another floor when no same-floor move applies.
+  if (which === "up" || which === "down") {
+    const RANK = { basement: 0, ground: 1, upper: 2 };
+    const here = RANK[room.floor];
+    const cross = legal.explored
+      .map((k) => ({ k, r: RANK[DH.parseKey(k).floor] }))
+      .filter((o) => (which === "up" ? o.r > here : o.r < here))
+      .sort((p, q) => (which === "up" ? p.r - q.r : q.r - p.r));
+    if (cross.length) { e.preventDefault(); act({ type: "move-to", playerId: active.id, toKey: cross[0].k }); return; }
+  }
   e.preventDefault();
   toast(state.movementLeft <= 0 ? "No movement left — press E to end your turn." : "No way through there.");
 }
@@ -570,8 +588,16 @@ function updateHUD(legal) {
       }).join("") + `</div>` +
       `<div class="tp-inv"><div class="muted small">Carrying</div>` +
       (me.inventory.length ? `<ul>${me.inventory.map((id) => {
-        const usable = active && active.id === me.id && me.alive && DH.getCard(id)?.effect.kind === "consumable";
-        return `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}${usable ? `<button class="ibtn" onclick="window.__act({type:'use-item',playerId:'${me.id}',cardId:'${id}'})">use</button>` : ""}</li>`;
+        const mine = active && active.id === me.id && me.alive;
+        const useBtn = mine && DH.getCard(id)?.effect.kind === "consumable"
+          ? `<button class="ibtn" onclick="window.__act({type:'use-item',playerId:'${me.id}',cardId:'${id}'})">use</button>` : "";
+        // Hand an item to a co-located explorer (the engine + React client both
+        // support trades; the standalone build had no give affordance before).
+        const gives = mine ? (legal.tradePartners ?? []).map((pid) => {
+          const pn = (state.players.find((p) => p.id === pid)?.name ?? "ally").split(" ")[0];
+          return `<button class="ibtn" onclick="window.__act({type:'give-item',playerId:'${me.id}',toPlayerId:'${pid}',cardId:'${id}'})">→ ${pn}</button>`;
+        }).join("") : "";
+        return `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}${useBtn}${gives}</li>`;
       }).join("")}</ul>` : `<div class="muted small">nothing</div>`) + `</div>` +
       (goal ? `<div class="tp-goal ${me.side}"><div class="muted small">Goal</div>${goal}</div>` : "") +
       `</div>`;
@@ -735,7 +761,15 @@ function wardrobeShow(charId) {
   if (!wScene) return;
   const c = DH.CHARACTERS_BY_ID[charId];
   if (!c) return;
-  if (wFig) { wTurn.remove(wFig); wFig.traverse((o) => o.geometry?.dispose?.()); }
+  if (wFig) {
+    wTurn.remove(wFig);
+    // Dispose materials too, not just geometry — each hover builds a fresh figure
+    // with freshly-allocated materials, which the GPU won't free on GC alone.
+    wFig.traverse((o) => {
+      o.geometry?.dispose?.();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
+    });
+  }
   wFig = buildExplorerFigure(c.color, { archetype: charId });
   wTurn.add(wFig);
   $("w-name").textContent = c.name;

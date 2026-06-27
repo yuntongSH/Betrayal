@@ -90,8 +90,22 @@ function attachToRoom(
   room: GameRoom,
   name: string,
   resumePlayerId?: string,
+  resumeToken?: string,
 ): void {
-  const playerId = resumePlayerId ?? randomUUID();
+  // Reclaiming an identity requires the secret token minted at first join — a
+  // playerId alone is public (it's in everyone's state), so without this check a
+  // hero could resume as the traitor and read their hidden view. A still-OPEN
+  // socket for that id means an active session, which we never silently evict.
+  const live = resumePlayerId ? room.sockets.get(resumePlayerId) : undefined;
+  const validResume =
+    !!resumePlayerId &&
+    !!resumeToken &&
+    room.tokens.get(resumePlayerId) === resumeToken &&
+    (!live || live.readyState !== live.OPEN);
+  const playerId = validResume ? resumePlayerId! : randomUUID();
+  const token = room.tokens.get(playerId) ?? randomUUID();
+  room.tokens.set(playerId, token);
+
   session.playerId = playerId;
   session.name = name;
   session.room = room;
@@ -105,6 +119,7 @@ function attachToRoom(
     t: "joined",
     code: room.code,
     playerId,
+    resumeToken: token,
     state: redactStateForPlayer(room.state, playerId),
   });
   broadcast(room);
@@ -152,7 +167,7 @@ function handleMessage(ws: WebSocket, session: Session, raw: string): void {
     case "create-room": {
       if (session.room) leaveRoom(ws, session);
       const room = manager.create();
-      attachToRoom(ws, session, room, msg.name, msg.resumePlayerId);
+      attachToRoom(ws, session, room, msg.name, msg.resumePlayerId, msg.resumeToken);
       break;
     }
 
@@ -163,7 +178,7 @@ function handleMessage(ws: WebSocket, session: Session, raw: string): void {
         return;
       }
       if (session.room && session.room !== room) leaveRoom(ws, session);
-      attachToRoom(ws, session, room, msg.name, msg.resumePlayerId);
+      attachToRoom(ws, session, room, msg.name, msg.resumePlayerId, msg.resumeToken);
       break;
     }
 

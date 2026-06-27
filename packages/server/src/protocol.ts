@@ -37,8 +37,8 @@ const ActionSchema = z.discriminatedUnion("type", [
 ]);
 
 export const ClientMessageSchema = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("create-room"), name: z.string().max(40), resumePlayerId: z.string().optional() }),
-  z.object({ t: z.literal("join-room"), code: z.string().max(8), name: z.string().max(40), resumePlayerId: z.string().optional() }),
+  z.object({ t: z.literal("create-room"), name: z.string().max(40), resumePlayerId: z.string().optional(), resumeToken: z.string().optional() }),
+  z.object({ t: z.literal("join-room"), code: z.string().max(8), name: z.string().max(40), resumePlayerId: z.string().optional(), resumeToken: z.string().optional() }),
   z.object({ t: z.literal("action"), action: ActionSchema }),
   z.object({ t: z.literal("leave-room") }),
   z.object({ t: z.literal("ping") }),
@@ -50,7 +50,7 @@ export type ClientAction = z.infer<typeof ActionSchema>;
 
 /** Server → client messages (authored by the server, no runtime validation). */
 export type ServerMessage =
-  | { t: "joined"; code: string; playerId: string; state: GameState }
+  | { t: "joined"; code: string; playerId: string; resumeToken: string; state: GameState }
   | { t: "state"; state: GameState }
   | { t: "error"; message: string }
   | { t: "pong" };

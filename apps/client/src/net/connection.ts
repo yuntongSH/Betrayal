@@ -3,14 +3,14 @@ import type { Action, GameState } from "@dread-hollow/shared";
 /** Mirror of the server's wire protocol (kept here so the client needn't
  *  depend on the Node server package). */
 export type ClientMessage =
-  | { t: "create-room"; name: string; resumePlayerId?: string }
-  | { t: "join-room"; code: string; name: string; resumePlayerId?: string }
+  | { t: "create-room"; name: string; resumePlayerId?: string; resumeToken?: string }
+  | { t: "join-room"; code: string; name: string; resumePlayerId?: string; resumeToken?: string }
   | { t: "action"; action: Action }
   | { t: "leave-room" }
   | { t: "ping" };
 
 export type ServerMessage =
-  | { t: "joined"; code: string; playerId: string; state: GameState }
+  | { t: "joined"; code: string; playerId: string; resumeToken?: string; state: GameState }
   | { t: "state"; state: GameState }
   | { t: "error"; message: string }
   | { t: "pong" };

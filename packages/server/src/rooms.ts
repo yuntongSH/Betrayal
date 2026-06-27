@@ -13,6 +13,12 @@ export class GameRoom {
   readonly code: string;
   state: GameState;
   readonly sockets = new Map<string, WebSocket>();
+  /**
+   * Secret per-player resume tokens (playerId → token). Minted on first join,
+   * required to reclaim that identity later. Kept OUT of GameState so it is never
+   * broadcast — otherwise anyone could read a rival's id and impersonate them.
+   */
+  readonly tokens = new Map<string, string>();
 
   constructor(code: string, seed: number) {
     this.code = code;

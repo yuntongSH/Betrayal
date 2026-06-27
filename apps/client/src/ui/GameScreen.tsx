@@ -16,6 +16,13 @@ export function GameScreen() {
   const attackPlayer = useStore((s) => s.attackPlayer);
   const pickupItem = useStore((s) => s.pickupItem);
   const notice = useStore((s) => s.notice);
+  const error = useStore((s) => s.error);
+  const status = useStore((s) => s.status);
+  const roomCode = useStore((s) => s.roomCode);
+  const name = useStore((s) => s.name);
+  const joinRoom = useStore((s) => s.joinRoom);
+  const leave = useStore((s) => s.leave);
+  const lostConnection = status !== "connected" && !!error;
 
   const active = game.players.find((p) => p.id === game.activePlayerId);
   const myTurn = game.activePlayerId === myId;
@@ -95,6 +102,29 @@ export function GameScreen() {
       <HauntBanner />
 
       {notice && <div className="hud-notice">{notice}</div>}
+
+      {lostConnection && (
+        <div
+          className="hud-notice"
+          style={{
+            top: "auto",
+            bottom: "5.5rem",
+            display: "flex",
+            gap: "0.6rem",
+            alignItems: "center",
+          }}
+        >
+          <span>{error}</span>
+          {roomCode && (
+            <button className="btn" onClick={() => joinRoom(roomCode, name)}>
+              Reconnect
+            </button>
+          )}
+          <button className="btn" onClick={leave}>
+            Leave
+          </button>
+        </div>
+      )}
 
       {ended && (
         <div className="hud-result">

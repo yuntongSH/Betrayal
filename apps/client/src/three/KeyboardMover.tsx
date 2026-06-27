@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { DIRECTIONS, legalMoves, neighborKey, type Direction } from "@dread-hollow/shared";
+import { DIRECTIONS, legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 
 /** Grid axes in world space (north = −z, east = +x). */
@@ -52,6 +52,9 @@ export function KeyboardMover() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!game || !myId) return;
+      // A full-screen overlay (haunt reveal / help) is open — don't let arrows or
+      // E act on the board hidden behind it.
+      if (document.querySelector(".haunt-reveal, .help-overlay")) return;
       if (e.key === "e" || e.key === "E") {
         if (game.activePlayerId === myId && game.phase !== "ended") endTurn();
         return;
@@ -93,6 +96,22 @@ export function KeyboardMover() {
         e.preventDefault();
         moveTo(nKey);
         return;
+      }
+      // Vertical fallback: stairs and the elevator have no compass direction, so
+      // "up"/"down" also ascend/descend to a reachable landing on another floor
+      // when no same-floor move applies.
+      if (which === "up" || which === "down") {
+        const RANK: Record<string, number> = { basement: 0, ground: 1, upper: 2 };
+        const here = RANK[room.floor];
+        const cross = legal.explored
+          .map((k) => ({ k, r: RANK[parseKey(k).floor] }))
+          .filter((o) => (which === "up" ? o.r > here : o.r < here))
+          .sort((p, q) => (which === "up" ? p.r - q.r : q.r - p.r));
+        if (cross.length) {
+          e.preventDefault();
+          moveTo(cross[0]!.k);
+          return;
+        }
       }
       e.preventDefault();
       setNotice(game.movementLeft <= 0 ? "No movement left — press E to end your turn." : "No way through there.");

@@ -53,6 +53,9 @@ export const useStore = create<Store>((set, get) => {
       case "joined":
         try {
           localStorage.setItem(`dh:pid:${msg.code}`, msg.playerId);
+          // Persist the secret resume token so a reconnect can reclaim this slot
+          // (a bare playerId is public and no longer sufficient to resume).
+          if (msg.resumeToken) localStorage.setItem(`dh:tok:${msg.code}`, msg.resumeToken);
         } catch {
           /* storage may be unavailable */
         }
@@ -94,7 +97,10 @@ export const useStore = create<Store>((set, get) => {
     if (existing) return existing;
     const conn = new Connection(SERVER_URL, {
       onMessage: handle,
-      onClose: () => set({ error: "Lost the connection to the manor." }),
+      // Drop the dead socket and reset status so the next action builds a FRESH
+      // connection instead of queueing forever on a corpse. The UI surfaces a
+      // Reconnect/Leave banner off this state so the session is never bricked.
+      onClose: () => set({ conn: null, status: "idle", error: "Lost the connection to the manor." }),
     });
     set({ conn });
     return conn;
@@ -155,13 +161,15 @@ export const useStore = create<Store>((set, get) => {
       const conn = ensureConn();
       const upper = code.toUpperCase();
       let resume: string | undefined;
+      let resumeToken: string | undefined;
       try {
         resume = localStorage.getItem(`dh:pid:${upper}`) ?? undefined;
+        resumeToken = localStorage.getItem(`dh:tok:${upper}`) ?? undefined;
       } catch {
         resume = undefined;
       }
       set({ status: "connecting", error: null });
-      conn.send({ t: "join-room", code: upper, name, resumePlayerId: resume });
+      conn.send({ t: "join-room", code: upper, name, resumePlayerId: resume, resumeToken });
     },
 
     leave: () => {
