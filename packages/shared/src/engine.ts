@@ -25,10 +25,11 @@ import {
   effectiveTrait,
   getPlayer,
   hasTag,
+  livingPlayers,
   modTrait,
   roomAura,
 } from "./state";
-import { drawCard, drawRoomForFloor } from "./decks";
+import { drawCard, drawRoomForFloor, hasRoomForFloor } from "./decks";
 import { connections, openDoors } from "./house";
 import { hauntRoll, rollDice } from "./dice";
 import {
@@ -230,9 +231,18 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
     case "narrative":
       break;
     case "trait-mod":
-    case "heal":
+    case "heal": {
+      const speedBefore = effectiveTrait(p, "speed");
       modTrait(s, p, effect.trait, effect.delta);
+      // A mid-turn Speed gain must extend THIS turn's movement budget — it is
+      // otherwise only set at beginTurn — so a "+2 Speed" consumable (Quicksilver
+      // Elixir) actually lets you move farther on the turn you drink it.
+      if (effect.trait === "speed" && p.alive && p.id === s.activePlayerId) {
+        const gained = effectiveTrait(p, "speed") - speedBefore;
+        if (gained > 0) s.movementLeft += gained;
+      }
       break;
+    }
     case "trait-roll": {
       const rng = Rng.fromState(s.rngState);
       const roll = rollDice(rng, Math.max(0, effectiveTrait(p, effect.trait) + roomAura(s, p)));
@@ -258,6 +268,9 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
 }
 
 function performHauntRoll(s: GameState, p: PlayerState, omenId?: CardId): void {
+  // The betrayal happens once. An omen drawn during the haunt (exploring still
+  // resolves room symbols) must not roll again and re-trigger/overwrite it.
+  if (s.phase === "haunt" || s.haunt) return;
   const rng = Rng.fromState(s.rngState);
   const { roll, triggered } = hauntRoll(rng, s.omenCount);
   s.rngState = rng.state;
@@ -344,25 +357,63 @@ function handleEndTurn(s: GameState, playerId: PlayerId): void {
       monsterPhase(s);
       onTraitorTurnEnd(s);
     }
+  } else if (s.phase === "explore") {
+    // The explore phase has its own dawn-breaker: the betrayal must eventually
+    // come. If the house can grow no further (no drawable room for any floor with
+    // an open door) or the night has simply dragged on too long, force the haunt
+    // so the game always reaches its second act instead of wandering forever.
+    forceHauntIfStalled(s, playerId);
   }
+  // Catches a game ended by the monster phase OR by the forced haunt above.
   if (s.phase === "ended") return;
 
   advanceTurn(s);
+}
+
+/** Rounds the explore phase may run before the house turns on its own. */
+const EXPLORE_ROUND_LIMIT = 50;
+
+function forceHauntIfStalled(s: GameState, playerId: PlayerId): void {
+  if (s.phase !== "explore" || s.haunt) return;
+  // Floors that still have at least one open doorway a room could be placed at.
+  const openFloors = new Set(
+    Object.values(s.house)
+      .filter((r) => openDoors(s, r.key).length > 0)
+      .map((r) => r.floor),
+  );
+  const canExpand = [...openFloors].some((f) => hasRoomForFloor(s, f));
+  if (canExpand && s.turn < EXPLORE_ROUND_LIMIT) return;
+
+  const triggerId = getPlayer(s, playerId)?.alive ? playerId : livingPlayers(s)[0]?.id;
+  if (!triggerId) return;
+  addLog(
+    s,
+    canExpand
+      ? "Dawn will not come. The house has waited long enough — and turns."
+      : "The house is whole now: every door drawn, every room found. Something vast turns over in answer.",
+    "haunt",
+  );
+  triggerHaunt(s, triggerId);
 }
 
 function advanceTurn(s: GameState): void {
   const order = s.order;
   if (order.length === 0) return;
   const curIdx = s.activePlayerId ? order.indexOf(s.activePlayerId) : -1;
-  for (let step = 1; step <= order.length; step++) {
-    const idx = (curIdx + step) % order.length;
-    const candidate = getPlayer(s, order[idx]!);
-    if (candidate?.alive) {
-      if (curIdx + step >= order.length) s.turn += 1;
-      s.activePlayerId = candidate.id;
-      beginTurn(s);
-      checkWinNow(s);
-      return;
+  // Prefer the next living, connected player; if every remaining player is
+  // disconnected (but alive), fall back to any living player so the table still
+  // advances rather than freezing on an absent player.
+  for (const requireConnected of [true, false]) {
+    for (let step = 1; step <= order.length; step++) {
+      const idx = (curIdx + step) % order.length;
+      const candidate = getPlayer(s, order[idx]!);
+      if (candidate?.alive && (!requireConnected || candidate.connected)) {
+        if (curIdx + step >= order.length) s.turn += 1;
+        s.activePlayerId = candidate.id;
+        beginTurn(s);
+        checkWinNow(s);
+        return;
+      }
     }
   }
   // No living players remain — let the haunt's win-check settle it.
@@ -380,6 +431,15 @@ export function reduce(s: GameState, action: Action): GameState {
       break;
     case "leave":
       setConnected(s, action.playerId, false);
+      // If the player who left was mid-turn, relinquish it so the table doesn't
+      // freeze on an absent player. Route through end-turn so a departing traitor
+      // still triggers the monster phase.
+      if (
+        s.activePlayerId === action.playerId &&
+        (s.phase === "explore" || s.phase === "haunt")
+      ) {
+        handleEndTurn(s, action.playerId);
+      }
       break;
     case "choose-character":
       chooseCharacter(s, action.playerId, action.characterId);
@@ -423,6 +483,13 @@ export function reduce(s: GameState, action: Action): GameState {
     case "resolve-card":
       break;
   }
+  // If the active player died during their own turn (a lost attack, a fatal room
+  // special or a failed event roll), hand the turn off immediately so play never
+  // stalls on a corpse and a dead player is never left holding the turn.
+  if (s.phase !== "ended" && s.activePlayerId) {
+    const active = getPlayer(s, s.activePlayerId);
+    if (active && !active.alive) advanceTurn(s);
+  }
   return s;
 }
 
@@ -456,11 +523,19 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     canEndTurn: false,
   };
   const p = getPlayer(s, playerId);
-  if (!p || !isActiveTurn(s, playerId) || !p.alive || !p.position) return empty;
+  if (!p || !isActiveTurn(s, playerId) || !p.position) return empty;
+  // A player who died mid-turn is briefly still active until the turn hands off;
+  // the only thing they can still do is end the turn. Offer exactly that, so the
+  // legalMoves contract agrees with the reducer (which accepts their end-turn).
+  if (!p.alive) return { ...empty, canEndTurn: true };
 
   const moving = s.movementLeft > 0;
   const explored = moving ? connections(s, p.position) : [];
-  const doors = moving ? openDoors(s, p.position) : [];
+  // Only advertise a doorway if the room deck can actually yield a tile for this
+  // floor — otherwise exploring it is a silent no-op ("bare, impossible wall").
+  const floor = s.house[p.position]?.floor;
+  const canExpand = floor != null && hasRoomForFloor(s, floor);
+  const doors = moving && canExpand ? openDoors(s, p.position) : [];
 
   const canAttack = s.attacksLeft > 0;
   const attackMonsters =

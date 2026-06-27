@@ -3,6 +3,7 @@ import type {
   HauntId,
   MonsterState,
   PlayerId,
+  PlayerState,
   Side,
 } from "../types";
 import type { Rng } from "../rng";
@@ -47,6 +48,38 @@ function livingTraitors(s: GameState) {
 function livingMonsters(s: GameState): MonsterState[] {
   return s.haunt ? s.haunt.monsters.filter((m) => m.hp > 0) : [];
 }
+
+/**
+ * Objective-haunt wins (reach a Chapel, carry the Key to the Entrance) must be
+ * EARNED during the haunt — not handed out because a hero happened to be standing
+ * in the right place when the house turned (everyone starts in the Entrance Hall,
+ * so the key-at-entrance win was otherwise instant). At reveal we snapshot the
+ * heroes who already qualify and exclude them until they qualify afresh. Stored
+ * as a "|"-joined id string because HauntState.vars holds only scalars.
+ */
+function markEscapeSnapshot(
+  s: GameState,
+  key: string,
+  qualifies: (p: PlayerState) => boolean,
+): void {
+  if (!s.haunt) return;
+  s.haunt.vars[key] = livingHeroes(s).filter(qualifies).map((p) => p.id).join("|");
+}
+function escapedDuringHaunt(
+  s: GameState,
+  key: string,
+  qualifies: (p: PlayerState) => boolean,
+): boolean {
+  const snap = new Set(
+    String(s.haunt?.vars[key] ?? "").split("|").filter(Boolean),
+  );
+  return livingHeroes(s).some((p) => !snap.has(p.id) && qualifies(p));
+}
+const inRoomWithKey = (s: GameState) => (p: PlayerState) =>
+  (p.position ? s.house[p.position]?.roomId : undefined) === "entrance-hall" &&
+  p.inventory.includes("it-key");
+const inChapel = (s: GameState) => (p: PlayerState) =>
+  (p.position ? s.house[p.position]?.roomId : undefined) === "chapel";
 
 let monsterSeq = 0;
 interface SpawnOpts {
@@ -150,18 +183,15 @@ export const HAUNTS: HauntDef[] = [
     traitorGoal: "Devour every hero before they break free.",
     setup: (s, _t, ctx) => {
       spawn(s, ctx, "Gnashing Maw", 4, 4, 2);
+      markEscapeSnapshot(s, "keyEscape", inRoomWithKey(s));
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor";
       // Destroying the house's maws breaks the spell on the doors...
       if (livingMonsters(s).length === 0) return "heroes";
-      // ...or a hero forces the front door with the Iron Key. (Heroes begin in
-      // the Entrance Hall, so the key requirement prevents an instant escape.)
-      const escaped = livingHeroes(s).some((p) => {
-        const room = p.position ? s.house[p.position] : undefined;
-        return room?.roomId === "entrance-hall" && p.inventory.includes("it-key");
-      });
-      return escaped ? "heroes" : null;
+      // ...or a hero carries the Iron Key to the front door DURING the haunt
+      // (heroes who already stood there with the key at reveal don't count).
+      return escapedDuringHaunt(s, "keyEscape", inRoomWithKey(s)) ? "heroes" : null;
     },
   },
   {
@@ -174,8 +204,9 @@ export const HAUNTS: HauntDef[] = [
     setup: (s, _t, ctx) => {
       if (!s.haunt) return;
       s.haunt.vars.surviveUntilTurn = s.turn + 5;
-      // Vast and slow, but it does not stop coming.
-      spawn(s, ctx, "The Drowned", 6, 8, 1, { speed: 1, at: "start" });
+      // Vast and slow, but it does not stop coming. Bare noun — the log templates
+      // already supply the article ("The Drowned", "the Drowned").
+      spawn(s, ctx, "Drowned", 6, 8, 1, { speed: 1, at: "start" });
     },
     checkWin: (s) => {
       if (!s.haunt) return null;
@@ -197,15 +228,14 @@ export const HAUNTS: HauntDef[] = [
     setup: (s) => {
       // No summoned monsters — the traitor *is* the monster.
       if (s.haunt) s.haunt.vars.theHunt = true;
+      markEscapeSnapshot(s, "chapelEscape", inChapel(s));
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor";
       if (livingTraitors(s).length === 0) return "heroes";
-      const sheltered = livingHeroes(s).some((p) => {
-        const room = p.position ? s.house[p.position] : undefined;
-        return room?.roomId === "chapel";
-      });
-      return sheltered ? "heroes" : null;
+      // A hero must REACH consecrated ground during the hunt — sheltering in a
+      // chapel before the chase began doesn't count.
+      return escapedDuringHaunt(s, "chapelEscape", inChapel(s)) ? "heroes" : null;
     },
   },
   {
@@ -240,15 +270,14 @@ export const HAUNTS: HauntDef[] = [
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
       spawn(s, ctx, "Drowned Hand", 2, 3, heroes, { attackType: "physical", at: "start" });
+      markEscapeSnapshot(s, "keyEscape", inRoomWithKey(s));
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor"; // the house prevails
       if (livingMonsters(s).length === 0) return "heroes";
-      const escaped = livingHeroes(s).some((p) => {
-        const room = p.position ? s.house[p.position] : undefined;
-        return room?.roomId === "entrance-hall" && p.inventory.includes("it-key");
-      });
-      return escaped ? "heroes" : null;
+      // Carry the Iron Key to the flooded door during the haunt (standing there
+      // with it when the tide came in doesn't count).
+      return escapedDuringHaunt(s, "keyEscape", inRoomWithKey(s)) ? "heroes" : null;
     },
   },
 ];

@@ -72,6 +72,9 @@ export function triggerHaunt(
   triggerPlayerId: PlayerId,
   omenId?: string,
 ): void {
+  // The betrayal happens exactly once. Never rebuild an active haunt (which would
+  // reassign the traitor, re-roll the scenario and respawn monsters).
+  if (s.haunt || s.phase === "haunt" || s.phase === "ended") return;
   const trigger = getPlayer(s, triggerPlayerId);
   const roomId = trigger?.position ? s.house[trigger.position]?.roomId : undefined;
   const def = HAUNTS_BY_ID[selectHauntId(s, omenId, roomId)];
@@ -125,6 +128,17 @@ const HAUNT_ROUND_LIMIT = 40;
 
 /** Consult the active haunt's win condition; end the game if it's decided. */
 export function checkWinNow(s: GameState): void {
+  if (s.phase === "ended") return;
+  // Universal terminal: if the entire party is gone — even before the haunt, via
+  // a fatal room special or a failed event roll in the explore phase — the house
+  // has won. Without this, a pre-haunt total-party-death left the game stranded
+  // (advanceTurn finds no living player and the haunt-only check below no-ops).
+  if (s.players.length > 0 && s.players.every((p) => !p.alive)) {
+    s.winner = "traitor";
+    s.phase = "ended";
+    addLog(s, "The last of the explorers falls. The house has swallowed everyone.", "win");
+    return;
+  }
   if (!s.haunt || s.phase !== "haunt") return;
   const def = HAUNTS_BY_ID[s.haunt.id];
   if (!def) return;
@@ -198,7 +212,13 @@ export function playerAttack(
     }
   } else if (opts.targetPlayerId) {
     const target = getPlayer(s, opts.targetPlayerId);
-    if (!target?.alive || target.position !== attacker.position) {
+    // No friendly fire: you can only strike a player on the opposing side. This
+    // mirrors legalMoves.attackPlayers, so the reducer and the move list agree.
+    if (
+      !target?.alive ||
+      target.position !== attacker.position ||
+      target.side === attacker.side
+    ) {
       s.rngState = rng.state;
       return;
     }

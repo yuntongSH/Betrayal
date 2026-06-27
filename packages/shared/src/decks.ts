@@ -47,3 +47,12 @@ export function drawRoomForFloor(s: GameState, floor: Floor): RoomId | null {
   }
   return null;
 }
+
+/**
+ * Non-mutating peek: is any room left in the deck legal for this floor? Unlike
+ * `drawRoomForFloor` (which rotates the deck), this only reads, so it's safe for
+ * legality checks — e.g. so the UI never offers a doorway that can't be explored.
+ */
+export function hasRoomForFloor(s: GameState, floor: Floor): boolean {
+  return s.decks.rooms.some((id) => ROOMS_BY_ID[id]?.floors.includes(floor));
+}

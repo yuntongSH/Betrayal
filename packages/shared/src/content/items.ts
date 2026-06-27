@@ -46,14 +46,18 @@ export const ITEMS: CardDef[] = [
     type: "item",
     name: "Spirit Board",
     text: "The planchette never quite stops moving. +1 Knowledge while carried.",
-    effect: { kind: "item-passive", trait: "knowledge", bonus: 1, tag: "occult" },
+    // +1 Knowledge flows through effectiveTrait into mental combat; it carried an
+    // "occult" tag too, which double-counted the same +1 in spectral fights.
+    effect: { kind: "item-passive", trait: "knowledge", bonus: 1 },
   },
   {
     id: "it-crucifix",
     type: "item",
     name: "Tarnished Crucifix",
     text: "Faith you don't have, in a shape you trust anyway. +1 Sanity while carried.",
-    effect: { kind: "item-passive", trait: "sanity", bonus: 1, tag: "holy" },
+    // +1 Sanity flows through effectiveTrait into mental defense; it carried a
+    // "holy" tag too, which double-counted the same +1 in spectral fights.
+    effect: { kind: "item-passive", trait: "sanity", bonus: 1 },
   },
   {
     id: "it-adrenaline",

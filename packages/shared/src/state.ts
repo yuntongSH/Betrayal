@@ -145,6 +145,8 @@ export function redactStateForPlayer(
   viewerId: PlayerId | null,
 ): GameState {
   if (!s.haunt) return s;
+  // Once the night is over there are no more secrets — show everyone the truth.
+  if (s.phase === "ended") return s;
   const viewer = getPlayer(s, viewerId);
   if (viewer?.side === "traitor") return s;
   return {
