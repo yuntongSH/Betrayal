@@ -3,6 +3,10 @@
 > An open-source, **3D online haunted-house exploration & betrayal** board game
 > for the web.
 
+**▶️ Play in your browser:** https://yuntongsh.github.io/Betrayal/ — the
+standalone build runs entirely client-side (solo vs. bots, or pass-and-play on
+one screen); no install or server needed.
+
 Gather a handful of friends, step into a manor that builds itself room by room as
 you explore, and pray the omens stay quiet — because at some point the house
 turns on you, and one of your own becomes something else entirely.
