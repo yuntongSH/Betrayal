@@ -41,6 +41,14 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .char-card:hover{transform:translateY(-2px)}
 .char-card.mine{background:rgba(60,48,40,.95);box-shadow:0 0 0 2px var(--flame) inset}
 .char-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#1a1410;font-weight:bold;font-size:1.2rem;flex:0 0 auto}
+#wardrobe{display:flex;gap:1.1rem;align-items:center;max-width:780px;width:100%;background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:1rem}
+#wardrobe-stage{width:300px;height:340px;flex:0 0 auto;border-radius:12px;overflow:hidden;background:radial-gradient(circle at 50% 30%,#1c1622,#070509)}
+#wardrobe-stage canvas{display:block}
+#wardrobe-info{text-align:left;flex:1 1 auto;min-width:0}
+#wardrobe-info h2{margin:0 0 .1rem;font-family:'Cinzel',Georgia,serif;color:#efe2d3;font-size:1.3rem}
+#wardrobe-info .char-traits{margin-top:.6rem}
+#w-pick{margin-top:.8rem}
+@media(max-width:680px){#wardrobe{flex-direction:column}#wardrobe-stage{width:100%}}
 .char-info em{color:var(--dim);font-size:.8rem;display:block}
 .char-traits{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.35rem}
 .trait-chip{font-size:.68rem;padding:.1rem .4rem;border-radius:5px;background:rgba(0,0,0,.4);color:var(--dim)}
@@ -118,6 +126,16 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 <div id="lobby">
   <h1 class="title"><span class="f">🕯️</span> Dread Hollow</h1>
   <p class="tagline">A manor that builds itself, one dreadful room at a time — until one of you stops being a friend. Pick your party (pass-and-play on one screen) and begin the descent.</p>
+  <div id="wardrobe">
+    <div id="wardrobe-stage"></div>
+    <div id="wardrobe-info">
+      <h2 id="w-name"></h2>
+      <em id="w-title" class="muted"></em>
+      <p id="w-flavor" class="muted small"></p>
+      <div id="w-traits" class="char-traits"></div>
+      <button class="btn" id="w-pick"></button>
+    </div>
+  </div>
   <div class="char-grid" id="char-grid"></div>
   <div class="lobby-actions">
     <button class="btn primary" id="begin-btn" disabled>Begin the descent (<span id="party-count">0</span>)</button>

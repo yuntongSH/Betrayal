@@ -73,12 +73,8 @@ function buildLobby() {
       `<div class="char-traits">` +
       DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("") +
       `</div></div>`;
-    card.onclick = () => {
-      const idx = party.findIndex((p) => p.charId === c.id);
-      if (idx >= 0) party.splice(idx, 1);
-      else party.push({ pid: "p" + c.id, charId: c.id });
-      buildLobby();
-    };
+    card.onmouseenter = () => wardrobeShow(c.id);
+    card.onclick = () => toggleParty(c.id);
     grid.appendChild(card);
   });
   $("begin-btn").disabled = party.length < 1;
@@ -86,6 +82,7 @@ function buildLobby() {
 }
 
 function beginGame(solo) {
+  stopWardrobe();
   state = DH.createGame("local", (Math.random() * 1e9) | 0);
   let roster = solo ? party.slice(0, 1) : party.slice();
   if (roster.length === 0) {
@@ -699,7 +696,72 @@ function animate() {
   labelRenderer.render(scene, camera);
 }
 
+// =========================================================================
+// WARDROBE — an animated 3D preview of the focused character at select time
+// =========================================================================
+let wScene, wCam, wRenderer, wTurn, wFig, wRAF;
+function initWardrobe() {
+  const stage = $("wardrobe-stage");
+  if (!stage) return;
+  const w = stage.clientWidth || 300, h = stage.clientHeight || 340;
+  wRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  wRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  wRenderer.setSize(w, h);
+  stage.appendChild(wRenderer.domElement);
+  wScene = new THREE.Scene();
+  wCam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+  wCam.position.set(0, 1.05, 2.45);
+  wCam.lookAt(0, 0.82, 0);
+  wScene.add(new THREE.AmbientLight(0x4a4660, 0.75));
+  const key = new THREE.DirectionalLight(0xffe6c2, 1.6); key.position.set(2.5, 4, 3); wScene.add(key);
+  const fill = new THREE.DirectionalLight(0x6a86c0, 0.55); fill.position.set(-3, 2, 1.5); wScene.add(fill);
+  const rim = new THREE.PointLight(0xe8975a, 10, 9, 2); rim.position.set(0, 1.5, -1.6); wScene.add(rim);
+  const ped = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.62, 0.1, 36),
+    new THREE.MeshStandardMaterial({ color: 0x171320, roughness: 0.85 }),
+  );
+  ped.position.y = -0.05; wScene.add(ped);
+  wTurn = new THREE.Group(); wScene.add(wTurn);
+  (function loop() {
+    if (!wRenderer) return;
+    wRAF = requestAnimationFrame(loop);
+    const t = performance.now() / 1000;
+    wTurn.rotation.y = t * 0.5;
+    if (wFig) animateFigure(wFig, t, { active: true, baseY: 0.02 });
+    wRenderer.render(wScene, wCam);
+  })();
+}
+function wardrobeShow(charId) {
+  if (!wScene) return;
+  const c = DH.CHARACTERS_BY_ID[charId];
+  if (!c) return;
+  if (wFig) { wTurn.remove(wFig); wFig.traverse((o) => o.geometry?.dispose?.()); }
+  wFig = buildExplorerFigure(c.color, { archetype: charId });
+  wTurn.add(wFig);
+  $("w-name").textContent = c.name;
+  $("w-title").textContent = c.title;
+  $("w-flavor").textContent = c.flavor;
+  $("w-traits").innerHTML = DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("");
+  const inParty = party.some((p) => p.charId === charId);
+  const btn = $("w-pick");
+  btn.textContent = inParty ? "✓ In party — remove" : "Add to party";
+  btn.className = "btn" + (inParty ? " primary" : "");
+  btn.onclick = () => toggleParty(charId);
+}
+function toggleParty(charId) {
+  const idx = party.findIndex((p) => p.charId === charId);
+  if (idx >= 0) party.splice(idx, 1); else party.push({ pid: "p" + charId, charId });
+  buildLobby();
+  wardrobeShow(charId);
+}
+function stopWardrobe() {
+  if (wRAF) cancelAnimationFrame(wRAF);
+  wRenderer = null;
+}
+
 // boot
 $("begin-btn").onclick = () => beginGame(false);
 $("solo-btn").onclick = () => beginGame(true);
+initWardrobe();
 buildLobby();
+wardrobeShow(DH.CHARACTERS[0].id);
