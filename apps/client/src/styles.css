@@ -703,6 +703,27 @@ kbd {
   cursor: pointer;
 }
 .give-btn:hover { background: rgba(70, 90, 130, 0.7); }
+.hud-notice {
+  position: absolute;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  background: rgba(20, 16, 14, 0.86);
+  border: 1px solid rgba(226, 168, 90, 0.4);
+  color: #f0e2d2;
+  font-size: 0.9rem;
+  pointer-events: none;
+  animation: notice-fade 1.5s ease-out forwards;
+  z-index: 30;
+}
+@keyframes notice-fade {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .give-btn.use { border-color: rgba(120, 200, 150, 0.4); color: #bfe8cd; }
 .give-btn.use:hover { background: rgba(60, 120, 90, 0.6); }
 .tp-goal {

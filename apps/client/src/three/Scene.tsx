@@ -4,6 +4,7 @@ import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { HouseView } from "./HouseView";
 import { Atmosphere } from "./Atmosphere";
 import { CameraDirector } from "./CameraDirector";
+import { KeyboardMover } from "./KeyboardMover";
 import { PostFX } from "./PostFX";
 import { FLOOR_GAP } from "./layout";
 
@@ -47,6 +48,7 @@ export function Scene() {
 
       <Atmosphere />
       <CameraDirector />
+      <KeyboardMover />
 
       {/* the void the house floats in */}
       <mesh position={[0, -FLOOR_GAP - 2, 4]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

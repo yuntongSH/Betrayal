@@ -19,6 +19,9 @@ interface Store {
   game: GameState | null;
   error: string | null;
   name: string;
+  /** Transient on-screen hint (auto-clears), e.g. "it isn't your turn yet". */
+  notice: string | null;
+  setNotice: (msg: string | null) => void;
 
   setName: (name: string) => void;
   createRoom: (name: string) => void;
@@ -43,6 +46,7 @@ interface Store {
 export const useStore = create<Store>((set, get) => {
   // Transient flag: when the next "joined" arrives, auto-set-up a solo game.
   let pendingSolo = false;
+  let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handle(msg: ServerMessage): void {
     switch (msg.t) {
@@ -109,6 +113,12 @@ export const useStore = create<Store>((set, get) => {
     roomCode: null,
     game: null,
     error: null,
+    notice: null,
+    setNotice: (msg) => {
+      set({ notice: msg });
+      if (noticeTimer) clearTimeout(noticeTimer);
+      if (msg) noticeTimer = setTimeout(() => set({ notice: null }), 1500);
+    },
     name: (() => {
       try {
         return localStorage.getItem("dh:name") ?? "";
