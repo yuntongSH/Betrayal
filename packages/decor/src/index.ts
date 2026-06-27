@@ -1375,7 +1375,7 @@ export function buildRoomDecor(roomId: string, tile = 4): THREE.Group {
 // ---------------------------------------------------------------------------
 
 /** Tagged limb references the shared animator reads off `g.userData.parts`. */
-interface FigureParts {
+export interface FigureParts {
   head?: THREE.Object3D;
   torso?: THREE.Object3D;
   leftArm?: THREE.Object3D;
@@ -1438,7 +1438,7 @@ export function buildExplorerFigure(
 }
 
 /** Shared explorer palette + glowing identity base disc. */
-function explorerKit(colorHex: string, g: THREE.Group) {
+export function explorerKit(colorHex: string, g: THREE.Group) {
   const tint = new THREE.Color(colorHex);
   const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.6, metalness: 0.05 });
   const limbMat = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.7), roughness: 0.7, metalness: 0.05 });
@@ -1465,7 +1465,7 @@ function explorerKit(colorHex: string, g: THREE.Group) {
 }
 
 /** Tag a figure for the shared animator. */
-function tagFigure(g: THREE.Group, figKind: string, parts: FigureParts, seedStr: string) {
+export function tagFigure(g: THREE.Group, figKind: string, parts: FigureParts, seedStr: string) {
   g.userData.figKind = figKind;
   g.userData.parts = parts;
   g.userData.phase = phaseFromString(seedStr);
@@ -1538,7 +1538,7 @@ function buildGenericExplorer(colorHex: string): THREE.Group {
 }
 
 /** Build a shoulder-pivoted arm so the animator can swing it. Returns the pivot. */
-function makeArm(
+export function makeArm(
   sx: number,
   shoulderX: number,
   shoulderY: number,
@@ -1557,6 +1557,137 @@ function makeArm(
   hand.position.set(sx * 0.06, -armH + 0.02, 0);
   pivot.add(hand);
   return pivot;
+}
+
+// ===========================================================================
+// Face & hair toolkit — composable, procedural facial features so explorers
+// read as people (eyes/iris/pupils, nose, brows, mouth, ears, hair). All
+// pieces are parented to the head mesh and placed on its front (+z) hemisphere,
+// so they ride along when the animator bobs/turns the head. THREE-only (node-safe).
+// ===========================================================================
+
+export interface FaceOpts {
+  /** Head radius (defaults to 0.15). */
+  r?: number;
+  /** Skin material for nose/ears (reused from the head). */
+  skin: THREE.Material;
+  /** Iris colour (hex). */
+  eye?: number;
+  /** Brow / lash colour (hex). */
+  brow?: number;
+  /** Lip colour (hex). */
+  lip?: number;
+  /** −1 frown … 0 neutral … 1 slight smile. */
+  mood?: number;
+  /** Eye openness 0 (closed/hollow) … 1 (wide). */
+  open?: number;
+}
+
+/** Add eyes, nose, brows and a mouth to a head mesh (front = +z). */
+export function addFace(head: THREE.Mesh, opts: FaceOpts): void {
+  const r = opts.r ?? 0.15;
+  const eyeCol = opts.eye ?? 0x5b4636;
+  const browCol = opts.brow ?? 0x2a2018;
+  const lipCol = opts.lip ?? 0x8a4a44;
+  const mood = opts.mood ?? 0;
+  const open = opts.open ?? 1;
+  const z = r * 0.86; // front of the face
+
+  const white = new THREE.MeshStandardMaterial({ color: 0xece7e0, roughness: 0.4 });
+  const iris = new THREE.MeshStandardMaterial({ color: eyeCol, roughness: 0.35 });
+  const pupil = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.3 });
+  const browMat = new THREE.MeshStandardMaterial({ color: browCol, roughness: 0.8 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: lipCol, roughness: 0.55 });
+
+  for (const sx of [-1, 1]) {
+    const ex = sx * r * 0.42;
+    const ey = r * 0.12;
+    // eyeball
+    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(r * 0.17, 10, 8), white);
+    eyeball.position.set(ex, ey, z * 0.92);
+    eyeball.scale.set(1, Math.max(0.15, open), 0.6);
+    head.add(eyeball);
+    const ir = new THREE.Mesh(new THREE.SphereGeometry(r * 0.09, 8, 8), iris);
+    ir.position.set(ex, ey, z * 0.99);
+    head.add(ir);
+    const pu = new THREE.Mesh(new THREE.SphereGeometry(r * 0.045, 6, 6), pupil);
+    pu.position.set(ex, ey, z * 1.02);
+    head.add(pu);
+    // brow
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(r * 0.34, r * 0.06, r * 0.06), browMat);
+    brow.position.set(ex, ey + r * 0.24, z * 0.95);
+    brow.rotation.z = sx * (0.12 - mood * 0.2);
+    head.add(brow);
+  }
+
+  // nose
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.34, 6), opts.skin);
+  nose.position.set(0, -r * 0.02, z * 1.0);
+  nose.rotation.x = Math.PI / 2;
+  head.add(nose);
+
+  // mouth — a slim box, tilted up/down by mood
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(r * 0.4, r * 0.07, r * 0.05), lipMat);
+  mouth.position.set(0, -r * 0.42, z * 0.92);
+  mouth.rotation.z = mood * 0.0;
+  // fake a curve with two end caps raised/lowered
+  for (const sx of [-1, 1]) {
+    const corner = new THREE.Mesh(new THREE.BoxGeometry(r * 0.08, r * 0.07, r * 0.05), lipMat);
+    corner.position.set(sx * r * 0.2, -r * 0.42 + mood * r * 0.08, z * 0.92);
+    head.add(corner);
+  }
+  head.add(mouth);
+
+  // ears
+  for (const sx of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(r * 0.16, 8, 8), opts.skin);
+    ear.position.set(sx * r * 0.92, 0, 0);
+    ear.scale.set(0.5, 0.9, 0.7);
+    head.add(ear);
+  }
+}
+
+export type HairStyle =
+  | "short" | "bald" | "pigtails" | "bun" | "long" | "swept" | "cropped" | "wavy";
+
+/** Add hair to a head mesh. Returns nothing; pieces are parented to the head. */
+export function addHair(head: THREE.Mesh, style: HairStyle, color: number, r = 0.15): void {
+  if (style === "bald") return;
+  const hair = new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
+  // skull cap covering the top/back, opening at the face
+  const cap = new THREE.Mesh(
+    new THREE.SphereGeometry(r * 1.06, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62),
+    hair,
+  );
+  cap.position.y = r * 0.06;
+  cap.position.z = -r * 0.06;
+  head.add(cap);
+
+  if (style === "pigtails") {
+    for (const sx of [-1, 1]) {
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(r * 0.34, 10, 10), hair);
+      tail.position.set(sx * r * 1.05, -r * 0.1, -r * 0.1);
+      tail.scale.set(0.8, 1.2, 0.8);
+      head.add(tail);
+    }
+  } else if (style === "bun") {
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(r * 0.42, 12, 12), hair);
+    bun.position.set(0, r * 0.5, -r * 0.7);
+    head.add(bun);
+  } else if (style === "long" || style === "wavy") {
+    const fall = new THREE.Mesh(
+      new THREE.CylinderGeometry(r * 1.05, r * 0.7, r * 2.2, 14, 1, true, 0, Math.PI),
+      hair,
+    );
+    fall.position.set(0, -r * 0.7, -r * 0.5);
+    fall.rotation.y = Math.PI;
+    head.add(fall);
+  } else if (style === "swept") {
+    const sweep = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 10, 8), hair);
+    sweep.position.set(r * 0.2, r * 0.55, r * 0.2);
+    sweep.scale.set(1.4, 0.5, 1);
+    head.add(sweep);
+  }
 }
 
 // --- vance — the disgraced surgeon ----------------------------------------
