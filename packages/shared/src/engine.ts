@@ -116,8 +116,10 @@ function handleExplore(s: GameState, playerId: PlayerId, door: Direction): void 
   s.house[nKey] = placed;
 
   p.position = nKey;
-  // Discovering a previously-unseen room ends your movement for the turn.
-  s.movementLeft = 0;
+  // Discovering a new room costs a single step, like any move — so you can keep
+  // walking and backtrack while you still have movement left this turn (rather
+  // than the discovery ending your whole turn's movement).
+  s.movementLeft -= 1;
   const def = ROOMS_BY_ID[newRoomId];
   addLog(s, `${p.name} discovers the ${def?.name ?? "room"}.`, "move");
 

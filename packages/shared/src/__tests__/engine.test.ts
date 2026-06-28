@@ -71,13 +71,15 @@ describe("exploration", () => {
     expect(getPlayer(s, active)?.position).toBe(key("ground", 1, 1));
   });
 
-  it("discovering a new room ends the player's movement for the turn", () => {
+  it("discovering a new room costs a single step (you can keep moving and backtrack)", () => {
     const s = startedGame();
     const active = s.activePlayerId!;
     reduce(s, { type: "move-to", playerId: active, toKey: key("ground", 0, 1) });
-    expect(s.movementLeft).toBeGreaterThan(0);
+    const before = s.movementLeft;
+    expect(before).toBeGreaterThan(0);
     reduce(s, { type: "explore", playerId: active, door: "east" });
-    expect(s.movementLeft).toBe(0);
+    // Exploring spends one step, not the whole turn's movement.
+    expect(s.movementLeft).toBe(before - 1);
   });
 
   it("is fully deterministic for a fixed seed", () => {
