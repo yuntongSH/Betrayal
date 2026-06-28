@@ -537,6 +537,33 @@ function tagIcon(cardId) {
   return "•";
 }
 
+/** Plain-language notes on what a room does, so a player knows what they walked
+ *  into — its standing aura and any one-time effect on discovery. */
+const ROOM_SPECIAL_NOTE = {
+  "heal-might": "Steadies your nerve — +1 Might the first time it's found.",
+  "heal-sanity": "A small mercy — +1 Sanity the first time it's found.",
+  "drain-speed": "The air drags like syrup — −1 Speed the first time it's found.",
+  pit: "A hidden drop in the dark — −1 Might the first time it's found.",
+  vault: "A sealed vault — loot it if you carry the Iron Key.",
+  "draw-extra-omen": "It pulls the dark closer — draws an extra Omen.",
+  "mystic-elevator": "An iron cage that carries you between floors.",
+  "grand-staircase": "Stairs up and down — change floors here.",
+  "stairs-up": "Stairs up — change floors here.",
+  "stairs-down": "Stairs down — change floors here.",
+  "entrance-hall": "The front door — in some haunts you escape through here.",
+};
+function roomNotes(def) {
+  const notes = [];
+  if (def.aura > 0) notes.push(`✦ Blessed — +${def.aura} die to every roll while you're here.`);
+  else if (def.aura < 0) notes.push(`☓ Cursed — ${def.aura} dice to every roll while you're here.`);
+  if (ROOM_SPECIAL_NOTE[def.special]) notes.push(ROOM_SPECIAL_NOTE[def.special]);
+  if ((def.symbols || []).length) {
+    const kinds = [...new Set(def.symbols)].map((k) => ({ event: "an Event", item: "an Item", omen: "an Omen" }[k] || k));
+    notes.push(`On discovery it reveals ${kinds.join(" & ")}.`);
+  }
+  return notes;
+}
+
 function updateHUD(legal) {
   const active = state.players.find((p) => p.id === state.activePlayerId);
   const humans = state.players.filter((p) => !p.isBot);
@@ -575,7 +602,21 @@ function updateHUD(legal) {
   if (me && me.characterId) {
     const c = DH.CHARACTERS_BY_ID[me.characterId];
     const goal = state.haunt && me.side ? (me.side === "traitor" ? state.haunt.traitorGoal : state.haunt.heroGoal) : null;
+    // "Current room" card: what you walked into and what it does, like a tile.
+    const _room = me.position ? state.house[me.position] : null;
+    const _rdef = _room ? DH.ROOMS_BY_ID[_room.roomId] : null;
+    const _notes = _rdef ? roomNotes(_rdef) : [];
+    const roomCard = _rdef
+      ? `<div class="panel room-info">` +
+        `<div class="ri-head"><span class="ri-name">${_rdef.name}</span>` +
+        (_rdef.aura ? `<span class="ri-aura ${_rdef.aura > 0 ? "good" : "bad"}">${_rdef.aura > 0 ? "✦ blessed" : "☓ cursed"}</span>` : "") +
+        `</div>` +
+        `<div class="ri-flavor muted small">${_rdef.flavor}</div>` +
+        (_notes.length ? `<ul class="ri-notes">${_notes.map((n) => `<li>${n}</li>`).join("")}</ul>` : "") +
+        `</div>`
+      : "";
     $("hud-right").innerHTML =
+      roomCard +
       `<div class="panel trait-panel ${!me.alive ? "dead" : ""}">` +
       `<div class="tp-head" style="border-color:${c.color}"><div class="tp-av" style="background:${c.color}">${c.name.charAt(0)}</div>` +
       `<div><strong>${c.name}</strong><div class="muted small">${c.title}</div></div>` +
@@ -597,7 +638,10 @@ function updateHUD(legal) {
           const pn = (state.players.find((p) => p.id === pid)?.name ?? "ally").split(" ")[0];
           return `<button class="ibtn" onclick="window.__act({type:'give-item',playerId:'${me.id}',toPlayerId:'${pid}',cardId:'${id}'})">→ ${pn}</button>`;
         }).join("") : "";
-        return `<li><span class="ii">${tagIcon(id)}</span>${DH.getCard(id)?.name ?? id}${useBtn}${gives}</li>`;
+        const card = DH.getCard(id);
+        const desc = card?.text ? `<div class="inv-desc muted small">${card.text}</div>` : "";
+        return `<li class="inv-li"><div class="inv-row"><span class="ii">${tagIcon(id)}</span>` +
+          `<span class="inv-name">${card?.name ?? id}</span>${useBtn}${gives}</div>${desc}</li>`;
       }).join("")}</ul>` : `<div class="muted small">nothing</div>`) + `</div>` +
       (goal ? `<div class="tp-goal ${me.side}"><div class="muted small">Goal</div>${goal}</div>` : "") +
       `</div>`;
