@@ -288,6 +288,134 @@ export const HAUNTS: HauntDef[] = [
       return escapedDuringHaunt(s, "keyEscape", inRoomWithKey(s)) ? "heroes" : null;
     },
   },
+  {
+    id: "the-effigy",
+    name: "What the Candles Summon",
+    reveal:
+      "{traitor} kneels before a figure of wax and wire and begins to feed it, candle by candle. With every light it swallows, the thing grows a little more awake.",
+    heroGoal: "Smash the effigy, or strike down its maker, before it draws its first breath.",
+    traitorGoal: "Finish the summoning — feed the effigy through five of your turns — or kill every hero.",
+    setup: (s, _t, ctx) => {
+      if (!s.haunt) return;
+      s.haunt.vars.ritualProgress = 0;
+      s.haunt.vars.ritualNeeded = 4;
+      s.haunt.vars.ritualLabel = "The effigy stirs";
+      // A rooted ritual focus (Speed 0 = never moves). Thick-skinned, and it
+      // lashes at those who crowd it — the race is the heroes' blades against
+      // the traitor's clock.
+      spawn(s, ctx, "Wax Effigy", 2, 12, 1, { speed: 0, at: "start" });
+    },
+    checkWin: (s) => {
+      if (!s.haunt) return null;
+      if (Number(s.haunt.vars.ritualProgress ?? 0) >= Number(s.haunt.vars.ritualNeeded ?? 5)) return "traitor";
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingTraitors(s).length === 0) return "heroes"; // the maker is dead
+      if (livingMonsters(s).length === 0) return "heroes"; // the effigy is smashed
+      return null;
+    },
+  },
+  {
+    id: "the-long-cold",
+    name: "The Long Cold",
+    reveal:
+      "Frost crawls up the inside of the windows and your breath turns to fog. The cold has shapes now — several of them — and where {traitor} walks, the ice does not crack.",
+    heroGoal: "Outlast the cold: survive five full rounds, or cut down the one who let it in.",
+    traitorGoal: "Let the cold take them all.",
+    setup: (s, _t, ctx) => {
+      if (!s.haunt) return;
+      s.haunt.vars.surviveUntilTurn = s.turn + 5;
+      const heroes = Math.max(1, livingHeroes(s).length);
+      // Quick, biting, and they re-form from the frost — so cutting them down
+      // buys time but never ends it. Outlast the night, or kill the traitor.
+      spawn(s, ctx, "Frostbitten", 3, 2, heroes + 1, { speed: 2, respawns: true });
+    },
+    checkWin: (s) => {
+      if (!s.haunt) return null;
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingTraitors(s).length === 0) return "heroes";
+      if (s.turn >= Number(s.haunt.vars.surviveUntilTurn ?? Infinity)) return "heroes";
+      return null;
+    },
+  },
+  {
+    id: "the-hollow-king",
+    name: "The Hollow King",
+    reveal:
+      "A crown of antlers and rust rises out of the dark, and the air bends around it like heat off a road. {traitor} kneels — they have found their king, and they will see the rest of you kneel, or die.",
+    heroGoal: "Bring down the Hollow King. Nothing less will end this night.",
+    traitorGoal: "Guard your king until the house is silent.",
+    setup: (s, _t, ctx) => {
+      // One terrible roaming thing. The traitor fights at its side, so the heroes
+      // must weather both to fell the king (the only monster on the board).
+      spawn(s, ctx, "Hollow King", 5, 9, 1, { speed: 2, at: "start" });
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingMonsters(s).length === 0) return "heroes"; // the king has fallen
+      return null;
+    },
+  },
+  {
+    id: "the-drowned-choir",
+    name: "The Drowned Choir",
+    reveal:
+      "From every drain and gutter a wet, tuneless singing rises. Small grey children climb out of the pipes, mouths open, and {traitor} hums along as if they have always known the words.",
+    heroGoal: "Silence the choir — destroy them all — or reach consecrated ground in a Chapel.",
+    traitorGoal: "Let the song fill every head until nothing else is left.",
+    setup: (s, _t, ctx) => {
+      const heroes = Math.max(1, livingHeroes(s).length);
+      // A large mental swarm that stays dead once silenced. Kill them all, kill
+      // the chorister, or flee to a Chapel — but there are a great many voices.
+      spawn(s, ctx, "Choirboy", 2, 2, heroes * 2, { attackType: "mental", speed: 2 });
+      markEscapeSnapshot(s, "chapelEscape", inChapel(s));
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor";
+      if (livingTraitors(s).length === 0) return "heroes";
+      if (livingMonsters(s).length === 0) return "heroes";
+      return escapedDuringHaunt(s, "chapelEscape", inChapel(s)) ? "heroes" : null;
+    },
+  },
+  {
+    id: "the-iron-bargain",
+    name: "The Iron Bargain",
+    reveal:
+      "The front door has grown a hundred locks of black iron, and things with ledgers and too-long fingers step out of the walls to collect what the house is owed. {traitor} has already signed.",
+    heroGoal: "Carry the Iron Key to the Entrance Hall and force the door — or destroy the collectors and the one who sold you.",
+    traitorGoal: "Collect every soul before they can flee.",
+    setup: (s, _t, ctx) => {
+      const heroes = Math.max(1, livingHeroes(s).length);
+      spawn(s, ctx, "Debt Collector", 3, 4, Math.max(2, heroes), { speed: 1 });
+      markEscapeSnapshot(s, "keyEscape", inRoomWithKey(s));
+    },
+    checkWin: (s) => {
+      if (livingHeroes(s).length === 0) return "traitor";
+      // The debt is paid only when both the collectors AND their broker are gone.
+      if (livingTraitors(s).length === 0 && livingMonsters(s).length === 0) return "heroes";
+      return escapedDuringHaunt(s, "keyEscape", inRoomWithKey(s)) ? "heroes" : null;
+    },
+  },
+  {
+    id: "the-sleepless",
+    name: "The Sleepless",
+    reveal:
+      "You realize you cannot remember the last time you blinked. Something tall and grey stands at the edge of every room, and it has watched you sleep your whole life. {traitor} smiles, able at last to rest.",
+    heroGoal: "Endure four rounds with your mind intact, or destroy the Sleepless.",
+    traitorGoal: "Let it hollow out their minds.",
+    setup: (s, _t, ctx) => {
+      if (!s.haunt) return;
+      s.haunt.vars.surviveUntilTurn = s.turn + 4;
+      // A single relentless thing that assaults the mind, not the body.
+      spawn(s, ctx, "The Sleepless", 5, 8, 1, { attackType: "mental", speed: 1, at: "start" });
+    },
+    checkWin: (s) => {
+      if (!s.haunt) return null;
+      if (livingMonsters(s).length === 0) return "heroes";
+      if (s.turn >= Number(s.haunt.vars.surviveUntilTurn ?? Infinity)) return "heroes";
+      if (livingHeroes(s).length === 0) return "traitor";
+      return null;
+    },
+  },
 ];
 
 export const HAUNTS_BY_ID: Record<string, HauntDef> = Object.fromEntries(

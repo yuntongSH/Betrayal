@@ -272,8 +272,9 @@ export function monsterPhase(s: GameState): void {
     if (heroes.length === 0) break;
 
     // Advance up to the monster's Speed, stopping the moment it shares a room
-    // with a hero. Fast creatures close the distance in a single phase.
-    let moves = Math.max(1, m.speed ?? 1);
+    // with a hero. Fast creatures close the distance in a single phase; a Speed
+    // of 0 marks a rooted thing (a ritual focus) that never moves.
+    let moves = m.speed ?? 1;
     while (moves > 0 && !heroes.some((h) => h.position === m.position)) {
       const targetKeys = new Set(heroes.map((h) => h.position as string));
       const step = stepToward(s, m.position, targetKeys);
@@ -324,11 +325,15 @@ export function monsterPhase(s: GameState): void {
 /** Per-scenario bookkeeping run when the traitor ends their turn. */
 export function onTraitorTurnEnd(s: GameState): void {
   if (s.phase !== "haunt" || !s.haunt) return;
-  if (s.haunt.id === "blood-moon") {
+  // Data-driven ritual timer: any haunt that seeds `ritualNeeded` advances its
+  // progress at the end of each traitor turn (blood-moon, the effigy, …). The
+  // scenario's checkWin decides what reaching `ritualNeeded` means.
+  if (s.haunt.vars.ritualNeeded !== undefined) {
     const progress = Number(s.haunt.vars.ritualProgress ?? 0) + 1;
     s.haunt.vars.ritualProgress = progress;
     const needed = Number(s.haunt.vars.ritualNeeded ?? 4);
-    addLog(s, `The ritual deepens... (${progress}/${needed})`, "haunt");
+    const label = String(s.haunt.vars.ritualLabel ?? "The ritual deepens");
+    addLog(s, `${label}... (${progress}/${needed})`, "haunt");
   }
   checkWinNow(s);
 }

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
-import { beginTurn, createGame, ENTRANCE_KEY } from "../setup";
+import { addBot, beginTurn, createGame, ENTRANCE_KEY } from "../setup";
 import { triggerHaunt, checkWinNow } from "../haunt";
-import { HAUNTS_BY_ID } from "../content";
+import { runBotTurn } from "../bot";
+import { HAUNTS, HAUNTS_BY_ID } from "../content";
 import type { HauntContext } from "../content";
 import { Rng } from "../rng";
 import { key } from "../grid";
@@ -33,6 +34,46 @@ describe("triggering the haunt", () => {
     expect(heroes).toHaveLength(2);
     expect(traitors[0]!.id).toBe("a");
   });
+});
+
+describe("every haunt resolves under bot play (no soft-locks)", () => {
+  /** Force a specific scenario (mirrors the engine's triggerHaunt internals). */
+  function forceHaunt(s: GameState, id: string): void {
+    const def = HAUNTS_BY_ID[id]!;
+    const trigger = s.players[0]!.id;
+    const traitorIds = def.chooseTraitors ? def.chooseTraitors(s, trigger) : [trigger];
+    s.haunt = {
+      id: def.id, name: def.name, traitorIds, startedById: trigger,
+      startRoomKey: getPlayer(s, trigger)!.position, monsters: [],
+      heroGoal: def.heroGoal, traitorGoal: def.traitorGoal, vars: {},
+    };
+    s.players.forEach((p) => (p.side = traitorIds.includes(p.id) ? "traitor" : "heroes"));
+    const ctx: HauntContext = {
+      rng: Rng.fromState(s.rngState),
+      roomKeys: () => Object.keys(s.house),
+      spawnKey: () => s.haunt?.startRoomKey ?? Object.keys(s.house)[0] ?? null,
+    };
+    def.setup(s, traitorIds, ctx);
+    s.rngState = ctx.rng.state;
+    s.phase = "haunt";
+    checkWinNow(s);
+  }
+
+  for (const def of HAUNTS) {
+    it(`${def.id} reaches an ending with a winner`, () => {
+      const s = createGame("hk", 9);
+      for (let i = 0; i < 4; i++) addBot(s);
+      reduce(s, { type: "start-game", playerId: s.players[0]!.id });
+      s.decks.omen = []; // suppress the natural haunt so we can force this one
+      let guard = 0;
+      while (s.phase === "explore" && s.turn < 6 && guard++ < 80) runBotTurn(s, s.activePlayerId!);
+      if (s.phase === "explore") forceHaunt(s, def.id);
+      let h = 0;
+      while (s.phase !== "ended" && h++ < 800) runBotTurn(s, s.activePlayerId!);
+      expect(s.phase, `${def.id} should end`).toBe("ended");
+      expect(["heroes", "traitor"]).toContain(s.winner);
+    });
+  }
 });
 
 describe("trait tracks", () => {
