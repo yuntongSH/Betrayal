@@ -41,6 +41,9 @@ export function createGame(id: string, seed: number): GameState {
     order: [],
     activePlayerId: null,
     movementLeft: 0,
+    turnStartKey: null,
+    turnSpent: 0,
+    turnExplored: [],
     attacksLeft: 0,
     house: {},
     itemPiles: {},
@@ -137,10 +140,14 @@ export function chooseCharacter(
 }
 
 /** Begin the active player's turn: refresh movement from their *effective*
- *  Speed (so Speed-boosting items extend it) and the single attack each turn. */
+ *  Speed (so Speed-boosting items extend it) and the single attack each turn.
+ *  Anchor the turn here so movement is budgeted by net distance from this room. */
 export function beginTurn(s: GameState): void {
   const active = getPlayer(s, s.activePlayerId);
   if (!active) return;
+  s.turnStartKey = active.position ?? null;
+  s.turnSpent = 0;
+  s.turnExplored = [];
   s.movementLeft = Math.max(1, effectiveTrait(active, "speed"));
   s.attacksLeft = 1;
 }

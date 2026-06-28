@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { reduce } from "../engine";
-import { createGame, ENTRANCE_KEY } from "../setup";
+import { legalMoves, reduce } from "../engine";
+import { beginTurn, createGame, ENTRANCE_KEY } from "../setup";
+import { CHARACTERS_BY_ID } from "../content";
 import type { GameState } from "../types";
 import { getPlayer } from "../state";
 import { key } from "../grid";
@@ -99,6 +100,76 @@ describe("exploration", () => {
     const before = getPlayer(s, notActive)?.position;
     reduce(s, { type: "move-to", playerId: notActive, toKey: key("ground", 0, 1) });
     expect(getPlayer(s, notActive)?.position).toBe(before);
+  });
+});
+
+describe("net-distance movement (backtracking refunds Speed)", () => {
+  // entrance(0,2) — foyer(0,1) — grand-staircase(0,0) form a straight corridor.
+  const foyer = key("ground", 0, 1);
+  const staircase = key("ground", 0, 0);
+
+  function generousSpeed(s: GameState): { pid: string; budget: number } {
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    const ch = CHARACTERS_BY_ID[p.characterId!]!;
+    p.traitIndex.speed = ch.traits.speed.values.length - 1; // top Speed
+    beginTurn(s); // re-anchor the turn here with the fuller budget
+    return { pid, budget: s.movementLeft };
+  }
+
+  it("only net progress from the turn's start is charged — walking back refunds", () => {
+    const s = startedGame();
+    const { pid, budget } = generousSpeed(s);
+    const entrance = getPlayer(s, pid)!.position!;
+    expect(budget).toBeGreaterThanOrEqual(2);
+
+    reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    expect(s.movementLeft).toBe(budget - 1);
+    reduce(s, { type: "move-to", playerId: pid, toKey: staircase });
+    expect(s.movementLeft).toBe(budget - 2);
+
+    // Walk back: net distance from the start shrinks, so Speed is handed back.
+    reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    expect(s.movementLeft).toBe(budget - 1);
+    reduce(s, { type: "move-to", playerId: pid, toKey: entrance });
+    expect(s.movementLeft).toBe(budget); // fully home again: nothing net spent
+  });
+
+  it("you can always step back toward the start, even with no movement left", () => {
+    const s = startedGame();
+    const { pid } = generousSpeed(s);
+    const entrance = getPlayer(s, pid)!.position!;
+    const p = getPlayer(s, pid)!;
+
+    reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    // Burn every remaining point with deliberate actions (non-refundable steps).
+    let guard = 0;
+    while (s.movementLeft > 0 && guard++ < 20) {
+      reduce(s, { type: "investigate", playerId: pid });
+    }
+    expect(s.movementLeft).toBe(0);
+
+    // Forward is refused (no budget)...
+    reduce(s, { type: "move-to", playerId: pid, toKey: staircase });
+    expect(p.position).toBe(foyer);
+    // ...but a step back toward the start is always allowed, and refunds.
+    expect(legalMoves(s, pid).explored).toContain(entrance);
+    reduce(s, { type: "move-to", playerId: pid, toKey: entrance });
+    expect(p.position).toBe(entrance);
+    expect(s.movementLeft).toBeGreaterThan(0);
+  });
+
+  it("exploring is a non-refundable step (can't be gamed by returning to start)", () => {
+    const s = startedGame();
+    const { pid, budget } = generousSpeed(s);
+    const entrance = getPlayer(s, pid)!.position!;
+    // Explore out of the foyer, then walk all the way home.
+    reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    reduce(s, { type: "explore", playerId: pid, door: "east" });
+    reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    reduce(s, { type: "move-to", playerId: pid, toKey: entrance });
+    // Home again, but the one explore stays paid for: budget is down exactly 1.
+    expect(s.movementLeft).toBe(budget - 1);
   });
 });
 

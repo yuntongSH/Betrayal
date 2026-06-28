@@ -66,6 +66,38 @@ export function connections(s: GameState, fromKey: string): string[] {
   return [...new Set(result)];
 }
 
+/**
+ * Net "walking distance" from a turn's start to a position. Stepping *into* a
+ * room discovered earlier this turn is free (it was already paid for when it was
+ * explored); every other step costs 1. This is what makes wandering back and
+ * forth among rooms you've already visited not burn Speed — only net progress
+ * from where the turn began does. A 0/1 BFS over the same passages players walk.
+ */
+export function netWalkDistance(
+  s: GameState,
+  fromKey: string,
+  toKey: string,
+  free: ReadonlySet<string>,
+): number {
+  if (fromKey === toKey) return 0;
+  const dist = new Map<string, number>([[fromKey, 0]]);
+  // Deque for 0/1 BFS: zero-cost edges go to the front, unit-cost to the back.
+  const deque: string[] = [fromKey];
+  while (deque.length) {
+    const k = deque.shift()!;
+    const d = dist.get(k)!;
+    for (const nb of connections(s, k)) {
+      const nd = d + (free.has(nb) ? 0 : 1);
+      if (nd < (dist.get(nb) ?? Infinity)) {
+        dist.set(nb, nd);
+        if (free.has(nb)) deque.unshift(nb);
+        else deque.push(nb);
+      }
+    }
+  }
+  return dist.get(toKey) ?? Infinity;
+}
+
 /** Open doorways with no tile placed beyond them yet — candidates to explore. */
 export function openDoors(s: GameState, fromKey: string): Direction[] {
   const room = s.house[fromKey];

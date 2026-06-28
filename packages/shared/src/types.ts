@@ -229,7 +229,16 @@ export interface GameState {
   /** Turn order (player ids). */
   order: PlayerId[];
   activePlayerId: PlayerId | null;
+  /** Movement budget remaining: Speed minus net distance walked from the turn's
+   *  start, minus non-refundable steps (explores + deliberate actions). Walking
+   *  back toward where you began refunds, so only net progress costs Speed. */
   movementLeft: number;
+  /** Room the active player's turn began in (the anchor for net-distance moves). */
+  turnStartKey?: string | null;
+  /** Non-refundable steps spent this turn: each explore and deliberate action. */
+  turnSpent?: number;
+  /** Rooms discovered this turn — free to walk back through (already paid for). */
+  turnExplored?: string[];
   /** Attacks the active player may still make this turn (one per turn). */
   attacksLeft: number;
   /** PlacedRoom keyed by location. */

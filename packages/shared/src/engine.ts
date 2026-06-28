@@ -32,7 +32,7 @@ import {
   roomAura,
 } from "./state";
 import { drawCard, drawRoomForFloor, hasRoomForFloor } from "./decks";
-import { barricadeId, connections, isBarricaded, openDoors, placedDoorways } from "./house";
+import { barricadeId, connections, isBarricaded, netWalkDistance, openDoors, placedDoorways } from "./house";
 import { hauntRoll, rollDice } from "./dice";
 import {
   checkWinNow,
@@ -66,14 +66,45 @@ function currentRoom(s: GameState, p: PlayerState): PlacedRoom | undefined {
 // Movement & exploration
 // ---------------------------------------------------------------------------
 
+/** The active player's full Speed budget for the turn (effective, ≥1). */
+function speedBudget(p: PlayerState): number {
+  return Math.max(1, effectiveTrait(p, "speed"));
+}
+
+/**
+ * Recompute the movement left for the active player: their Speed, minus the
+ * non-refundable steps spent this turn (explores + deliberate actions), minus
+ * the *net* walking distance from where the turn began. Backtracking shrinks
+ * that net distance, so it refunds movement — only net progress costs Speed.
+ */
+function recomputeMovement(s: GameState): void {
+  const active = getPlayer(s, s.activePlayerId);
+  if (!active?.position || s.turnStartKey == null) return;
+  const free = new Set(s.turnExplored ?? []);
+  const net = netWalkDistance(s, s.turnStartKey, active.position, free);
+  const reach = Number.isFinite(net) ? net : speedBudget(active);
+  s.movementLeft = Math.max(0, speedBudget(active) - (s.turnSpent ?? 0) - reach);
+}
+
+/** Can the active player afford to stand in `toKey`? (Backtracking is cheap.) */
+function canReach(s: GameState, p: PlayerState, toKey: string): boolean {
+  if (s.turnStartKey == null) return s.movementLeft > 0;
+  const free = new Set(s.turnExplored ?? []);
+  const net = netWalkDistance(s, s.turnStartKey, toKey, free);
+  return Number.isFinite(net) && (s.turnSpent ?? 0) + net <= speedBudget(p);
+}
+
 function handleMoveTo(s: GameState, playerId: PlayerId, toKey: string): void {
   const p = getPlayer(s, playerId);
-  if (!p?.alive || !isActiveTurn(s, playerId) || s.movementLeft <= 0) return;
+  if (!p?.alive || !isActiveTurn(s, playerId)) return;
   if (!p.position) return;
   if (!connections(s, p.position).includes(toKey)) return;
+  // Budgeted by net distance from the turn's start, not raw step count — so
+  // stepping back toward where you began is free even with no movement "left".
+  if (!canReach(s, p, toKey)) return;
 
   p.position = toKey;
-  s.movementLeft -= 1;
+  recomputeMovement(s);
   const room = s.house[toKey];
   if (room) addLog(s, `${p.name} moves into the ${ROOMS_BY_ID[room.roomId]?.name ?? "room"}.`, "move");
   checkWinNow(s);
@@ -118,10 +149,12 @@ function handleExplore(s: GameState, playerId: PlayerId, door: Direction): void 
   s.house[nKey] = placed;
 
   p.position = nKey;
-  // Discovering a new room costs a single step, like any move — so you can keep
-  // walking and backtrack while you still have movement left this turn (rather
-  // than the discovery ending your whole turn's movement).
-  s.movementLeft -= 1;
+  // Discovering a new room is one non-refundable step (you can't game Speed by
+  // exploring, walking back to your start, and exploring again). The new room
+  // is then free to walk back through this turn — you already paid to make it.
+  s.turnSpent = (s.turnSpent ?? 0) + 1;
+  (s.turnExplored ??= []).push(nKey);
+  recomputeMovement(s);
   const def = ROOMS_BY_ID[newRoomId];
   addLog(s, `${p.name} discovers the ${def?.name ?? "room"}.`, "move");
 
@@ -236,14 +269,13 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
       break;
     case "trait-mod":
     case "heal": {
-      const speedBefore = effectiveTrait(p, "speed");
       modTrait(s, p, effect.trait, effect.delta);
-      // A mid-turn Speed gain must extend THIS turn's movement budget — it is
-      // otherwise only set at beginTurn — so a "+2 Speed" consumable (Quicksilver
-      // Elixir) actually lets you move farther on the turn you drink it.
+      // A mid-turn Speed change must re-extend THIS turn's movement budget — it
+      // is otherwise only set at beginTurn — so a "+2 Speed" consumable
+      // (Quicksilver Elixir) actually lets you move farther on the turn you drink
+      // it. Recompute against the new Speed (net-distance model handles the rest).
       if (effect.trait === "speed" && p.alive && p.id === s.activePlayerId) {
-        const gained = effectiveTrait(p, "speed") - speedBefore;
-        if (gained > 0) s.movementLeft += gained;
+        recomputeMovement(s);
       }
       break;
     }
@@ -359,7 +391,8 @@ function handleSearch(s: GameState, playerId: PlayerId): void {
   const room = s.house[p.position];
   if (!room || room.searched) return;
   room.searched = true;
-  s.movementLeft -= 1;
+  s.turnSpent = (s.turnSpent ?? 0) + 1; // a deliberate action: non-refundable
+  recomputeMovement(s);
   addLog(s, `${p.name} searches the ${ROOMS_BY_ID[room.roomId]?.name ?? "room"}...`, "info");
   const rng = Rng.fromState(s.rngState);
   const sprung = rng.next() < 0.35; // ~1 in 3 disturbs something instead
@@ -394,7 +427,10 @@ function handleRest(s: GameState, playerId: PlayerId): void {
     }
   }
   if (!worst) return; // every trait already topped out — nothing to recover
-  s.movementLeft = 0; // resting takes the rest of your turn
+  // Resting takes the rest of your turn: bank Speed-worth of spent steps so no
+  // recompute (e.g. a later Speed change) can hand the movement back.
+  s.turnSpent = (s.turnSpent ?? 0) + speedBudget(p) + 1;
+  s.movementLeft = 0;
   modTrait(s, p, worst, 1);
   addLog(s, `${p.name} stops to breathe, steadying their ${worst}.`, "card");
   checkWinNow(s);
@@ -409,8 +445,9 @@ function handleBarricade(s: GameState, playerId: PlayerId, door: Direction): voi
   const nKey = neighborKey(room.floor, room.x, room.y, door);
   // Must be a real, currently-open passage to a placed room.
   if (!s.house[nKey] || isBarricaded(s, p.position, nKey) || !connections(s, p.position).includes(nKey)) return;
-  s.movementLeft -= 1;
+  s.turnSpent = (s.turnSpent ?? 0) + 1; // a deliberate action: non-refundable
   (s.barricades ??= {})[barricadeId(p.position, nKey)] = s.turn + BARRICADE_ROUNDS;
+  recomputeMovement(s);
   const nName = ROOMS_BY_ID[s.house[nKey]!.roomId]?.name ?? "the next room";
   addLog(s, `${p.name} wedges the door to the ${nName} shut.`, "info");
   checkWinNow(s);
@@ -420,7 +457,8 @@ function handleBarricade(s: GameState, playerId: PlayerId, door: Direction): voi
 function handleInvestigate(s: GameState, playerId: PlayerId): void {
   const p = getPlayer(s, playerId);
   if (!p?.alive || !isActiveTurn(s, playerId) || s.movementLeft <= 0) return;
-  s.movementLeft -= 1;
+  s.turnSpent = (s.turnSpent ?? 0) + 1; // a deliberate action: non-refundable
+  recomputeMovement(s);
   const rng = Rng.fromState(s.rngState);
   const roll = rollDice(rng, Math.max(1, effectiveTrait(p, "knowledge") + roomAura(s, p)));
   s.rngState = rng.state;
@@ -655,7 +693,10 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
   if (!p.alive) return { ...empty, canEndTurn: true };
 
   const moving = s.movementLeft > 0;
-  const explored = moving ? connections(s, p.position) : [];
+  // Walking is budgeted by net distance from the turn's start, so a step back
+  // toward where you began is always affordable — even with no movement left.
+  // Advertise every connected room you can still afford to stand in.
+  const explored = connections(s, p.position).filter((k) => canReach(s, p, k));
   // Only advertise a doorway if the room deck can actually yield a tile for this
   // floor — otherwise exploring it is a silent no-op ("bare, impossible wall").
   const floor = s.house[p.position]?.floor;
