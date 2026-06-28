@@ -30,13 +30,25 @@ cards, characters and scenarios, so it can live happily as free software.
 - 🏚️ **A manor that assembles itself** — rooms are drawn from a shuffled deck and
   placed as you push through doorways, across Basement, Ground and Upper floors.
 - 👻 **The Haunt** — omens escalate until the house turns, splitting the party
-  into traitor(s) and heroes, each with secret objectives and six shipped
-  scenarios.
+  into traitor(s) and heroes, each with secret objectives and **thirteen shipped
+  scenarios**. *Which* haunt fires is keyed to the omen you drew and the room you
+  were standing in, so your choices author the story.
+- 🎚️ **Difficulty** — Relaxed / Standard / Nightmare scale the haunt's monsters
+  (Standard is the tuned baseline).
+- 🕯️ **Legacy campaign** *(artifact)* — a persistent saga of linked games:
+  forge named **heirlooms** that grow, **bloodlines** where heirs replace the
+  fallen, and a **scarring house** that remembers where each haunt began.
+- 🗝️ **Real per-turn agency** — beyond moving, each turn you can **Search**,
+  **Investigate**, **Steady yourself** (rest), or **Barricade** a door. Movement
+  is budgeted by *net distance* from where your turn began, so backtracking is
+  free.
+- 🚪 **Doors** — real doors at every passage, swinging open as figures cross.
 - 🌐 **Online multiplayer** — an authoritative WebSocket server keeps every
   browser in sync and decides the rules; no client can cheat.
-- 🩸 **3D & atmospheric** — three.js / react-three-fiber with volumetric fog,
-  flickering candle-wisps, drifting dust, bloom and a crushed, desaturated
-  palette.
+- 🩸 **3D & atmospheric** — three.js / react-three-fiber with **fog-of-war
+  darkness** (the house is lit only by the candle-pools that follow the living),
+  **reactive procedural audio** (door creaks, a heartbeat near death, a swell when
+  the house turns), volumetric fog, drifting dust, bloom and a crushed palette.
 
 ## 🚀 Quick start
 
@@ -140,10 +152,16 @@ CI runs all three on every push and pull request.
 
 ## 🗺️ Roadmap
 
-- More haunt scenarios (the framework supports any number).
+- A **front-end design pass** (the official `frontend-design` plugin runs locally).
+- Bring the **legacy campaign to multiplayer** (server-persisted heirlooms /
+  bloodlines / scars).
 - Per-room 3D art instead of procedural slabs.
 - Spectator mode and reconnect-by-name polish.
-- Optional bots to fill out small parties.
+- Even more haunt scenarios (the framework supports any number).
+
+> 📋 **Continuing development?** See [`HANDOFF.md`](HANDOFF.md) — a detailed status
+> doc covering everything that's been built, how to verify it, and what's left to
+> do, with file pointers.
 
 Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
