@@ -1,17 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { ambient } from "../audio/ambient";
 
 /** A one-time dramatic reveal when the haunt begins, dismissible per scenario. */
 export function HauntBanner() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const stungFor = useRef<string | null>(null);
 
   const haunt = game.haunt;
   useEffect(() => {
     // Reset dismissal if a (hypothetical) new haunt id appears.
     if (haunt && dismissed && dismissed !== haunt.id) setDismissed(null);
-  }, [haunt, dismissed]);
+    // Sound the dissonant swell once, the moment the house turns.
+    if (haunt && game.phase === "haunt" && stungFor.current !== haunt.id) {
+      stungFor.current = haunt.id;
+      ambient.stinger();
+    }
+  }, [haunt, dismissed, game.phase]);
 
   if (!haunt || game.phase !== "haunt") return null;
   if (dismissed === haunt.id) return null;

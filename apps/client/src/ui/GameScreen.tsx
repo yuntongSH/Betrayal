@@ -1,6 +1,7 @@
-import { useMemo } from "react";
-import { ROOMS_BY_ID, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
+import { useEffect, useMemo } from "react";
+import { ROOMS_BY_ID, TRAITS, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { ambient } from "../audio/ambient";
 import { Scene } from "../three/Scene";
 import { TraitPanel } from "./TraitPanel";
 import { EventLog } from "./EventLog";
@@ -32,6 +33,16 @@ export function GameScreen() {
   const myTurn = game.activePlayerId === myId;
   const ended = game.phase === "ended";
   const haunt = game.phase === "haunt" || ended;
+
+  // Reactive heartbeat: thuds while your explorer is one step from the skull.
+  const me = game.players.find((p) => p.id === myId);
+  const peril =
+    !ended && !!me?.alive && !!me.characterId &&
+    TRAITS.some((t) => (me.traitIndex[t] ?? 9) <= 1);
+  useEffect(() => {
+    ambient.setHeart(peril);
+    return () => ambient.setHeart(false);
+  }, [peril]);
 
   const legal = useMemo(
     () => (myId ? legalMoves(game, myId) : null),

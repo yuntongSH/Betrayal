@@ -11,11 +11,14 @@ export function RoomTile({
   room,
   def,
   highlighted,
+  litFactor = 1,
   onClick,
 }: {
   room: PlacedRoom;
   def: RoomDef;
   highlighted: boolean;
+  /** Fog-of-war brightness 0..1 — how near a living explorer's light this is. */
+  litFactor?: number;
   onClick: () => void;
 }) {
   const [wx, wy, wz] = roomWorld(room);
@@ -50,6 +53,9 @@ export function RoomTile({
   } else {
     floorMat.emissiveIntensity = 0;
   }
+  // Fog-of-war: darken the floor for rooms far from any explorer's light.
+  floorMat.color.set(theme.floor);
+  floorMat.color.multiplyScalar(0.35 + 0.65 * litFactor);
 
   return (
     <group position={[wx, wy, wz]}>
@@ -103,9 +109,9 @@ export function RoomTile({
       <pointLight
         position={[0, WALL_H * 0.55, 0]}
         color={theme.accent}
-        intensity={theme.accentIntensity * 7}
-        distance={TILE * 1.7}
-        decay={2.4}
+        intensity={theme.accentIntensity * 7 * litFactor}
+        distance={TILE * 1.9}
+        decay={2.2}
       />
 
       <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={14} occlude={false}>

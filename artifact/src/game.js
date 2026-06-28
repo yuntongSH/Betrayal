@@ -41,9 +41,110 @@ function toast(msg) {
 function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
 function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
 
+// ---- procedural audio (Web Audio, zero assets) ---------------------------
+// A low drone + filtered wind bed, with reactive cues: a creak when a door
+// swings, a heartbeat while you're near death, and a dissonant swell when the
+// house turns. Must be started from a user gesture (the lobby button click).
+const Sound = (() => {
+  let ctx = null, master = null, started = false, muted = false, heart = null, lastDoor = 0;
+  const VOL = 0.26;
+  function noise(sec) {
+    const len = Math.floor(ctx.sampleRate * sec);
+    const b = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return b;
+  }
+  function drone() {
+    const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 210; f.connect(master);
+    for (const fr of [49, 55, 73.4]) {
+      const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = fr;
+      const g = ctx.createGain(); g.gain.value = 0.16; o.connect(g).connect(f); o.start();
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.04 + Math.random() * 0.05;
+      const lg = ctx.createGain(); lg.gain.value = 0.07; lfo.connect(lg).connect(g.gain); lfo.start();
+    }
+  }
+  function wind() {
+    const s = ctx.createBufferSource(); s.buffer = noise(4); s.loop = true;
+    const b = ctx.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = 460; b.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.value = 0.1; s.connect(b).connect(g).connect(master); s.start();
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06;
+    const lg = ctx.createGain(); lg.gain.value = 240; lfo.connect(lg).connect(b.frequency); lfo.start();
+  }
+  function creak(freq, dur, vol) {
+    if (!started || muted) return;
+    const s = ctx.createBufferSource(); s.buffer = noise(dur + 0.1);
+    const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = 7;
+    const g = ctx.createGain(); g.gain.value = 0;
+    const t = ctx.currentTime;
+    g.gain.linearRampToValueAtTime(vol, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f).connect(g).connect(master); s.start(); s.stop(t + dur + 0.1);
+  }
+  function thump(t, vol) {
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(72, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.32);
+  }
+  return {
+    start() {
+      if (started) return;
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      ctx = new C(); master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+      started = true; drone(); wind();
+      master.gain.linearRampToValueAtTime(muted ? 0 : VOL, ctx.currentTime + 4);
+    },
+    door() { const now = performance.now(); if (now - lastDoor < 350) return; lastDoor = now; creak(330 + Math.random() * 220, 0.6, 0.22); },
+    setHeart(on) {
+      if (!started) return;
+      if (on && !heart && !muted) {
+        const beat = () => { if (muted) return; const t = ctx.currentTime; thump(t, 0.55); thump(t + 0.33, 0.4); };
+        beat(); heart = setInterval(beat, 1150);
+      } else if (!on && heart) { clearInterval(heart); heart = null; }
+    },
+    stinger() {
+      if (!started || muted) return;
+      const t = ctx.currentTime;
+      for (const fr of [110, 116.5, 220]) {
+        const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fr;
+        const f = ctx.createBiquadFilter(); f.type = "lowpass";
+        f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(1900, t + 0.7);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.13, t + 0.15); g.gain.exponentialRampToValueAtTime(0.001, t + 2.3);
+        o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 2.4);
+      }
+      const s = ctx.createBufferSource(); s.buffer = noise(2.2);
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2600;
+      const g2 = ctx.createGain(); g2.gain.setValueAtTime(0, t);
+      g2.gain.linearRampToValueAtTime(0.09, t + 0.2); g2.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+      s.connect(hp).connect(g2).connect(master); s.start(t); s.stop(t + 2.2);
+    },
+    setMuted(m) {
+      muted = m;
+      if (ctx && master) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.linearRampToValueAtTime(m ? 0 : VOL, ctx.currentTime + 0.5); }
+      if (m) this.setHeart(false);
+    },
+    toggle() { this.setMuted(!muted); return muted; },
+    get muted() { return muted; },
+    get started() { return started; },
+  };
+})();
+
+/** Reflect sound state on the toggle button (🔊 on / 🔇 off). */
+function syncSoundBtn() {
+  const b = document.getElementById("sound-btn");
+  if (!b) return;
+  const on = Sound.started && !Sound.muted;
+  b.textContent = on ? "🔊" : "🔇";
+  b.classList.toggle("off", !on);
+}
+
 // ---- game state ----------------------------------------------------------
 let state = null;
 let lastHauntShown = null;
+let lastStinger = null; // haunt id whose reveal stinger has already played
 let botTimer = null; // pending local bot step
 let lastBotId = null; // which bot we're currently watching (for turn-handoff beats)
 // Bot pacing — slow enough for a human to follow what each player is doing: a
@@ -108,6 +209,8 @@ function beginGame(solo) {
   DH.reduce(state, { type: "start-game", playerId: state.players[0].id });
   $("lobby").style.display = "none";
   $("game").style.display = "block";
+  Sound.start(); // the button click is our user gesture for Web Audio
+  syncSoundBtn();
   if (!renderer) initScene();
   onResize();
   render();
@@ -120,8 +223,9 @@ function beginGame(solo) {
 function initScene() {
   const wrap = $("canvas-wrap");
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x06060a);
-  scene.fog = new THREE.Fog(0x070710, 11, 42);
+  scene.background = new THREE.Color(0x040407);
+  // Tighter fog: rooms far from any explorer's light fall away into the dark.
+  scene.fog = new THREE.Fog(0x05050a, 9, 34);
 
   camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
   camera.position.set(12, 14, 18);
@@ -142,10 +246,13 @@ function initScene() {
   controls.minDistance = 6;
   controls.maxDistance = 60;
 
-  scene.add(new THREE.AmbientLight(0x2a3a5e, 0.12));
-  const hemi = new THREE.HemisphereLight(0x26324f, 0x080604, 0.22);
+  // Near-black base lighting: the house is lit almost entirely by the candle
+  // pools that follow the living explorers (see fog-of-war in buildHouse), so
+  // rooms no one is near sink into shadow — you light your way as you go.
+  scene.add(new THREE.AmbientLight(0x1a2742, 0.07));
+  const hemi = new THREE.HemisphereLight(0x1a2238, 0x060503, 0.12);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0xaebfe8, 0.9);
+  const moon = new THREE.DirectionalLight(0x8fa2cc, 0.22);
   moon.position.set(14, 28, 6);
   scene.add(moon);
 
@@ -299,7 +406,8 @@ function buildRoomGroup(room) {
 
   g.add(buildRoomDecor(room.roomId, TILE));
 
-  const accent = new THREE.PointLight(theme.accent, theme.accentIntensity * 7, TILE * 1.7, 2.4);
+  const accentBase = theme.accentIntensity * 7;
+  const accent = new THREE.PointLight(theme.accent, accentBase, TILE * 1.9, 2.2);
   accent.position.set(0, WALL_H * 0.55, 0);
   g.add(accent);
 
@@ -311,12 +419,47 @@ function buildRoomGroup(room) {
   g.add(lbl);
 
   houseGroup.add(g);
-  return { group: g, floor, floorMat, labelEl: el };
+  return { group: g, floor, floorMat, labelEl: el, accent, accentBase };
 }
 
-/** Sync the house: build new rooms once, then just refresh highlight state. */
+/**
+ * Fog-of-war visibility: a multi-source BFS out from every living explorer.
+ * 0 = standing in the room, 1 = next door, etc. Rooms far from any explorer
+ * fall into darkness; their candle-light dims toward a faint ember.
+ */
+function visibilityLevels() {
+  const dist = new Map();
+  const frontier = [];
+  for (const p of state.players) {
+    if (p.alive && p.position && state.house[p.position] && !dist.has(p.position)) {
+      dist.set(p.position, 0); frontier.push(p.position);
+    }
+  }
+  let d = 0, cur = frontier;
+  while (cur.length && d < 6) {
+    const next = [];
+    for (const k of cur) for (const nb of DH.connections(state, k)) {
+      if (!dist.has(nb)) { dist.set(nb, d + 1); next.push(nb); }
+    }
+    cur = next; d++;
+  }
+  return dist;
+}
+
+/** Candle brightness for a room at BFS depth `d` from the nearest explorer. */
+function litFactorFor(d) {
+  if (d == null) return 0.06;            // never seen / cut off — near black
+  if (d <= 0) return 1.0;                // you're standing in it
+  if (d === 1) return 0.7;               // the next room over
+  if (d === 2) return 0.34;
+  if (d === 3) return 0.16;
+  return 0.08;                           // a faint memory of the layout
+}
+
+/** Sync the house: build new rooms once, then refresh highlight + fog-of-war. */
 function buildHouse(legal) {
   const hi = new Set(legal.explored);
+  const vis = visibilityLevels();
   for (const room of Object.values(state.house)) {
     let entry = roomCache.get(room.key);
     if (!entry) {
@@ -325,12 +468,17 @@ function buildHouse(legal) {
     }
     const lit = hi.has(room.key);
     entry.floor.userData.lit = lit;
+    // Fog-of-war: dim the candle and the floor for rooms far from any explorer.
+    const f = litFactorFor(vis.get(room.key));
+    entry.accent.intensity = entry.accentBase * f;
     // Color now multiplies the procedural map: white keeps the texture intact
-    // while the emissive provides the lit highlight; otherwise tint by theme.
-    entry.floorMat.color.set(lit ? 0xffffff : roomTheme(room.roomId).floor);
+    // while the emissive provides the lit highlight; otherwise tint by theme,
+    // darkened by how far the room is from a living explorer's light.
+    const base = new THREE.Color(roomTheme(room.roomId).floor).multiplyScalar(0.35 + 0.65 * f);
+    entry.floorMat.color.copy(lit ? new THREE.Color(0xffffff).multiplyScalar(0.4 + 0.6 * f) : base);
     entry.floorMat.emissive.set(lit ? 0x5a8f5a : 0x000000);
     entry.floorMat.emissiveIntensity = lit ? 0.5 : 0;
-    entry.labelEl.className = "lbl3d" + (lit ? " lit" : "");
+    entry.labelEl.className = "lbl3d" + (lit ? " lit" : "") + (f < 0.2 ? " faint" : "");
   }
   syncDoors();
 }
@@ -431,7 +579,7 @@ function syncDoors() {
 /** Swing the door between two rooms open (auto-closes shortly after). */
 function openDoorBetween(aKey, bKey) {
   const e = doorCache.get(DH.barricadeId(aKey, bKey));
-  if (e) { e.openTarget = 1; e.closeAt = performance.now() + 1500; }
+  if (e) { e.openTarget = 1; e.closeAt = performance.now() + 1500; Sound.door(); }
 }
 
 function makePlayerToken(p) {
@@ -697,6 +845,12 @@ function updateHUD(legal) {
   const haunt = state.phase === "haunt" || ended;
   const botActing = !!active && active.isBot && !ended;
 
+  // Reactive heartbeat: thuds while the explorer you're watching is near death
+  // (any trait one step from the skull). Falls silent once they're safe or gone.
+  const peril = !ended && me && me.alive && me.characterId &&
+    DH.TRAITS.some((t) => (me.traitIndex[t] ?? 9) <= 1);
+  Sound.setHeart(!!peril);
+
   const activeColor = active?.characterId ? DH.CHARACTERS_BY_ID[active.characterId]?.color : null;
   const activeName = activeColor
     ? `<span class="turn-name" style="color:${activeColor}">${active.name}</span>`
@@ -814,6 +968,7 @@ function updateHUD(legal) {
   // overlays
   const ov = $("overlay");
   if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
+    if (lastStinger !== state.haunt.id) { Sound.stinger(); lastStinger = state.haunt.id; }
     const amT = me?.side === "traitor";
     const noTraitor = state.haunt.traitorIds.length === 0;
     const tnames = state.haunt.traitorIds.map((id) => state.players.find((p) => p.id === id)?.name ?? "someone").join(", ");
@@ -996,6 +1151,8 @@ function stopWardrobe() {
 // boot
 $("begin-btn").onclick = () => beginGame(false);
 $("solo-btn").onclick = () => beginGame(true);
+$("sound-btn").onclick = () => { if (!Sound.started) Sound.start(); else Sound.toggle(); syncSoundBtn(); };
+syncSoundBtn();
 initWardrobe();
 buildLobby();
 wardrobeShow(DH.CHARACTERS[0].id);

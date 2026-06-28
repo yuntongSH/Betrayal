@@ -28,6 +28,11 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .btn.danger{background:linear-gradient(180deg,#7a2018,#561009);border-color:#3a0c06;color:#f4d7d0}
 .btn.act{background:rgba(34,40,46,.82);border-color:#2f4150;color:#dce8ef}
 .btn.act:hover:not(:disabled){border-color:#6fb3d6}
+.icon-btn{position:absolute;top:1.05rem;right:1.1rem;z-index:30;width:2.3rem;height:2.3rem;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:1.05rem;cursor:pointer;
+  background:rgba(20,16,14,.7);border:1px solid var(--edge);color:var(--ink);transition:.15s}
+.icon-btn:hover{border-color:var(--flame);transform:translateY(-1px)}
+.icon-btn.off{opacity:.55}
 #toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);padding:.5rem 1rem;border-radius:10px;background:rgba(20,16,14,.88);border:1px solid rgba(226,168,90,.45);color:#f0e2d2;font-size:.9rem;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;z-index:50}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .muted{color:var(--dim)} .small{font-size:.78rem}
@@ -195,6 +200,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <div id="hud-left"></div>
   <div id="hud-right"></div>
   <div id="hud-bottom"></div>
+  <button id="sound-btn" class="icon-btn" title="Toggle sound" aria-label="Toggle sound">🔈</button>
   <div id="hud-hint">Drag to orbit · arrow keys / WASD to move · click a glowing room or flame arrow · click a monster to strike</div>
   <div id="overlay"></div>
 </div>

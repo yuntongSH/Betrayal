@@ -11,9 +11,9 @@ import { FLOOR_GAP } from "./layout";
 export function Scene() {
   return (
     <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
-      <color attach="background" args={["#06060a"]} />
-      {/* fog pulled in so unexplored rooms dissolve into dread */}
-      <fog attach="fog" args={["#070710", 11, 42]} />
+      <color attach="background" args={["#040407"]} />
+      {/* fog pulled in tight so rooms far from any explorer dissolve into dread */}
+      <fog attach="fog" args={["#05050a", 9, 34]} />
 
       <PerspectiveCamera makeDefault position={[12, 14, 18]} fov={48} />
       <OrbitControls
@@ -26,21 +26,22 @@ export function Scene() {
         maxDistance={60}
       />
 
-      {/* all darkness is blue, all light is amber: crushed cold ambient + one
-          cold moonlight key (the only shadow caster); warm practicals do the rest */}
-      <ambientLight intensity={0.08} color="#2a3a5e" />
-      <hemisphereLight args={["#26324f", "#080604", 0.18]} />
+      {/* near-black base: the house is lit almost entirely by the candle pools
+          that follow the living explorers (fog-of-war in RoomTile), so rooms no
+          one is near sink into shadow. One cold moonlight key casts the shadows. */}
+      <ambientLight intensity={0.05} color="#1a2742" />
+      <hemisphereLight args={["#1a2238", "#060503", 0.1]} />
       <directionalLight
         position={[14, 28, 6]}
-        intensity={0.65}
-        color="#aebfe8"
+        intensity={0.2}
+        color="#8fa2cc"
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
       />
       {/* faint cold rim so silhouettes read against the void */}
-      <directionalLight position={[-12, 6, -10]} intensity={0.12} color="#3a4d78" />
+      <directionalLight position={[-12, 6, -10]} intensity={0.08} color="#3a4d78" />
 
       <Suspense fallback={null}>
         <HouseView />

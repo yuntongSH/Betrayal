@@ -150,8 +150,84 @@ export class Ambient {
     src.stop(ctx.currentTime + 0.5);
   }
 
+  /** A lower, longer creak — a door swinging on its hinges. */
+  doorCreak(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || !this.master) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(0.7);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 330 + Math.random() * 220;
+    filter.Q.value = 7;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    src.connect(filter).connect(g).connect(this.master);
+    src.start();
+    src.stop(ctx.currentTime + 0.7);
+  }
+
+  /** Low double-thud heartbeat while an explorer is near death; off to silence. */
+  private heartTimer: number | null = null;
+  setHeart(on: boolean): void {
+    if (on) {
+      if (this.heartTimer != null || !this.ctx || this.muted) return;
+      const beat = () => {
+        const ctx = this.ctx;
+        if (!ctx || this.muted || !this.master) return;
+        const thump = (t: number, vol: number) => {
+          const o = ctx.createOscillator();
+          o.type = "sine";
+          o.frequency.setValueAtTime(72, t);
+          o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(vol, t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+          o.connect(g).connect(this.master!);
+          o.start(t);
+          o.stop(t + 0.32);
+        };
+        const t = ctx.currentTime;
+        thump(t, 0.5);
+        thump(t + 0.33, 0.38);
+      };
+      beat();
+      this.heartTimer = window.setInterval(beat, 1150);
+    } else if (this.heartTimer != null) {
+      window.clearInterval(this.heartTimer);
+      this.heartTimer = null;
+    }
+  }
+
+  /** A dissonant swell + high shimmer when the house turns (the haunt reveal). */
+  stinger(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || !this.master) return;
+    const t = ctx.currentTime;
+    for (const fr of [110, 116.5, 220]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = fr;
+      const f = ctx.createBiquadFilter();
+      f.type = "lowpass";
+      f.frequency.setValueAtTime(300, t);
+      f.frequency.linearRampToValueAtTime(1900, t + 0.7);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.13, t + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 2.3);
+      o.connect(f).connect(g).connect(this.master);
+      o.start(t);
+      o.stop(t + 2.4);
+    }
+  }
+
   dispose(): void {
     if (this.creakTimer) window.clearTimeout(this.creakTimer);
+    if (this.heartTimer) window.clearInterval(this.heartTimer);
     this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.started = false;

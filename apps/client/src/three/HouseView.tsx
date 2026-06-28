@@ -4,8 +4,10 @@ import {
   CHARACTERS_BY_ID,
   DIR_DELTA,
   ROOMS_BY_ID,
+  connections,
   legalMoves,
   type Direction,
+  type GameState,
 } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { RoomTile } from "./RoomTile";
@@ -15,6 +17,42 @@ import { MonsterToken } from "./MonsterToken";
 import { TILE, occupantsAt, ringOffset, roomWorld } from "./layout";
 
 const HALF = TILE / 2;
+
+/** Fog-of-war: BFS depth from the nearest living explorer to each room. */
+function visibilityLevels(game: GameState): Map<string, number> {
+  const dist = new Map<string, number>();
+  let frontier: string[] = [];
+  for (const p of game.players) {
+    if (p.alive && p.position && game.house[p.position] && !dist.has(p.position)) {
+      dist.set(p.position, 0);
+      frontier.push(p.position);
+    }
+  }
+  let d = 0;
+  while (frontier.length && d < 6) {
+    const next: string[] = [];
+    for (const k of frontier)
+      for (const nb of connections(game, k)) {
+        if (!dist.has(nb)) {
+          dist.set(nb, d + 1);
+          next.push(nb);
+        }
+      }
+    frontier = next;
+    d++;
+  }
+  return dist;
+}
+
+/** Candle brightness for a room at BFS depth `d` from the nearest explorer. */
+export function litFactorFor(d: number | undefined): number {
+  if (d == null) return 0.06;
+  if (d <= 0) return 1.0;
+  if (d === 1) return 0.7;
+  if (d === 2) return 0.34;
+  if (d === 3) return 0.16;
+  return 0.08;
+}
 
 function DoorMarker({
   base,
@@ -83,6 +121,7 @@ export function HouseView() {
     () => new Set(legal?.attackMonsters ?? []),
     [legal],
   );
+  const visibility = useMemo(() => visibilityLevels(game), [game]);
 
   const me = game.players.find((p) => p.id === myId);
   const myRoom = me?.position ? game.house[me.position] : undefined;
@@ -98,6 +137,7 @@ export function HouseView() {
             room={room}
             def={def}
             highlighted={highlightSet.has(room.key)}
+            litFactor={litFactorFor(visibility.get(room.key))}
             onClick={() => highlightSet.has(room.key) && moveTo(room.key)}
           />
         );

@@ -11,6 +11,7 @@ import {
   type GameState,
 } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { ambient } from "../audio/ambient";
 import { FLOOR_Y, TILE, WALL_H } from "./layout";
 
 const HALF = TILE / 2;
@@ -139,6 +140,7 @@ export function Doors() {
         if (st) {
           st.openTarget = 1;
           st.closeAt = now + 1500;
+          ambient.doorCreak();
         }
       }
     }
