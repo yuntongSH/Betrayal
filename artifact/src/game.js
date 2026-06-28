@@ -54,11 +54,12 @@ const party = []; // { pid, charId }
 
 // ---- three.js objects ----------------------------------------------------
 let scene, camera, renderer, labelRenderer, controls, raycaster, pointer;
-let houseGroup, tokenGroup, arrowGroup;
+let houseGroup, tokenGroup, arrowGroup, doorGroup;
 let dust, wisps = [];
 const tokenCache = new Map(); // entity id -> persistent token group (lerped toward its target)
 let lastFrameT = 0;
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
+const doorCache = new Map(); // boundary id -> { group, pivot, open, openTarget, closeAt }
 const camDesired = new THREE.Vector3(0, 0, 4); // soft camera-follow target
 
 // =========================================================================
@@ -179,7 +180,8 @@ function initScene() {
   houseGroup = new THREE.Group();
   tokenGroup = new THREE.Group();
   arrowGroup = new THREE.Group();
-  scene.add(houseGroup, tokenGroup, arrowGroup);
+  doorGroup = new THREE.Group();
+  scene.add(houseGroup, tokenGroup, arrowGroup, doorGroup);
 
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
@@ -330,6 +332,106 @@ function buildHouse(legal) {
     entry.floorMat.emissiveIntensity = lit ? 0.5 : 0;
     entry.labelEl.className = "lbl3d" + (lit ? " lit" : "");
   }
+  syncDoors();
+}
+
+// ---- doors ----------------------------------------------------------------
+// A door is built once at each *real* passage — a boundary where two placed
+// rooms each have a matching doorway. A doorway that still opens onto the
+// unknown stays a bare gap (marked by the flame arrow) until it's explored;
+// the door springs into being the moment the new room is placed beyond it.
+const DOOR_MAX_SWING = Math.PI * 0.56;
+
+function buildDoorEntry(pos, rotated) {
+  const g = new THREE.Group();
+  g.position.copy(pos);
+  if (rotated) g.rotation.y = Math.PI / 2; // east/west boundary: opening runs along z
+
+  const H = TILE / 2;
+  const DW = TILE * 0.44; // door opening width (the rest of the wall is stub)
+  const DHt = WALL_H * 0.92; // door height
+  const WT = 0.22; // wall/door-wall thickness
+  const LT = 0.12; // leaf thickness
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x241b14, roughness: 1 });
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x2c2016, roughness: 0.95 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a3422, roughness: 0.82, metalness: 0.04 });
+
+  // Stubs of dividing wall either side of the opening, and a header above it, so
+  // the boundary reads as a solid wall with a doorway cut into it.
+  const stubW = H - DW / 2;
+  for (const sx of [-1, 1]) {
+    const stub = new THREE.Mesh(new THREE.BoxGeometry(stubW, WALL_H, WT), wallMat);
+    stub.position.set(sx * (DW / 2 + stubW / 2), WALL_H / 2, 0);
+    stub.castShadow = true; stub.receiveShadow = true;
+    g.add(stub);
+  }
+  const header = new THREE.Mesh(new THREE.BoxGeometry(DW, WALL_H - DHt, WT), wallMat);
+  header.position.set(0, (DHt + WALL_H) / 2, 0);
+  header.castShadow = true; header.receiveShadow = true;
+  g.add(header);
+
+  // jambs frame the opening
+  const postGeo = new THREE.BoxGeometry(0.1, DHt + 0.06, WT + 0.06);
+  for (const sx of [-1, 1]) {
+    const post = new THREE.Mesh(postGeo, frameMat);
+    post.position.set(sx * (DW / 2), DHt / 2, 0);
+    post.castShadow = true;
+    g.add(post);
+  }
+
+  // the hinged leaf: a pivot at the left jamb, leaf extending across the opening
+  const pivot = new THREE.Group();
+  pivot.position.set(-(DW / 2) + 0.02, 0, 0);
+  const leafW = DW - 0.05;
+  const leafH = DHt - 0.05;
+  const leaf = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, LT), leafMat);
+  leaf.position.set(leafW / 2, leafH / 2, 0);
+  leaf.castShadow = true; leaf.receiveShadow = true;
+  pivot.add(leaf);
+  // two recessed panels for a little relief
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.9 });
+  for (const py of [leafH * 0.28, leafH * 0.68]) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(leafW * 0.6, leafH * 0.26, 0.03), panelMat);
+    panel.position.set(leafW / 2, py, LT / 2);
+    pivot.add(panel);
+  }
+  // brass knob near the free edge
+  const knob = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0xc8a23a, metalness: 0.75, roughness: 0.3 }),
+  );
+  knob.position.set(leafW - 0.18, leafH * 0.5, LT / 2 + 0.03);
+  pivot.add(knob);
+
+  g.add(pivot);
+  doorGroup.add(g);
+  return { group: g, pivot, open: 0, openTarget: 0, closeAt: 0 };
+}
+
+/** Create any missing doors at boundaries that have become real passages. */
+function syncDoors() {
+  const H = TILE / 2;
+  for (const room of Object.values(state.house)) {
+    const doors = DH.placedDoorways(room);
+    for (const d of DIRS) {
+      if (!doors.has(d)) continue;
+      const nKey = DH.neighborKey(room.floor, room.x, room.y, d);
+      const neighbor = state.house[nKey];
+      if (!neighbor) continue; // still opens onto the unknown — leave the gap + arrow
+      if (!DH.placedDoorways(neighbor).has(DH.opposite(d))) continue; // walls don't meet: no passage
+      const bid = DH.barricadeId(room.key, nKey);
+      if (doorCache.has(bid)) continue;
+      const { dx, dy } = DH.DIR_DELTA[d];
+      const pos = new THREE.Vector3(room.x * TILE + dx * H, FLOOR_Y[room.floor], room.y * TILE + dy * H);
+      doorCache.set(bid, buildDoorEntry(pos, d === "east" || d === "west"));
+    }
+  }
+}
+
+/** Swing the door between two rooms open (auto-closes shortly after). */
+function openDoorBetween(aKey, bKey) {
+  const e = doorCache.get(DH.barricadeId(aKey, bKey));
+  if (e) { e.openTarget = 1; e.closeAt = performance.now() + 1500; }
 }
 
 function makePlayerToken(p) {
@@ -426,6 +528,9 @@ function syncTokens(legal) {
         tok.el.textContent = `${o.m.name}${o.m.attackType === "mental" ? " ✦" : ""} · ${o.m.hp}♥${atk ? " — strike" : ""}`;
         tok.fig.traverse((x) => { x.userData.kind = "monster"; x.userData.monsterId = o.m.id; x.userData.attackable = atk; });
       }
+      // Crossing a boundary swings that door open as the figure passes through.
+      if (tok.lastKey && tok.lastKey !== key) openDoorBetween(tok.lastKey, key);
+      tok.lastKey = key;
     });
   }
   for (const [id, tok] of tokenCache) {
@@ -803,6 +908,14 @@ function animate() {
     }
     g.rotation.y = tok.yaw;
     animateFigure(tok.fig, t, { active: tok.active, phase: tok.phase, baseY: tok.baseY });
+  }
+
+  // Ease every door toward its open/closed target and swing the leaf on its hinge.
+  const nowMs = performance.now();
+  for (const e of doorCache.values()) {
+    if (e.openTarget === 1 && nowMs > e.closeAt) e.openTarget = 0;
+    e.open += (e.openTarget - e.open) * (1 - Math.exp(-7 * dt));
+    e.pivot.rotation.y = -e.open * DOOR_MAX_SWING;
   }
 
   renderer.render(scene, camera);

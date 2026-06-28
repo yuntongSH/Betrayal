@@ -9,6 +9,7 @@ import {
 } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { RoomTile } from "./RoomTile";
+import { Doors } from "./Doors";
 import { PlayerToken } from "./PlayerToken";
 import { MonsterToken } from "./MonsterToken";
 import { TILE, occupantsAt, ringOffset, roomWorld } from "./layout";
@@ -101,6 +102,9 @@ export function HouseView() {
           />
         );
       })}
+
+      {/* doors at every real passage between two placed rooms */}
+      <Doors />
 
       {/* explore arrows around the active player's room */}
       {myRoom &&
