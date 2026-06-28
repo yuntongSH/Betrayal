@@ -535,6 +535,8 @@ function driveBots() {
 // RENDER (state -> scene + HUD)
 // =========================================================================
 function render() {
+  // Tint the whole scene with dread once the house has turned.
+  document.body.classList.toggle("haunting", state.phase === "haunt");
   const me = state.activePlayerId;
   const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [], pickupItems: [], tradePartners: [] };
   buildHouse(legal);

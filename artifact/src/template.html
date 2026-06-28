@@ -138,6 +138,31 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 #hud-hint{position:absolute;bottom:1.1rem;left:1.1rem;max-width:300px;color:var(--dim);font-size:.76rem;pointer-events:none}
 @keyframes flick{0%,100%{opacity:1}48%{opacity:.85}50%{opacity:.55}52%{opacity:.9}70%{opacity:.7}}
 @media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}}
+
+/* ---- cinematic atmosphere: vignette + ember warmth + film grain ---- */
+#atmos{position:fixed;inset:0;pointer-events:none;z-index:9}
+#atmos>div{position:absolute;inset:0}
+.atmos-vig{background:radial-gradient(132% 108% at 50% 36%,transparent 50%,rgba(0,0,0,.64) 100%);transition:background 1.4s ease}
+.atmos-warm{mix-blend-mode:soft-light;background:radial-gradient(68% 52% at 50% 44%,rgba(232,168,90,.20),transparent 72%);animation:ember 6.5s ease-in-out infinite}
+.atmos-grain{inset:-60% !important;width:220%;height:220%;opacity:.05;background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.85'%20numOctaves='2'%20stitchTiles='stitch'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");animation:grain .6s steps(3) infinite}
+@keyframes grain{0%{transform:translate(0,0)}33%{transform:translate(-4%,2%)}66%{transform:translate(3%,-3%)}100%{transform:translate(0,0)}}
+@keyframes ember{0%,100%{opacity:.4}50%{opacity:.62}}
+body.haunting .atmos-vig{background:radial-gradient(132% 108% at 50% 36%,transparent 38%,rgba(58,6,4,.72) 100%)}
+body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194,65,47,.22),transparent 72%);animation:dread 4.5s ease-in-out infinite}
+@keyframes dread{0%,100%{opacity:.5}50%{opacity:.95}}
+
+/* ---- panel & type polish ---- */
+.panel{box-shadow:0 8px 28px rgba(0,0,0,.45), inset 0 1px 0 rgba(232,168,90,.07)}
+.title{font-variant:small-caps;letter-spacing:.08em}
+.room-info{border-left:3px solid rgba(232,168,90,.5)}
+.ri-name{font-variant:small-caps;letter-spacing:.05em}
+
+/* ---- bot actions & cues as a cinematic lower-third subtitle ---- */
+#toast{top:auto;bottom:5.5rem;left:50%;transform:translateX(-50%) translateY(8px);
+  padding:.5rem 1.15rem;border-radius:12px;background:rgba(12,9,8,.82);border:1px solid rgba(226,168,90,.42);
+  color:#f2e6d6;font-size:.98rem;font-style:italic;letter-spacing:.015em;box-shadow:0 8px 34px rgba(0,0,0,.55);
+  backdrop-filter:blur(3px);max-width:min(80vw,560px);text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
@@ -170,6 +195,12 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
   <div id="hud-bottom"></div>
   <div id="hud-hint">Drag to orbit · arrow keys / WASD to move · click a glowing room or flame arrow · click a monster to strike</div>
   <div id="overlay"></div>
+</div>
+
+<div id="atmos" aria-hidden="true">
+  <div class="atmos-warm"></div>
+  <div class="atmos-grain"></div>
+  <div class="atmos-vig"></div>
 </div>
 
 <script>
