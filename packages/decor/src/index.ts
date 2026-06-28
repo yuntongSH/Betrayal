@@ -60,7 +60,7 @@ export interface RoomTheme {
 }
 
 /** Ceiling height (top of walls). Props hang at or below this. */
-const WALL_H = 2.4;
+const WALL_H = 2.7;
 /** How far props must stay clear of the walls. */
 const WALL_MARGIN = 0.4;
 
@@ -1368,12 +1368,60 @@ function dressGeneric(g: THREE.Group, t: RoomTheme, tile: number): void {
  * Build the themed decoration props for a room as a single THREE.Group.
  * Returns a group that is always non-empty.
  */
+/**
+ * Shared architectural trim every room gets: a crown cornice at the top of the
+ * walls, corner pilasters, and a couple of ceiling beams. Door-safe by design —
+ * the crown sits above doorway openings and corners never carry a doorway — so
+ * it can live here in buildRoomDecor (which doesn't know the per-room door
+ * layout) and apply to BOTH frontends at once. Breaks the flat "cardboard box"
+ * walls and fills the empty upper volume with shadow-casting structure.
+ */
+function roomArchitecture(g: THREE.Group, tile: number): void {
+  const inner = tile / 2 - 0.05;
+  const trimMat = mat(0x271d14, { rough: 0.9 }); // dark stained wood
+  const beamMat = mat(0x1f160e, { rough: 0.92 });
+
+  // Crown cornice ring at the very top of the walls (clears doorway openings).
+  const crownY = WALL_H - 0.1;
+  for (const horiz of [true, false]) {
+    for (const s of [-1, 1]) {
+      const len = tile - 0.04;
+      const c = horiz
+        ? new THREE.Mesh(new THREE.BoxGeometry(len, 0.13, 0.09), trimMat)
+        : new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, len), trimMat);
+      c.position.set(horiz ? 0 : s * inner, crownY, horiz ? s * inner : 0);
+      c.castShadow = true;
+      g.add(c);
+    }
+  }
+
+  // Corner pilasters — the vertical architecture the bare upper walls lacked.
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) {
+      const h = WALL_H - 0.04;
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.14, h, 0.14), trimMat);
+      p.position.set(sx * inner, h / 2, sz * inner);
+      p.castShadow = true;
+      g.add(p);
+    }
+
+  // Two ceiling beams spanning the room — enclosure and cast shadows, while the
+  // gaps still let the top-down camera see the floor and tokens beneath them.
+  for (const x of [-tile * 0.24, tile * 0.24]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, tile - 0.06), beamMat);
+    beam.position.set(x, WALL_H - 0.22, 0);
+    beam.castShadow = true;
+    g.add(beam);
+  }
+}
+
 export function buildRoomDecor(roomId: string, tile = 4): THREE.Group {
   const group = new THREE.Group();
   group.name = `decor:${roomId}`;
   const theme = roomTheme(roomId);
   const composer = COMPOSERS[roomId] ?? dressGeneric;
   composer(group, theme, tile);
+  roomArchitecture(group, tile);
   return group;
 }
 
@@ -1426,47 +1474,93 @@ export function buildExplorerFigure(
   opts?: { archetype?: string },
 ): THREE.Group {
   const archetype = opts?.archetype;
+  let fig: THREE.Group;
   switch (archetype) {
-    case "vance":
-      return buildVanceFigure(colorHex);
-    case "crow":
-      return buildCrowFigure(colorHex);
-    case "penny":
-      return buildPennyFigure(colorHex);
-    case "tobias":
-      return buildTobiasFigure(colorHex);
-    case "odette":
-      return buildOdetteFigure(colorHex);
-    case "thorne":
-      return buildThorneFigure(colorHex);
-    default:
-      return buildGenericExplorer(colorHex);
+    case "vance": fig = buildVanceFigure(colorHex); break;
+    case "crow": fig = buildCrowFigure(colorHex); break;
+    case "penny": fig = buildPennyFigure(colorHex); break;
+    case "tobias": fig = buildTobiasFigure(colorHex); break;
+    case "odette": fig = buildOdetteFigure(colorHex); break;
+    case "thorne": fig = buildThorneFigure(colorHex); break;
+    default: fig = buildGenericExplorer(colorHex);
   }
+  refineExplorer(fig);
+  return fig;
+}
+
+/** Mark every opaque mesh in a figure as a shadow caster, so candle/moonlight
+ *  throws a real grounded shadow. Transparent parts (smoke, glow decals, the
+ *  contact pad) are skipped so they don't punch hard shadow holes. */
+function castShadowsOnOpaque(g: THREE.Group): void {
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!(m as { isMesh?: boolean }).isMesh) return;
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    const transparent = Array.isArray(mat)
+      ? mat.some((x) => (x as THREE.Material).transparent)
+      : (mat as THREE.Material | undefined)?.transparent;
+    if (!transparent) m.castShadow = true;
+  });
+}
+
+/** Shared explorer post-process: ease the silhouette toward adult proportions
+ *  (the oversized head is the dominant "toy" cue) and ground it with shadows. */
+function refineExplorer(g: THREE.Group): void {
+  const parts = g.userData.parts as FigureParts | undefined;
+  if (parts?.head) {
+    parts.head.scale.multiplyScalar(0.86);
+    parts.head.position.y -= 0.012; // close the neck gap the smaller head opens
+  }
+  castShadowsOnOpaque(g);
 }
 
 /** Shared explorer palette + glowing identity base disc. */
 export function explorerKit(colorHex: string, g: THREE.Group) {
   const tint = new THREE.Color(colorHex);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.6, metalness: 0.05 });
-  const limbMat = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.7), roughness: 0.7, metalness: 0.05 });
-  const skin = new THREE.MeshStandardMaterial({ color: tint.clone().lerp(new THREE.Color(0xe8c9a0), 0.45), roughness: 0.6 });
-  const darkSkin = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xe8c9a0).clone().multiplyScalar(0.95), roughness: 0.65 });
+  const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.62, metalness: 0.05 });
+  const limbMat = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.7), roughness: 0.72, metalness: 0.05 });
+  // Skin reads as flesh, not the player's identity colour: a warm tone carrying
+  // only a faint tint, rougher than before (skin isn't glossy plastic), with a
+  // low warm emissive so faces don't crush to pure black in the near-dark rooms.
+  const flesh = new THREE.Color(0xc8a07c);
+  const skin = new THREE.MeshStandardMaterial({
+    color: flesh.clone().lerp(tint, 0.1),
+    roughness: 0.82,
+    metalness: 0,
+    emissive: new THREE.Color(0x1a0c06),
+    emissiveIntensity: 0.12,
+  });
+  const darkSkin = new THREE.MeshStandardMaterial({
+    color: flesh.clone().multiplyScalar(0.8),
+    roughness: 0.85,
+    metalness: 0,
+    emissive: new THREE.Color(0x140a05),
+    emissiveIntensity: 0.12,
+  });
   const cloth = (mix: number, dark = 0.0) =>
     new THREE.MeshStandardMaterial({
       color: tint.clone().lerp(new THREE.Color(0xffffff), mix).multiplyScalar(1 - dark),
-      roughness: 0.7,
-      metalness: 0.04,
+      roughness: 0.78,
+      metalness: 0.03,
     });
   const metal = new THREE.MeshStandardMaterial({ color: 0xcdd2d6, roughness: 0.25, metalness: 0.85, emissive: 0x9fb0bf, emissiveIntensity: 0.12 });
 
-  // glowing identity base disc
-  const baseGlow = tint.clone().lerp(new THREE.Color(0xffffff), 0.3);
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.32, 0.34, 0.04, 24),
-    new THREE.MeshStandardMaterial({ color: baseGlow, emissive: baseGlow, emissiveIntensity: 0.9, roughness: 0.4 }),
+  // A grounding contact-shadow pad with a thin identity rim — replaces the old
+  // bright glowing disc that made every figure read as a board-game token.
+  const pad = new THREE.Mesh(
+    new THREE.CircleGeometry(0.34, 28),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false }),
   );
-  base.position.y = 0.02;
-  g.add(base);
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.012;
+  g.add(pad);
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.016, 8, 36),
+    new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 0.3, roughness: 0.5 }),
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = 0.016;
+  g.add(rim);
 
   return { tint, bodyMat, limbMat, skin, darkSkin, cloth, metal };
 }
@@ -1556,11 +1650,18 @@ export function makeArm(
 ): THREE.Group {
   const pivot = new THREE.Group();
   pivot.position.set(sx * shoulderX, shoulderY, 0);
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, armH, 10), mat);
+  // A shoulder cap closes the gap to the torso; the arm tapers wrist-ward and
+  // ends in a flattened hand (a palm, not a bead). Kept a SINGLE segment on
+  // purpose: several figures (e.g. Crow) stack their own forearm/fist over this,
+  // and a multi-segment arm here would double up into bulbous limbs.
+  const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), mat);
+  pivot.add(shoulderCap);
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, armH, 12), mat);
   arm.position.y = -armH / 2;
   arm.rotation.z = sx * restZ;
   pivot.add(arm);
-  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), handMat);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), handMat);
+  hand.scale.set(1.1, 0.62, 1.35); // a palm, not a ball
   hand.position.set(sx * 0.06, -armH + 0.02, 0);
   pivot.add(hand);
   return pivot;
@@ -1708,20 +1809,17 @@ export function addHair(head: THREE.Mesh, style: HairStyle, color: number, r = 0
  * `g.userData.figKind` and `g.userData.parts`.
  */
 export function buildMonsterFigure(name: string): THREE.Group {
+  let fig: THREE.Group;
   switch (name) {
-    case "Shade":
-      return buildShade(name);
-    case "Acolyte":
-      return buildAcolyte(name);
-    case "Gnashing Maw":
-      return buildGnashingMaw(name);
-    case "The Drowned":
-      return buildDrowned(name);
-    case "Whisper":
-      return buildWhisper(name);
-    default:
-      return buildGenericMonster(name);
+    case "Shade": fig = buildShade(name); break;
+    case "Acolyte": fig = buildAcolyte(name); break;
+    case "Gnashing Maw": fig = buildGnashingMaw(name); break;
+    case "The Drowned": fig = buildDrowned(name); break;
+    case "Whisper": fig = buildWhisper(name); break;
+    default: fig = buildGenericMonster(name);
   }
+  castShadowsOnOpaque(fig);
+  return fig;
 }
 
 const monsterDarkMat = () => new THREE.MeshStandardMaterial({ color: 0x14110f, roughness: 0.9, metalness: 0.1 });

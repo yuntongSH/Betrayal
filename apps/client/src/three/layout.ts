@@ -3,7 +3,7 @@ import type { Floor, GameState, PlacedRoom } from "@dread-hollow/shared";
 /** World-space sizing of the manor. Grid (x, y) maps to world (x, z); each
  *  floor is lifted to its own height so the house reads as a stacked dollhouse. */
 export const TILE = 4;
-export const WALL_H = 2.4;
+export const WALL_H = 2.7;
 export const FLOOR_GAP = 7;
 
 export const FLOOR_Y: Record<Floor, number> = {

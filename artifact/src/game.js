@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 
 // ---- world layout (mirrors the React client) -----------------------------
 const TILE = 4;
-const WALL_H = 2.4;
+const WALL_H = 2.7;
 const FLOOR_GAP = 7;
 const FLOOR_Y = { basement: -FLOOR_GAP, ground: 0, upper: FLOOR_GAP };
 const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", knowledge: "#7a6db0" };
@@ -357,6 +357,8 @@ let lastFrameT = 0;
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
 const doorCache = new Map(); // boundary id -> { group, pivot, open, openTarget, closeAt }
 const camDesired = new THREE.Vector3(0, 0, 4); // soft camera-follow target
+let userCamAt = 0; // performance.now() of the last manual orbit/zoom — pauses auto-follow
+const camOffset = new THREE.Vector3(); // scratch for the cinematic dolly math
 
 // =========================================================================
 // LOBBY
@@ -429,6 +431,13 @@ function initScene() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Filmic tone mapping + sRGB output so candle/accent point-lights roll off
+  // instead of clipping to flat white, recovering mid-tone contrast on surfaces.
+  // (The React client gets this for free from R3F's <Canvas> defaults.)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   wrap.appendChild(renderer.domElement);
 
   labelRenderer = new CSS2DRenderer();
@@ -442,15 +451,30 @@ function initScene() {
   controls.maxPolarAngle = 1.45;
   controls.minDistance = 6;
   controls.maxDistance = 60;
+  // When the user grabs the camera, pause the auto cinematic follow for a beat
+  // so the dolly never fights their orbit/zoom; it resumes once they let go.
+  controls.addEventListener("start", () => { userCamAt = performance.now(); });
 
   // Near-black base lighting: the house is lit almost entirely by the candle
   // pools that follow the living explorers (see fog-of-war in buildHouse), so
   // rooms no one is near sink into shadow — you light your way as you go.
-  scene.add(new THREE.AmbientLight(0x1a2742, 0.07));
-  const hemi = new THREE.HemisphereLight(0x1a2238, 0x060503, 0.12);
+  scene.add(new THREE.AmbientLight(0x1a2742, 0.1));
+  const hemi = new THREE.HemisphereLight(0x1a2238, 0x060503, 0.14);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0x8fa2cc, 0.22);
+  const moon = new THREE.DirectionalLight(0x8fa2cc, 0.26);
   moon.position.set(14, 28, 6);
+  // The moon is the one shadow-casting key — without this the artifact rendered
+  // ZERO shadows despite shadowMap.enabled, so nothing was grounded.
+  moon.castShadow = true;
+  moon.shadow.mapSize.set(2048, 2048);
+  moon.shadow.bias = -0.0004;
+  moon.shadow.normalBias = 0.03;
+  moon.shadow.camera.near = 1;
+  moon.shadow.camera.far = 110;
+  moon.shadow.camera.left = -45;
+  moon.shadow.camera.right = 45;
+  moon.shadow.camera.top = 45;
+  moon.shadow.camera.bottom = -45;
   scene.add(moon);
 
   // dust
@@ -645,12 +669,12 @@ function visibilityLevels() {
 
 /** Candle brightness for a room at BFS depth `d` from the nearest explorer. */
 function litFactorFor(d) {
-  if (d == null) return 0.06;            // never seen / cut off — near black
+  if (d == null) return 0.1;             // never seen / cut off — dim, not black
   if (d <= 0) return 1.0;                // you're standing in it
-  if (d === 1) return 0.7;               // the next room over
-  if (d === 2) return 0.34;
-  if (d === 3) return 0.16;
-  return 0.08;                           // a faint memory of the layout
+  if (d === 1) return 0.72;              // the next room over
+  if (d === 2) return 0.42;
+  if (d === 3) return 0.26;
+  return 0.16;                           // a faint memory of the layout
 }
 
 /** Sync the house: build new rooms once, then refresh highlight + fog-of-war. */
@@ -1229,9 +1253,20 @@ function animate() {
     const room = active && active.position ? state.house[active.position] : null;
     if (room) {
       const [cx, cy, cz] = roomWorld(room);
-      camDesired.set(cx, cy + 0.6, cz);
+      camDesired.set(cx, cy + 0.7, cz);
     }
-    controls.target.lerp(camDesired, 0.045);
+    controls.target.lerp(camDesired, 0.06);
+    // Cinematic close-follow: when the user isn't actively orbiting, dolly the
+    // camera IN along its current angle so whoever's up is framed close — leaning
+    // a little tighter on a bot's turn so you actually watch the action. The
+    // user's angle is preserved; grabbing the camera pauses this for ~2.5s.
+    if (performance.now() - userCamAt > 2500) {
+      camOffset.copy(camera.position).sub(controls.target);
+      const dist = camOffset.length();
+      const want = Math.max(controls.minDistance, Math.min(controls.maxDistance, active && active.isBot ? 9.5 : 11.5));
+      camOffset.multiplyScalar(Math.max(0.0001, (dist + (want - dist) * 0.035)) / Math.max(0.0001, dist));
+      camera.position.copy(controls.target).add(camOffset);
+    }
   }
   controls.update();
 
@@ -1256,7 +1291,9 @@ function animate() {
     const g = tok.group;
     if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; }
     const px = g.position.x, pz = g.position.z;
-    g.position.lerp(tok.target, 1 - Math.exp(-9 * dt));
+    // Slower glide (~0.22s vs ~0.11s) so a bot's room-to-room move is legible as
+    // walking rather than a near-instant pop against its ~950ms turn step.
+    g.position.lerp(tok.target, 1 - Math.exp(-4.5 * dt));
     const dx = g.position.x - px, dz = g.position.z - pz;
     if (dx * dx + dz * dz > 1e-6) {
       const desired = Math.atan2(dx, dz);

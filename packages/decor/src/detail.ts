@@ -8,7 +8,7 @@ import * as THREE from "three";
  * broken furniture, etc.
  *
  * Conventions (mirrors index.ts):
- *  - Floor TOP surface is at y = 0; ceiling/wall top is WALL_H = 2.4.
+ *  - Floor TOP surface is at y = 0; ceiling/wall top is WALL_H = 2.7.
  *  - Props are built from THREE primitives only. No external assets.
  *  - FRESH materials/geometries per call — callers dispose per room, so NO
  *    module-level shared material/geometry instances.
@@ -20,7 +20,7 @@ import * as THREE from "three";
  *    caller) via the `instanced()` helper.
  */
 
-export const WALL_H = 2.4;
+export const WALL_H = 2.7;
 
 // ---------------------------------------------------------------------------
 // Local material / primitive helpers (fresh per call)

@@ -43,7 +43,7 @@ export function MonsterToken({
       placed.current = true;
     }
     prev.current.copy(g.position);
-    g.position.lerp(target.current, 1 - Math.exp(-9 * dt));
+    g.position.lerp(target.current, 1 - Math.exp(-4.5 * dt)); // slower glide so a monster's advance reads as movement
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;
     if (dx * dx + dz * dz > 1e-6) {

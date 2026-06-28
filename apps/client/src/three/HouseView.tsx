@@ -46,12 +46,12 @@ function visibilityLevels(game: GameState): Map<string, number> {
 
 /** Candle brightness for a room at BFS depth `d` from the nearest explorer. */
 export function litFactorFor(d: number | undefined): number {
-  if (d == null) return 0.06;
+  if (d == null) return 0.1;
   if (d <= 0) return 1.0;
-  if (d === 1) return 0.7;
-  if (d === 2) return 0.34;
-  if (d === 3) return 0.16;
-  return 0.08;
+  if (d === 1) return 0.72;
+  if (d === 2) return 0.42;
+  if (d === 3) return 0.26;
+  return 0.16;
 }
 
 function DoorMarker({

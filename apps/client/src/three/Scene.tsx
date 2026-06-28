@@ -29,11 +29,11 @@ export function Scene() {
       {/* near-black base: the house is lit almost entirely by the candle pools
           that follow the living explorers (fog-of-war in RoomTile), so rooms no
           one is near sink into shadow. One cold moonlight key casts the shadows. */}
-      <ambientLight intensity={0.05} color="#1a2742" />
-      <hemisphereLight args={["#1a2238", "#060503", 0.1]} />
+      <ambientLight intensity={0.08} color="#1a2742" />
+      <hemisphereLight args={["#1a2238", "#060503", 0.13]} />
       <directionalLight
         position={[14, 28, 6]}
-        intensity={0.2}
+        intensity={0.24}
         color="#8fa2cc"
         castShadow
         shadow-mapSize={[2048, 2048]}

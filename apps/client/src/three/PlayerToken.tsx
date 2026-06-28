@@ -54,7 +54,9 @@ export function PlayerToken({
       placed.current = true;
     }
     prev.current.copy(g.position);
-    g.position.lerp(target.current, 1 - Math.exp(-9 * dt));
+    // Slower glide (~0.22s) so another player's / a bot's room-to-room move reads
+    // as walking rather than a near-instant pop.
+    g.position.lerp(target.current, 1 - Math.exp(-4.5 * dt));
 
     // Turn to face the direction of travel while actually moving.
     const dx = g.position.x - prev.current.x;
