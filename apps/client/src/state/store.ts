@@ -40,6 +40,10 @@ interface Store {
   pickupItem: (cardId: string) => void;
   giveItem: (toPlayerId: string, cardId: string) => void;
   useItem: (cardId: string) => void;
+  search: () => void;
+  rest: () => void;
+  barricade: (door: Direction) => void;
+  investigate: () => void;
   endTurn: () => void;
 }
 
@@ -190,6 +194,10 @@ export const useStore = create<Store>((set, get) => {
     giveItem: (toPlayerId, cardId) =>
       act((playerId) => ({ type: "give-item", playerId, toPlayerId, cardId })),
     useItem: (cardId) => act((playerId) => ({ type: "use-item", playerId, cardId })),
+    search: () => act((playerId) => ({ type: "search", playerId })),
+    rest: () => act((playerId) => ({ type: "rest", playerId })),
+    barricade: (door) => act((playerId) => ({ type: "barricade", playerId, door })),
+    investigate: () => act((playerId) => ({ type: "investigate", playerId })),
     endTurn: () => act((playerId) => ({ type: "end-turn", playerId })),
   };
 });

@@ -44,6 +44,7 @@ export function createGame(id: string, seed: number): GameState {
     attacksLeft: 0,
     house: {},
     itemPiles: {},
+    barricades: {},
     decks: { event: [], item: [], omen: [], rooms: [] },
     discards: { event: [], item: [], omen: [] },
     omenCount: 0,

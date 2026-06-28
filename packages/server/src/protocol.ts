@@ -33,6 +33,10 @@ const ActionSchema = z.discriminatedUnion("type", [
     toPlayerId: z.string(),
     cardId: z.string(),
   }),
+  z.object({ type: z.literal("search"), playerId: z.string() }),
+  z.object({ type: z.literal("rest"), playerId: z.string() }),
+  z.object({ type: z.literal("barricade"), playerId: z.string(), door: Direction }),
+  z.object({ type: z.literal("investigate"), playerId: z.string() }),
   z.object({ type: z.literal("end-turn"), playerId: z.string() }),
 ]);
 

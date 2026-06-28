@@ -14,11 +14,21 @@ import {
   modTrait,
   redactStateForPlayer,
 } from "../state";
-import { openDoors } from "../house";
+import { connections, openDoors } from "../house";
+import { neighborKey } from "../grid";
 import { botStep } from "../bot";
-import { DRAWABLE_ROOMS, HAUNTS_BY_ID, ROOMS_BY_ID } from "../content";
+import { CHARACTERS_BY_ID, DRAWABLE_ROOMS, HAUNTS_BY_ID, ROOMS_BY_ID } from "../content";
 import { Rng } from "../rng";
+import { TRAITS } from "../types";
 import type { GameState, HauntState } from "../types";
+
+/** Top every trait of a player to its ceiling, so trait-mod events can't kill
+ *  them — isolates a test from the random card a deliberate action might draw. */
+function maxTraits(s: GameState, playerId: string): void {
+  const p = getPlayer(s, playerId)!;
+  const ch = CHARACTERS_BY_ID[p.characterId!]!;
+  for (const t of TRAITS) p.traitIndex[t] = ch.traits[t].values.length - 1;
+}
 
 function startedGame(seed = 11): GameState {
   const s = createGame("test", seed);
@@ -344,5 +354,92 @@ describe("bot decision quality", () => {
     const step = botStep(s, "c");
     expect(step.action.type).not.toBe("explore");
     expect(step.action.type).toBe("end-turn");
+  });
+});
+
+// ---- deliberate per-turn agency: search / rest / barricade / investigate ----
+describe("deliberate turn actions (search / rest / barricade / investigate)", () => {
+  it("search rummages a room once, costing a step", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    maxTraits(s, pid); // so a drawn event can't kill the searcher mid-test
+    const p = getPlayer(s, pid)!;
+    beginTurn(s);
+    const room = s.house[p.position!]!;
+    expect(room.searched).toBeFalsy();
+    expect(legalMoves(s, pid).canSearch).toBe(true);
+
+    const mvBefore = s.movementLeft;
+    reduce(s, { type: "search", playerId: pid });
+    expect(room.searched).toBe(true);
+    expect(s.movementLeft).toBe(mvBefore - 1);
+
+    // The room is rummaged now — searching again is a no-op (no extra cost).
+    expect(legalMoves(s, pid).canSearch).toBe(false);
+    const mvAfter = s.movementLeft;
+    reduce(s, { type: "search", playerId: pid });
+    expect(s.movementLeft).toBe(mvAfter);
+  });
+
+  it("rest steadies the most-wounded trait and forfeits the rest of the turn", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    maxTraits(s, pid); // top everything...
+    p.traitIndex.might = 1; // ...then wound Might so it's the clear worst
+    beginTurn(s);
+    expect(s.movementLeft).toBeGreaterThan(0);
+    expect(legalMoves(s, pid).canRest).toBe(true);
+
+    reduce(s, { type: "rest", playerId: pid });
+    expect(p.traitIndex.might).toBe(2); // recovered one step
+    expect(s.movementLeft).toBe(0); // resting ends your movement
+
+    // With every trait topped out, there is nothing left to rest for.
+    maxTraits(s, pid);
+    s.movementLeft = 3;
+    expect(legalMoves(s, pid).canRest).toBe(false);
+  });
+
+  it("barricade wedges a doorway shut, then it gives way after a few rounds", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    beginTurn(s);
+    const doors = legalMoves(s, pid).barricadeDoors;
+    expect(doors.length).toBeGreaterThan(0);
+    const dir = doors[0]!;
+    const room = s.house[p.position!]!;
+    const nKey = neighborKey(room.floor, room.x, room.y, dir);
+    expect(connections(s, p.position!)).toContain(nKey);
+
+    reduce(s, { type: "barricade", playerId: pid, door: dir });
+    expect(connections(s, p.position!)).not.toContain(nKey);
+
+    // The wedged door refuses passage even with movement to spare.
+    s.movementLeft = 3;
+    const before = p.position;
+    reduce(s, { type: "move-to", playerId: pid, toKey: nKey });
+    expect(p.position).toBe(before);
+
+    // A few rounds later the barricade fails and the way reopens.
+    s.turn += 5;
+    expect(connections(s, p.position!)).toContain(nKey);
+  });
+
+  it("investigate spends a step and surfaces a clue in the log", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    maxTraits(s, pid); // a high Knowledge so the check reliably succeeds
+    const p = getPlayer(s, pid)!;
+    beginTurn(s);
+    expect(legalMoves(s, pid).canInvestigate).toBe(true);
+
+    const mvBefore = s.movementLeft;
+    const logBefore = s.log.length;
+    reduce(s, { type: "investigate", playerId: pid });
+    expect(s.movementLeft).toBe(mvBefore - 1);
+    const added = s.log.slice(logBefore).map((e) => e.text).join("\n");
+    expect(added).toMatch(/studies the shadows/);
   });
 });

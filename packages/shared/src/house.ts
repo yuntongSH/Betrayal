@@ -24,8 +24,20 @@ function findElevatorKey(s: GameState): string | null {
   return null;
 }
 
+/** Canonical id for a barricaded doorway between two rooms (order-independent). */
+export function barricadeId(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** Is the doorway between two rooms currently wedged shut? */
+export function isBarricaded(s: GameState, a: string, b: string): boolean {
+  const until = s.barricades?.[barricadeId(a, b)];
+  return until != null && s.turn < until;
+}
+
 /** Keys of rooms reachable in one step — through matching doors, stairs, or the
- *  Mystic Elevator (a vertical hub linking every floor's landing). */
+ *  Mystic Elevator (a vertical hub linking every floor's landing). A wedged-shut
+ *  doorway blocks passage for everyone (players and monsters) until it fails. */
 export function connections(s: GameState, fromKey: string): string[] {
   const room = s.house[fromKey];
   if (!room) return [];
@@ -33,7 +45,7 @@ export function connections(s: GameState, fromKey: string): string[] {
   for (const dir of placedDoorways(room)) {
     const nKey = neighborKey(room.floor, room.x, room.y, dir);
     const neighbor = s.house[nKey];
-    if (neighbor && placedDoorways(neighbor).has(opposite(dir))) {
+    if (neighbor && placedDoorways(neighbor).has(opposite(dir)) && !isBarricaded(s, fromKey, nKey)) {
       result.push(nKey);
     }
   }

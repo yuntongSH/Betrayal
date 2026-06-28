@@ -104,6 +104,8 @@ export interface PlacedRoom {
   y: number;
   rotation: Rotation;
   exploredBy: PlayerId | null;
+  /** Set once a player has rummaged this room — it can only be searched once. */
+  searched?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +236,8 @@ export interface GameState {
   house: Record<string, PlacedRoom>;
   /** Items left on the floor of a room (e.g. dropped by the dead), keyed by room. */
   itemPiles: Record<string, CardId[]>;
+  /** Wedged-shut doorways: "keyA|keyB" (sorted) -> the turn the barricade fails. */
+  barricades?: Record<string, number>;
   decks: Decks;
   discards: { event: CardId[]; item: CardId[]; omen: CardId[] };
   /** Omens drawn so far — the haunt roll compares against this. */

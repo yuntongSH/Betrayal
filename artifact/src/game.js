@@ -682,6 +682,26 @@ function updateHUD(legal) {
       const name = state.players.find((p) => p.id === id)?.name ?? "foe";
       bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;
     }
+    // Deliberate actions — each spends a step, so they trade off against moving.
+    if (legal.canSearch) {
+      bottom += `<button class="btn act" title="Rummage this room for an item — but you might disturb something (costs 1 step)" onclick="window.__act({type:'search',playerId:'${active.id}'})">🔍 Search the room</button>`;
+    }
+    if (legal.canInvestigate) {
+      bottom += `<button class="btn act" title="A Knowledge check to read the danger ahead (costs 1 step)" onclick="window.__act({type:'investigate',playerId:'${active.id}'})">👁 Investigate</button>`;
+    }
+    if (legal.canRest) {
+      bottom += `<button class="btn act" title="Catch your breath to recover your most-wounded trait — ends your movement" onclick="window.__act({type:'rest',playerId:'${active.id}'})">✚ Steady yourself</button>`;
+    }
+    const _broom = active.position ? state.house[active.position] : null;
+    for (const dir of legal.barricadeDoors ?? []) {
+      let label = dir;
+      if (_broom) {
+        const nKey = DH.neighborKey(_broom.floor, _broom.x, _broom.y, dir);
+        const nDef = state.house[nKey] ? DH.ROOMS_BY_ID[state.house[nKey].roomId] : null;
+        if (nDef) label = nDef.name;
+      }
+      bottom += `<button class="btn act" title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})">⛓ Barricade → ${label}</button>`;
+    }
     bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${active.id}'})">End turn${humans.length > 1 ? " (pass device)" : ""}</button>`;
   }
   $("hud-bottom").innerHTML = bottom;

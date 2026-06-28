@@ -536,6 +536,9 @@ kbd {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(92vw, 880px);
 }
 
 /* party roster */
@@ -771,6 +774,13 @@ kbd {
   border-color: #3a0c06;
   color: #f4d7d0;
 }
+
+.btn.act {
+  background: rgba(34, 40, 46, 0.82);
+  border-color: #2f4150;
+  color: #dce8ef;
+}
+.btn.act:hover:not(:disabled) { border-color: #6fb3d6; }
 
 /* haunt reveal overlay */
 .haunt-reveal {

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { getCard, legalMoves } from "@dread-hollow/shared";
+import { ROOMS_BY_ID, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { Scene } from "../three/Scene";
 import { TraitPanel } from "./TraitPanel";
@@ -15,6 +15,10 @@ export function GameScreen() {
   const endTurn = useStore((s) => s.endTurn);
   const attackPlayer = useStore((s) => s.attackPlayer);
   const pickupItem = useStore((s) => s.pickupItem);
+  const search = useStore((s) => s.search);
+  const rest = useStore((s) => s.rest);
+  const barricade = useStore((s) => s.barricade);
+  const investigate = useStore((s) => s.investigate);
   const notice = useStore((s) => s.notice);
   const error = useStore((s) => s.error);
   const status = useStore((s) => s.status);
@@ -35,6 +39,8 @@ export function GameScreen() {
   );
   const attackTargets = legal?.attackPlayers ?? [];
   const floorItems = legal?.pickupItems ?? [];
+  const barricadeDoors = legal?.barricadeDoors ?? [];
+  const myRoom = active && active.position ? game.house[active.position] : null;
 
   // Keyboard movement (camera-relative) lives in <KeyboardMover/> inside the Canvas.
 
@@ -89,6 +95,52 @@ export function GameScreen() {
                   onClick={() => attackPlayer(id)}
                 >
                   Attack {name}
+                </button>
+              );
+            })}
+            {legal?.canSearch && (
+              <button
+                className="btn act"
+                onClick={search}
+                title="Rummage this room for an item — but you might disturb something (costs 1 step)"
+              >
+                🔍 Search the room
+              </button>
+            )}
+            {legal?.canInvestigate && (
+              <button
+                className="btn act"
+                onClick={investigate}
+                title="A Knowledge check to read the danger ahead (costs 1 step)"
+              >
+                👁 Investigate
+              </button>
+            )}
+            {legal?.canRest && (
+              <button
+                className="btn act"
+                onClick={rest}
+                title="Catch your breath to recover your most-wounded trait — ends your movement"
+              >
+                ✚ Steady yourself
+              </button>
+            )}
+            {barricadeDoors.map((dir) => {
+              const nKey = myRoom
+                ? neighborKey(myRoom.floor, myRoom.x, myRoom.y, dir)
+                : null;
+              const nName =
+                nKey && game.house[nKey]
+                  ? ROOMS_BY_ID[game.house[nKey]!.roomId]?.name ?? dir
+                  : dir;
+              return (
+                <button
+                  key={`barricade-${dir}`}
+                  className="btn act"
+                  onClick={() => barricade(dir)}
+                  title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)"
+                >
+                  ⛓ Barricade → {nName}
                 </button>
               );
             })}

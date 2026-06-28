@@ -17,9 +17,11 @@ import type {
   PlayerId,
   PlayerState,
   Rotation,
+  Trait,
 } from "./types";
 import { Rng } from "./rng";
-import { ROOMS_BY_ID, getCard } from "./content";
+import { CHARACTERS_BY_ID, ROOMS_BY_ID, getCard } from "./content";
+import { TRAITS } from "./types";
 import {
   addLog,
   effectiveTrait,
@@ -30,7 +32,7 @@ import {
   roomAura,
 } from "./state";
 import { drawCard, drawRoomForFloor, hasRoomForFloor } from "./decks";
-import { connections, openDoors } from "./house";
+import { barricadeId, connections, isBarricaded, openDoors, placedDoorways } from "./house";
 import { hauntRoll, rollDice } from "./dice";
 import {
   checkWinNow,
@@ -344,6 +346,103 @@ function handleGive(
 }
 
 // ---------------------------------------------------------------------------
+// Deliberate turn actions: search · rest · barricade · investigate
+// ---------------------------------------------------------------------------
+
+/** Rounds a wedged-shut doorway holds before it gives way. */
+const BARRICADE_ROUNDS = 3;
+
+/** Rummage the current room (once each): usually an item, sometimes an event. */
+function handleSearch(s: GameState, playerId: PlayerId): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || !p.position || s.movementLeft <= 0) return;
+  const room = s.house[p.position];
+  if (!room || room.searched) return;
+  room.searched = true;
+  s.movementLeft -= 1;
+  addLog(s, `${p.name} searches the ${ROOMS_BY_ID[room.roomId]?.name ?? "room"}...`, "info");
+  const rng = Rng.fromState(s.rngState);
+  const sprung = rng.next() < 0.35; // ~1 in 3 disturbs something instead
+  s.rngState = rng.state;
+  if (sprung) {
+    drawAndResolve(s, p, "event");
+  } else {
+    const card = drawCard(s, "item");
+    if (card) {
+      p.inventory.push(card);
+      addLog(s, `${p.name} turns up ${getCard(card)?.name ?? "an item"}!`, "card");
+    } else {
+      addLog(s, "Nothing here but dust and old regrets.", "info");
+    }
+  }
+  checkWinNow(s);
+}
+
+/** Forfeit the rest of your movement to steady your most-wounded trait. */
+function handleRest(s: GameState, playerId: PlayerId): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || s.movementLeft <= 0) return;
+  const ch = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+  if (!ch) return;
+  let worst: (typeof TRAITS)[number] | null = null;
+  let worstIdx = Infinity;
+  for (const t of TRAITS) {
+    const idx = p.traitIndex[t];
+    if (idx < ch.traits[t].values.length - 1 && idx < worstIdx) {
+      worstIdx = idx;
+      worst = t;
+    }
+  }
+  if (!worst) return; // every trait already topped out — nothing to recover
+  s.movementLeft = 0; // resting takes the rest of your turn
+  modTrait(s, p, worst, 1);
+  addLog(s, `${p.name} stops to breathe, steadying their ${worst}.`, "card");
+  checkWinNow(s);
+}
+
+/** Wedge a doorway shut so nothing follows through it for a few rounds. */
+function handleBarricade(s: GameState, playerId: PlayerId, door: Direction): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || !p.position || s.movementLeft <= 0) return;
+  const room = s.house[p.position];
+  if (!room) return;
+  const nKey = neighborKey(room.floor, room.x, room.y, door);
+  // Must be a real, currently-open passage to a placed room.
+  if (!s.house[nKey] || isBarricaded(s, p.position, nKey) || !connections(s, p.position).includes(nKey)) return;
+  s.movementLeft -= 1;
+  (s.barricades ??= {})[barricadeId(p.position, nKey)] = s.turn + BARRICADE_ROUNDS;
+  const nName = ROOMS_BY_ID[s.house[nKey]!.roomId]?.name ?? "the next room";
+  addLog(s, `${p.name} wedges the door to the ${nName} shut.`, "info");
+  checkWinNow(s);
+}
+
+/** Study your surroundings (Knowledge check) to learn something hidden. */
+function handleInvestigate(s: GameState, playerId: PlayerId): void {
+  const p = getPlayer(s, playerId);
+  if (!p?.alive || !isActiveTurn(s, playerId) || s.movementLeft <= 0) return;
+  s.movementLeft -= 1;
+  const rng = Rng.fromState(s.rngState);
+  const roll = rollDice(rng, Math.max(1, effectiveTrait(p, "knowledge") + roomAura(s, p)));
+  s.rngState = rng.state;
+  addLog(s, `${p.name} studies the shadows — Knowledge ${roll.total} vs 4.`, "roll", roll.dice);
+  if (roll.total < 4) {
+    addLog(s, `${p.name} learns nothing useful.`, "info");
+    checkWinNow(s);
+    return;
+  }
+  const monsters = s.haunt?.monsters.filter((m) => m.hp > 0) ?? [];
+  if (s.phase === "haunt" && monsters.length) {
+    const weakest = monsters.slice().sort((a, b) => a.might - b.might)[0]!;
+    addLog(s, `${p.name} reads the ${weakest.name}: it strikes at ${weakest.might}, ${weakest.hp} life left.`, "card");
+  } else if (s.decks.omen.length) {
+    addLog(s, `${p.name} senses the omen drawing near: ${getCard(s.decks.omen[0]!)?.name ?? "something dark"}.`, "card");
+  } else {
+    addLog(s, `${p.name} feels the house has little left to hide.`, "info");
+  }
+  checkWinNow(s);
+}
+
+// ---------------------------------------------------------------------------
 // Turn flow
 // ---------------------------------------------------------------------------
 
@@ -479,6 +578,18 @@ export function reduce(s: GameState, action: Action): GameState {
     case "give-item":
       handleGive(s, action.playerId, action.toPlayerId, action.cardId);
       break;
+    case "search":
+      handleSearch(s, action.playerId);
+      break;
+    case "rest":
+      handleRest(s, action.playerId);
+      break;
+    case "barricade":
+      handleBarricade(s, action.playerId, action.door);
+      break;
+    case "investigate":
+      handleInvestigate(s, action.playerId);
+      break;
     case "end-turn":
       handleEndTurn(s, action.playerId);
       break;
@@ -510,6 +621,14 @@ export interface LegalMoves {
   tradePartners: PlayerId[];
   /** One-shot consumables in the player's inventory they can spend now. */
   usableItems: CardId[];
+  /** This room can still be rummaged (search). */
+  canSearch: boolean;
+  /** A wounded trait can be steadied by resting (forfeits movement). */
+  canRest: boolean;
+  /** Doorways to a connected room that can be wedged shut. */
+  barricadeDoors: Direction[];
+  /** A Knowledge check to learn something hidden is available. */
+  canInvestigate: boolean;
   canEndTurn: boolean;
 }
 
@@ -522,6 +641,10 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     pickupItems: [],
     tradePartners: [],
     usableItems: [],
+    canSearch: false,
+    canRest: false,
+    barricadeDoors: [],
+    canInvestigate: false,
     canEndTurn: false,
   };
   const p = getPlayer(s, playerId);
@@ -563,6 +686,21 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     (id) => getCard(id)?.effect.kind === "consumable",
   );
 
+  // Deliberate turn actions (all spend movement, so they trade off against it).
+  const room = s.house[p.position];
+  const canSearch = moving && !!room && !room.searched;
+  const ch = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+  const canRest =
+    moving && !!ch && TRAITS.some((t: Trait) => p.traitIndex[t] < ch.traits[t].values.length - 1);
+  const barricadeDoors =
+    moving && room
+      ? [...placedDoorways(room)].filter((dir) => {
+          const nKey = neighborKey(room.floor, room.x, room.y, dir);
+          return !!s.house[nKey] && !isBarricaded(s, p.position!, nKey) && connections(s, p.position!).includes(nKey);
+        })
+      : [];
+  const canInvestigate = moving;
+
   return {
     explored,
     doors,
@@ -571,6 +709,10 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     pickupItems,
     tradePartners,
     usableItems,
+    canSearch,
+    canRest,
+    barricadeDoors,
+    canInvestigate,
     canEndTurn: true,
   };
 }
