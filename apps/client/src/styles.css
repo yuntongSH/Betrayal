@@ -17,6 +17,7 @@
 }
 
 html,
+html,
 body,
 #root {
   height: 100%;
@@ -177,6 +178,9 @@ input:focus {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 280px;
+  /* Bound the row to the container height (the implicit `auto` row otherwise
+     grows to content, so the columns never scroll and overflow gets clipped). */
+  grid-template-rows: minmax(0, 1fr);
   gap: 1.2rem;
   min-height: 0;
 }
@@ -184,9 +188,13 @@ input:focus {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.8rem;
-  overflow: auto;
+  overflow-y: auto;
   padding-right: 0.4rem;
   align-content: start;
+  /* As a grid item, this defaults to min-height:auto and refuses to shrink below
+     its content — which defeats overflow:auto. Allow it to shrink to its cell so
+     it actually scrolls when the character list is taller than the viewport. */
+  min-height: 0;
 }
 .char-card {
   display: flex;
@@ -260,6 +268,10 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  /* Scroll within its column so the Begin/Leave buttons stay reachable when the
+     party list is long or the viewport is short. */
+  min-height: 0;
+  overflow-y: auto;
 }
 .party-panel h3 {
   margin: 0;
