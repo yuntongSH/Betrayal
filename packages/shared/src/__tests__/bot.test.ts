@@ -64,11 +64,43 @@ describe("bots", () => {
     expect(Object.keys(s.house).length).toBeGreaterThan(5);
   });
 
-  it("botStep never explores once the room deck is exhausted", () => {
+  it("botStep ends the turn once nothing is left to explore (no aimless pacing)", () => {
     const s = lobbyWithBots(3);
     reduce(s, { type: "start-game", playerId: s.players[0]!.id });
     s.decks.rooms = [];
     const step = botStep(s, s.activePlayerId!);
-    expect(step.action.type).not.toBe("explore");
+    // With no room drawable anywhere, the bot must not explore and must not pace
+    // between already-seen rooms — it ends its turn.
+    expect(step.action.type).toBe("end-turn");
+  });
+
+  it("a bot never paces back and forth between rooms within a single turn", () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const s = lobbyWithBots(4);
+      reduce(s, { type: "start-game", playerId: s.players[0]!.id });
+      let guard = 0;
+      while (s.phase !== "ended" && guard++ < 250) {
+        const pid = s.activePlayerId!;
+        const visited = new Set<string>([getPlayer(s, pid)!.position!]);
+        let steps = 0;
+        // cast: reduce() can flip phase to "ended" mid-turn, which TS can't see.
+        while (s.activePlayerId === pid && (s.phase as string) !== "ended" && steps++ < 30) {
+          const { action, endTurnAfter } = botStep(s, pid);
+          reduce(s, action);
+          if (action.type === "end-turn") break;
+          if (action.type === "move-to") {
+            const pos = getPlayer(s, pid)!.position!;
+            // A purposeful bot heads toward new ground; it never re-enters a room
+            // it already stood in this turn (the bouncing the player reported).
+            expect(visited.has(pos)).toBe(false);
+            visited.add(pos);
+          }
+          if (endTurnAfter) {
+            if (s.activePlayerId === pid) reduce(s, { type: "end-turn", playerId: pid });
+            break;
+          }
+        }
+      }
+    }
   });
 });
