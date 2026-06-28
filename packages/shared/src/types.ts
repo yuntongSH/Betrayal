@@ -93,8 +93,10 @@ export interface RoomDef {
   floors: Floor[];
   /** Doors in tile-local space, before rotation. */
   doorways: Direction[];
-  /** Card draws triggered the first time the tile is entered. */
-  symbols: CardType[];
+  /** The single card draw triggered the first time the tile is entered, if any.
+   *  Board tiles carry at most one symbol — discovering it draws a card and ends
+   *  the explorer's move (see the stop-on-draw rule in `resolveRoomDraws`). */
+  symbol?: CardType;
   special: RoomSpecial;
   flavor: string;
   /** Standing dice modifier applied to an occupant's rolls (+ blessed / − cursed). */

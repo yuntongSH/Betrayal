@@ -144,11 +144,13 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
       return end;
     }
 
-    // 1) Discover a new room from here — then yield, so the house grows at a
-    //    measured pace and one bot doesn't build out the whole floor in a turn.
+    // 1) Discover a new room from here. Per the board rule the ENGINE now paces
+    //    exploration: discovering a room that draws a card (most do) halts the
+    //    rest of this turn's movement, so the bot keeps going only across the
+    //    occasional symbol-less room — no artificial one-room-per-turn cap.
     //    (legal.doors is already gated to doors that can actually draw a room.)
     if (legal.doors.length > 0) {
-      return { action: { type: "explore", playerId: pid, door: rng.pick(legal.doors) }, endTurnAfter: true };
+      return { action: { type: "explore", playerId: pid, door: rng.pick(legal.doors) }, endTurnAfter: false };
     }
 
     // 1b) No new room to find from here, but this room hasn't been rummaged —

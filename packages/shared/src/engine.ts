@@ -86,6 +86,20 @@ function recomputeMovement(s: GameState): void {
   s.movementLeft = Math.max(0, speedBudget(active) - (s.turnSpent ?? 0) - reach);
 }
 
+/**
+ * Board rule: "Whenever a game effect makes you draw a card, you must STOP
+ * moving for the rest of your turn." Halt the active explorer's movement — bank
+ * Speed-worth of spent steps (the same trick `rest` uses) so no later recompute
+ * (e.g. a +Speed consumable) can refund it, then zero what's left. Non-movement
+ * actions (attack, use-item) are unaffected; further explore / move / search /
+ * investigate are blocked, since they all gate on `movementLeft`.
+ */
+function haltMovement(s: GameState, p: PlayerState): void {
+  if (p.id !== s.activePlayerId) return;
+  s.turnSpent = (s.turnSpent ?? 0) + speedBudget(p) + 1;
+  s.movementLeft = 0;
+}
+
 /** Can the active player afford to stand in `toKey`? (Backtracking is cheap.) */
 function canReach(s: GameState, p: PlayerState, toKey: string): boolean {
   if (s.turnStartKey == null) return s.movementLeft > 0;
@@ -229,11 +243,15 @@ function applyRoomSpecial(s: GameState, p: PlayerState, room: PlacedRoom): void 
 
 function resolveRoomDraws(s: GameState, p: PlayerState, room: PlacedRoom): void {
   const def = ROOMS_BY_ID[room.roomId];
-  if (!def) return;
-  for (const symbol of def.symbols) {
-    if (s.phase !== "explore" && s.phase !== "haunt") return;
-    drawAndResolve(s, p, symbol);
-  }
+  if (!def?.symbol) return;
+  if (s.phase !== "explore" && s.phase !== "haunt") return;
+  drawAndResolve(s, p, def.symbol);
+  // Discovering a room with a card symbol draws a card, which ends the active
+  // explorer's move for the turn (board rule). You can't walk on — most rooms
+  // have a symbol, so a turn is usually a single discovery; symbol-less rooms
+  // (corridors, landings) don't stop you. The deliberate `search` action draws
+  // too but is NOT a discovery, so it keeps its own one-step cost without halting.
+  haltMovement(s, p);
 }
 
 function drawAndResolve(s: GameState, p: PlayerState, type: CardType): void {

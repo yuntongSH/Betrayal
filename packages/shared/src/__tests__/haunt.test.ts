@@ -294,9 +294,16 @@ describe("The Tide Comes In — a no-traitor haunt", () => {
     s.activePlayerId = "a";
     beginTurn(s);
 
-    reduce(s, { type: "end-turn", playerId: "a" });
-    // With no traitor, ending a hero's turn still advances the house: the
-    // monster steps from the foyer into the Entrance Hall toward the party.
+    // With no traitor, ending a hero's turn still wakes the house and runs the
+    // monster phase. Monster movement is rolled now (dice = Speed), so it may
+    // take a phase or two — but it must close the single room to the party rather
+    // than standing idle. (It moves the moment a roll lands ≥ 1.)
+    const start = s.haunt!.monsters[0]!.position;
+    let guard = 0;
+    while (s.haunt!.monsters[0]!.position === start && s.phase === "haunt" && guard++ < 25) {
+      reduce(s, { type: "end-turn", playerId: s.activePlayerId! });
+    }
+    // The only step from the foyer toward the party lands in the Entrance Hall.
     expect(s.haunt!.monsters[0]!.position).toBe(ENTRANCE_KEY);
   });
 });

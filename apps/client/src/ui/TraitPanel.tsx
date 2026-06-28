@@ -30,11 +30,9 @@ function roomNotes(def: RoomDef): string[] {
   if (def.aura && def.aura > 0) notes.push(`✦ Blessed — +${def.aura} die to every roll while you're here.`);
   else if (def.aura && def.aura < 0) notes.push(`☓ Cursed — ${def.aura} dice to every roll while you're here.`);
   if (ROOM_SPECIAL_NOTE[def.special]) notes.push(ROOM_SPECIAL_NOTE[def.special]);
-  if (def.symbols.length) {
-    const kinds = [...new Set(def.symbols)].map(
-      (k) => ({ event: "an Event", item: "an Item", omen: "an Omen" }[k] ?? k),
-    );
-    notes.push(`On discovery it reveals ${kinds.join(" & ")}.`);
+  if (def.symbol) {
+    const label = { event: "an Event", item: "an Item", omen: "an Omen" }[def.symbol] ?? def.symbol;
+    notes.push(`On discovery it reveals ${label}.`);
   }
   return notes;
 }

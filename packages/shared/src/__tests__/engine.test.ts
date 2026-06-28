@@ -72,15 +72,34 @@ describe("exploration", () => {
     expect(getPlayer(s, active)?.position).toBe(key("ground", 1, 1));
   });
 
-  it("discovering a new room costs a single step (you can keep moving and backtrack)", () => {
+  it("discovering a symbol-less room costs a single step (movement isn't halted)", () => {
     const s = startedGame();
     const active = s.activePlayerId!;
     reduce(s, { type: "move-to", playerId: active, toKey: key("ground", 0, 1) });
+    // Stack a symbol-less corridor: discovery draws no card, so it never halts.
+    s.decks.rooms = ["dusty-hallway", ...s.decks.rooms.filter((r) => r !== "dusty-hallway")];
     const before = s.movementLeft;
     expect(before).toBeGreaterThan(0);
     reduce(s, { type: "explore", playerId: active, door: "east" });
+    expect(s.house[key("ground", 1, 1)]?.roomId).toBe("dusty-hallway");
     // Exploring spends one step, not the whole turn's movement.
     expect(s.movementLeft).toBe(before - 1);
+  });
+
+  it("discovering a room that draws a card halts movement for the turn (board rule)", () => {
+    const s = startedGame();
+    const active = s.activePlayerId!;
+    reduce(s, { type: "move-to", playerId: active, toKey: key("ground", 0, 1) });
+    // Stack a room with an Item symbol: discovering it draws a card, which by the
+    // board's "draw a card, stop moving" rule ends the move for the turn.
+    s.decks.rooms = ["servants-quarters", ...s.decks.rooms.filter((r) => r !== "servants-quarters")];
+    reduce(s, { type: "explore", playerId: active, door: "east" });
+    const landed = getPlayer(s, active)!.position!;
+    expect(s.house[landed]?.roomId).toBe("servants-quarters");
+    // Stopped: no movement left, and a further step is refused this turn.
+    expect(s.movementLeft).toBe(0);
+    reduce(s, { type: "move-to", playerId: active, toKey: key("ground", 0, 1) });
+    expect(getPlayer(s, active)!.position).toBe(landed);
   });
 
   it("is fully deterministic for a fixed seed", () => {
@@ -159,12 +178,14 @@ describe("net-distance movement (backtracking refunds Speed)", () => {
     expect(s.movementLeft).toBeGreaterThan(0);
   });
 
-  it("exploring is a non-refundable step (can't be gamed by returning to start)", () => {
+  it("exploring is a non-refundable step (symbol-less room can't be gamed by returning to start)", () => {
     const s = startedGame();
     const { pid, budget } = generousSpeed(s);
     const entrance = getPlayer(s, pid)!.position!;
-    // Explore out of the foyer, then walk all the way home.
     reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
+    // Symbol-less room: discovery doesn't halt, so we can still walk home and
+    // confirm the explore step itself is never refunded.
+    s.decks.rooms = ["dusty-hallway", ...s.decks.rooms.filter((r) => r !== "dusty-hallway")];
     reduce(s, { type: "explore", playerId: pid, door: "east" });
     reduce(s, { type: "move-to", playerId: pid, toKey: foyer });
     reduce(s, { type: "move-to", playerId: pid, toKey: entrance });

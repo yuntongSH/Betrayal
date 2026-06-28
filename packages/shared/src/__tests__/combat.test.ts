@@ -116,28 +116,58 @@ describe("richer monsters — speed & respawn", () => {
     s.players.forEach((p) => (p.side = p.id === "c" ? "traitor" : "heroes"));
   }
 
-  it("a fast monster (speed 2) closes two rooms in one phase", () => {
-    const s = startedGame();
-    // Heroes start in the Entrance Hall; the monster starts two rooms away at
-    // the Grand Staircase (staircase → foyer → entrance).
-    hauntWithMonster(
-      s,
-      { id: "m1", name: "Runner", position: key("ground", 0, 0), might: 1, hp: 5, speed: 2 },
-      null,
-    );
-    monsterPhase(s);
-    expect(s.haunt!.monsters[0]!.position).toBe(ENTRANCE_KEY);
+  // Monster movement is ROLLED (dice = Speed), so distance varies per phase.
+  // Heroes are in the Entrance Hall; the monster starts two rooms away along the
+  // corridor staircase(0,0) → foyer(0,1) → entrance.
+  const PATH = [key("ground", 0, 0), key("ground", 0, 1), ENTRANCE_KEY];
+
+  it("rolls dice equal to its Speed, advancing toward heroes within bounds", () => {
+    const landed = new Set<string>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const s = startedGame(seed);
+      hauntWithMonster(
+        s,
+        { id: "m1", name: "Runner", position: key("ground", 0, 0), might: 1, hp: 5, speed: 2 },
+        null,
+      );
+      monsterPhase(s);
+      const dist = PATH.indexOf(s.haunt!.monsters[0]!.position!);
+      // Always on the path toward the heroes, never past them (stops on contact).
+      expect(dist).toBeGreaterThanOrEqual(0);
+      expect(dist).toBeLessThanOrEqual(2);
+      landed.add(s.haunt!.monsters[0]!.position!);
+    }
+    // Rolled, not a fixed step: across seeds it lands in more than one room.
+    expect(landed.size).toBeGreaterThan(1);
   });
 
-  it("a slow monster (speed 1) only advances one room", () => {
+  it("a faster monster closes more ground on average than a slower one", () => {
+    function avgAdvance(speed: number): number {
+      let total = 0;
+      for (let seed = 1; seed <= 80; seed++) {
+        const s = startedGame(seed);
+        hauntWithMonster(
+          s,
+          { id: "m1", name: "Foe", position: key("ground", 0, 0), might: 1, hp: 5, speed },
+          null,
+        );
+        monsterPhase(s);
+        total += PATH.indexOf(s.haunt!.monsters[0]!.position!);
+      }
+      return total / 80;
+    }
+    expect(avgAdvance(2)).toBeGreaterThan(avgAdvance(1));
+  });
+
+  it("a rooted monster (speed 0) never moves", () => {
     const s = startedGame();
     hauntWithMonster(
       s,
-      { id: "m1", name: "Plodder", position: key("ground", 0, 0), might: 1, hp: 5, speed: 1 },
+      { id: "m1", name: "Idol", position: key("ground", 0, 0), might: 1, hp: 5, speed: 0 },
       null,
     );
     monsterPhase(s);
-    expect(s.haunt!.monsters[0]!.position).toBe(key("ground", 0, 1)); // the foyer
+    expect(s.haunt!.monsters[0]!.position).toBe(key("ground", 0, 0));
   });
 
   it("a respawning monster reforms at the start room after it dies", () => {

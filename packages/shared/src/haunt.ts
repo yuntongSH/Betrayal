@@ -3,8 +3,8 @@
  * combat resolution. Depends only on state/house/content — never the engine —
  * so the engine can call into it without an import cycle.
  */
-import type { GameState, MonsterState, PlayerId, Side, Trait } from "./types";
-import { DIFFICULTY_FACTOR } from "./types";
+import type { GameState, MonsterState, PlayerId, PlayerState, Side, Trait } from "./types";
+import { DIFFICULTY_FACTOR, MENTAL_TRAITS, PHYSICAL_TRAITS } from "./types";
 import { Rng } from "./rng";
 import { HAUNTS, HAUNTS_BY_ID, OMENS, ROOMS } from "./content";
 import type { HauntContext } from "./content";
@@ -185,6 +185,27 @@ function combatDamage(winnerTotal: number, loserTotal: number): number {
   return Math.max(1, Math.min(MAX_COMBAT_DAMAGE, winnerTotal - loserTotal));
 }
 
+/**
+ * Apply combat damage across the loser's matching trait PAIR — a physical hit
+ * spreads over Speed + Might, a mental hit over Sanity + Knowledge — rather than
+ * all landing on one trait. Each point comes off whichever of the two is
+ * currently furthest from the skull, mirroring how a player distributes damage
+ * to stay alive (the board lets the loser choose). Stops early if a trait reaches
+ * the skull (the player can die part-way through the spread).
+ */
+function applyCombatDamage(
+  s: GameState,
+  p: PlayerState,
+  kind: "physical" | "mental",
+  amount: number,
+): void {
+  const [a, b] = kind === "mental" ? MENTAL_TRAITS : PHYSICAL_TRAITS;
+  for (let i = 0; i < amount && p.alive; i++) {
+    const target = (p.traitIndex[a!] ?? 0) >= (p.traitIndex[b!] ?? 0) ? a! : b!;
+    modTrait(s, p, target, -1);
+  }
+}
+
 /** A player attacks a monster or another player sharing their room. */
 export function playerAttack(
   s: GameState,
@@ -221,7 +242,7 @@ export function playerAttack(
       m.hp -= dmg;
       addLog(s, `${attacker.name} strikes the ${m.name} for ${dmg}.`, "combat", atk.dice);
       if (m.hp <= 0) addLog(s, `The ${m.name} is destroyed!`, "combat");
-    } else {
+    } else if (def.total > atk.total) {
       const dmg = combatDamage(def.total, atk.total);
       addLog(
         s,
@@ -231,7 +252,10 @@ export function playerAttack(
         "combat",
         def.dice,
       );
-      modTrait(s, attacker, c.heroDefend, -dmg);
+      applyCombatDamage(s, attacker, m.attackType === "mental" ? "mental" : "physical", dmg);
+    } else {
+      // A tie deals no damage (board rule) — the two are locked, neither gives.
+      addLog(s, `${attacker.name} and the ${m.name} strain together — neither gives ground.`, "combat", atk.dice);
     }
   } else if (opts.targetPlayerId) {
     const target = getPlayer(s, opts.targetPlayerId);
@@ -257,11 +281,14 @@ export function playerAttack(
     if (atk.total > def.total) {
       const dmg = combatDamage(atk.total, def.total);
       addLog(s, `${attacker.name} attacks ${target.name}!`, "combat", atk.dice);
-      modTrait(s, target, "might", -dmg);
-    } else {
+      applyCombatDamage(s, target, "physical", dmg);
+    } else if (def.total > atk.total) {
       const dmg = combatDamage(def.total, atk.total);
       addLog(s, `${target.name} overpowers ${attacker.name}.`, "combat", def.dice);
-      modTrait(s, attacker, "might", -dmg);
+      applyCombatDamage(s, attacker, "physical", dmg);
+    } else {
+      // A tie deals no damage (board rule).
+      addLog(s, `${attacker.name} and ${target.name} grapple to a standstill.`, "combat", atk.dice);
     }
   }
 
@@ -283,10 +310,11 @@ export function monsterPhase(s: GameState): void {
     const heroes = livingHeroes(s);
     if (heroes.length === 0) break;
 
-    // Advance up to the monster's Speed, stopping the moment it shares a room
-    // with a hero. Fast creatures close the distance in a single phase; a Speed
-    // of 0 marks a rooted thing (a ritual focus) that never moves.
-    let moves = m.speed ?? 1;
+    // Roll dice equal to the monster's Speed for its movement this phase (board
+    // rule — unlike a player, whose Speed is a fixed budget), stopping the moment
+    // it shares a room with a hero. A Speed of 0 marks a rooted thing (a ritual
+    // focus) that rolls nothing and never moves.
+    let moves = rollDice(rng, m.speed ?? 1).total;
     while (moves > 0 && !heroes.some((h) => h.position === m.position)) {
       const targetKeys = new Set(heroes.map((h) => h.position as string));
       const step = stepToward(s, m.position, targetKeys);
@@ -313,8 +341,9 @@ export function monsterPhase(s: GameState): void {
           "combat",
           atk.dice,
         );
-        modTrait(s, target, c.heroDefend, -dmg);
+        applyCombatDamage(s, target, m.attackType === "mental" ? "mental" : "physical", dmg);
       } else {
+        // Hero matches or beats the monster's roll: a successful defence, no damage.
         addLog(s, `${target.name} holds off the ${m.name}.`, "combat", def.dice);
       }
     }
