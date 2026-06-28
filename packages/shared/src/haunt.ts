@@ -164,6 +164,15 @@ export function checkWinNow(s: GameState): void {
   }
 }
 
+/** A single combat exchange never moves a trait index / monster HP by more than
+ *  this. A raw die-pool swing can reach ~12, which would one-shot a full 8-step
+ *  trait track — so we cap each hit to keep fights an attrition, not a coin-flip
+ *  instakill. */
+const MAX_COMBAT_DAMAGE = 3;
+function combatDamage(winnerTotal: number, loserTotal: number): number {
+  return Math.max(1, Math.min(MAX_COMBAT_DAMAGE, winnerTotal - loserTotal));
+}
+
 /** A player attacks a monster or another player sharing their room. */
 export function playerAttack(
   s: GameState,
@@ -190,16 +199,18 @@ export function playerAttack(
     const c = monsterCombat(m);
     const atk = rollDice(
       rng,
-      Math.max(0, effectiveTrait(attacker, c.heroAttack) + itemTagBonus(attacker, c.atkTag) + roomAura(s, attacker)),
+      Math.max(1, effectiveTrait(attacker, c.heroAttack) + itemTagBonus(attacker, c.atkTag) + roomAura(s, attacker)),
     );
     const def = rollDice(rng, m.might);
-    if (atk.total >= def.total) {
-      const dmg = Math.max(1, atk.total - def.total);
+    // Ties go to the defender everywhere (the monster here), consistent with the
+    // PvP and monster-attack paths below.
+    if (atk.total > def.total) {
+      const dmg = combatDamage(atk.total, def.total);
       m.hp -= dmg;
       addLog(s, `${attacker.name} strikes the ${m.name} for ${dmg}.`, "combat", atk.dice);
       if (m.hp <= 0) addLog(s, `The ${m.name} is destroyed!`, "combat");
     } else {
-      const dmg = Math.max(1, def.total - atk.total);
+      const dmg = combatDamage(def.total, atk.total);
       addLog(
         s,
         m.attackType === "mental"
@@ -225,18 +236,18 @@ export function playerAttack(
     s.attacksLeft -= 1;
     const atk = rollDice(
       rng,
-      Math.max(0, effectiveTrait(attacker, "might") + itemTagBonus(attacker, "weapon") + roomAura(s, attacker)),
+      Math.max(1, effectiveTrait(attacker, "might") + itemTagBonus(attacker, "weapon") + roomAura(s, attacker)),
     );
     const def = rollDice(
       rng,
-      Math.max(0, effectiveTrait(target, "might") + itemTagBonus(target, "armor") + roomAura(s, target)),
+      Math.max(1, effectiveTrait(target, "might") + itemTagBonus(target, "armor") + roomAura(s, target)),
     );
     if (atk.total > def.total) {
-      const dmg = Math.max(1, atk.total - def.total);
+      const dmg = combatDamage(atk.total, def.total);
       addLog(s, `${attacker.name} attacks ${target.name}!`, "combat", atk.dice);
       modTrait(s, target, "might", -dmg);
     } else {
-      const dmg = Math.max(1, def.total - atk.total);
+      const dmg = combatDamage(def.total, atk.total);
       addLog(s, `${target.name} overpowers ${attacker.name}.`, "combat", def.dice);
       modTrait(s, attacker, "might", -dmg);
     }
@@ -277,10 +288,10 @@ export function monsterPhase(s: GameState): void {
       const atk = rollDice(rng, m.might);
       const def = rollDice(
         rng,
-        Math.max(0, effectiveTrait(target, c.heroDefend) + itemTagBonus(target, c.defTag) + roomAura(s, target)),
+        Math.max(1, effectiveTrait(target, c.heroDefend) + itemTagBonus(target, c.defTag) + roomAura(s, target)),
       );
       if (atk.total > def.total) {
-        const dmg = Math.max(1, atk.total - def.total);
+        const dmg = combatDamage(atk.total, def.total);
         addLog(
           s,
           m.attackType === "mental"

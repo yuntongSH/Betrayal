@@ -14,6 +14,7 @@ import { legalMoves, reduce } from "./engine";
 import { getPlayer } from "./state";
 import { openDoors, stepToward } from "./house";
 import { hasRoomForFloor } from "./decks";
+import { getCard } from "./content";
 import { Rng } from "./rng";
 
 /** Explored rooms that still have a doorway a new room could be drawn through. */
@@ -79,8 +80,38 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
     return { action: { type: "pickup-item", playerId: pid, cardId: legal.pickupItems[0]! }, endTurnAfter: false };
   }
 
+  // Self-preservation: if a trait is one or two steps from the skull and a
+  // carried consumable heals that trait, drink it before risking the turn (bots
+  // used to die holding the very +2 that would have saved them).
+  for (const id of legal.usableItems) {
+    const eff = getCard(id)?.effect;
+    if (eff?.kind === "consumable" && eff.use.kind === "heal" && (p.traitIndex[eff.use.trait] ?? 99) <= 2) {
+      return { action: { type: "use-item", playerId: pid, cardId: id }, endTurnAfter: false };
+    }
+  }
+
   if (s.movementLeft > 0) {
     const rng = new Rng((s.rngState ^ Math.imul(s.turn, 0x9e3779b1) ^ hash(pid)) >>> 0);
+
+    // In the haunt, the traitor never sightsees (growing the house is pointless
+    // post-betrayal). If there are NO summoned monsters, the traitor IS the
+    // threat (e.g. The Hunt) and must run heroes down. Otherwise the monsters do
+    // the hunting, so the traitor holds position — which also runs out the clock
+    // on "survive N turns" haunts instead of suiciding into the heroes.
+    if (s.phase === "haunt" && p.side === "traitor") {
+      const hasMonsters = (s.haunt?.monsters ?? []).some((m) => m.hp > 0);
+      if (!hasMonsters) {
+        const foes = foePositions(s, p);
+        foes.delete(p.position!);
+        if (foes.size > 0) {
+          const step = stepToward(s, p.position!, foes);
+          if (step && step !== p.position) {
+            return { action: { type: "move-to", playerId: pid, toKey: step }, endTurnAfter: false };
+          }
+        }
+      }
+      return end;
+    }
 
     // 1) Discover a new room from here — then yield, so the house grows at a
     //    measured pace and one bot doesn't build out the whole floor in a turn.

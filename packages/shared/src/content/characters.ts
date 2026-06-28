@@ -31,7 +31,7 @@ export const CHARACTERS: CharacterDef[] = [
       "Struck off for operations no medical board would sanction. She came to the manor chasing a rumor that the dead here do not always stay buried.",
     traits: traits(
       track([0, 2, 3, 3, 4, 5, 5, 6], 3),
-      track([0, 2, 2, 3, 4, 4, 5, 6], 2),
+      track([0, 2, 2, 3, 4, 4, 5, 6], 3),
       track([0, 3, 4, 5, 6, 6, 7, 8], 4),
       track([0, 4, 5, 5, 6, 7, 7, 8], 5),
     ),

@@ -70,9 +70,17 @@ function escapedDuringHaunt(
   key: string,
   qualifies: (p: PlayerState) => boolean,
 ): boolean {
+  if (!s.haunt) return false;
   const snap = new Set(
-    String(s.haunt?.vars[key] ?? "").split("|").filter(Boolean),
+    String(s.haunt.vars[key] ?? "").split("|").filter(Boolean),
   );
+  // Prune any snapshotted hero who no longer qualifies (left the room / dropped
+  // the key). checkWin runs after every action, so once such a hero walks away
+  // they leave the snapshot — and a genuine RETURN during the haunt then counts,
+  // while a hero who never left still can't claim the win that was true at reveal.
+  const qualifyingNow = new Set(livingHeroes(s).filter(qualifies).map((p) => p.id));
+  for (const id of [...snap]) if (!qualifyingNow.has(id)) snap.delete(id);
+  s.haunt.vars[key] = [...snap].join("|");
   return livingHeroes(s).some((p) => !snap.has(p.id) && qualifies(p));
 }
 const inRoomWithKey = (s: GameState) => (p: PlayerState) =>
@@ -248,7 +256,7 @@ export const HAUNTS: HauntDef[] = [
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
       // Many, fast, and they go for the mind — but they stay dead once silenced.
-      spawn(s, ctx, "Whisper", 2, 1, heroes * 2, { attackType: "mental", speed: 2 });
+      spawn(s, ctx, "Whisper", 2, 2, heroes * 2, { attackType: "mental", speed: 2 });
     },
     checkWin: (s) => {
       if (livingHeroes(s).length === 0) return "traitor";
@@ -269,7 +277,7 @@ export const HAUNTS: HauntDef[] = [
     chooseTraitors: () => [],
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
-      spawn(s, ctx, "Drowned Hand", 2, 3, heroes, { attackType: "physical", at: "start" });
+      spawn(s, ctx, "Drowned Hand", 2, 4, heroes, { attackType: "physical", at: "start" });
       markEscapeSnapshot(s, "keyEscape", inRoomWithKey(s));
     },
     checkWin: (s) => {

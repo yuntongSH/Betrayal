@@ -15,6 +15,7 @@ import {
   redactStateForPlayer,
 } from "../state";
 import { openDoors } from "../house";
+import { botStep } from "../bot";
 import { DRAWABLE_ROOMS, HAUNTS_BY_ID, ROOMS_BY_ID } from "../content";
 import { Rng } from "../rng";
 import type { GameState, HauntState } from "../types";
@@ -266,5 +267,82 @@ describe("items & redaction", () => {
     s.phase = "ended";
     s.winner = "heroes";
     expect(redactStateForPlayer(s, "b").haunt!.traitorGoal).toBe("SECRET PURPOSE");
+  });
+});
+
+// ---- round 2: findings from the 5 playtester sub-agents -----------------
+describe("combat damage & objective re-qualification", () => {
+  it("a single combat exchange never moves a trait/HP by more than the cap", () => {
+    const CAP = 3;
+    for (let seed = 1; seed <= 60; seed++) {
+      const s = startedGame(seed);
+      const b = getPlayer(s, "b")!;
+      mountHaunt(s, {
+        monsters: [{ id: "m1", name: "Foe", position: b.position, might: 8, hp: 40, attackType: "physical" }],
+      });
+      s.activePlayerId = "b";
+      beginTurn(s);
+      const hpBefore = s.haunt!.monsters[0]!.hp;
+      const mightBefore = b.traitIndex.might;
+      playerAttack(s, "b", { monsterId: "m1" });
+      // Either the hero hits the monster or loses and takes damage — never > CAP.
+      expect(hpBefore - s.haunt!.monsters[0]!.hp).toBeLessThanOrEqual(CAP);
+      expect(mightBefore - b.traitIndex.might).toBeLessThanOrEqual(CAP);
+    }
+  });
+
+  it("an objective win can be earned by leaving and returning during the haunt", () => {
+    const s = startedGame();
+    const a = getPlayer(s, "a")!;
+    const entrance = a.position!;
+    a.inventory.push("it-key");
+    s.players.forEach((p) => (p.side = "heroes"));
+    mountHaunt(s, { id: "the-tide", traitorIds: [] });
+    HAUNTS_BY_ID["the-tide"]!.setup(s, [], {
+      rng: Rng.fromState(s.rngState),
+      roomKeys: () => Object.keys(s.house),
+      spawnKey: () => entrance,
+    });
+    const def = HAUNTS_BY_ID["the-tide"]!;
+    // Standing in the entrance with the key at reveal does NOT win (snapshotted).
+    expect(def.checkWin(s)).not.toBe("heroes");
+    // Leave the entrance — checkWin prunes the now-non-qualifying hero...
+    const elsewhere = Object.keys(s.house).find((k) => k !== entrance && s.house[k]!.floor === "ground")!;
+    a.position = elsewhere;
+    def.checkWin(s);
+    // ...so a genuine RETURN with the key during the haunt now wins.
+    a.position = entrance;
+    expect(def.checkWin(s)).toBe("heroes");
+  });
+});
+
+describe("bot decision quality", () => {
+  it("a bot drinks a consumable when a trait is dangerously low", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    p.inventory.push("it-stim"); // consumable: +2 Might
+    p.traitIndex.might = 1; // one step from the skull
+    const step = botStep(s, pid);
+    expect(step.action.type).toBe("use-item");
+    expect(step.action).toMatchObject({ cardId: "it-stim" });
+  });
+
+  it("the traitor bot holds (no explore) during the haunt while monsters hunt", () => {
+    const s = startedGame();
+    mountHaunt(s); // c is the traitor
+    const keys = Object.keys(s.house);
+    const heroPos = getPlayer(s, "a")!.position!; // a, b, c all start here
+    const cRoom = keys.find((k) => k !== heroPos)!;
+    const monsterRoom = keys.find((k) => k !== heroPos && k !== cRoom)!;
+    // Isolate the traitor (no foe to strike) and let a summoned monster do the
+    // hunting — the traitor should hold, not grow the house.
+    getPlayer(s, "c")!.position = cRoom;
+    s.haunt!.monsters.push({ id: "m1", name: "Foe", position: monsterRoom, might: 4, hp: 5, attackType: "physical" });
+    s.activePlayerId = "c";
+    beginTurn(s);
+    const step = botStep(s, "c");
+    expect(step.action.type).not.toBe("explore");
+    expect(step.action.type).toBe("end-turn");
   });
 });
