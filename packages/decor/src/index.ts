@@ -1508,9 +1508,13 @@ function castShadowsOnOpaque(g: THREE.Group): void {
 function refineExplorer(g: THREE.Group): void {
   const parts = g.userData.parts as FigureParts | undefined;
   if (parts?.head) {
-    parts.head.scale.multiplyScalar(0.86);
+    parts.head.scale.multiplyScalar(0.84);
     parts.head.position.y -= 0.012; // close the neck gap the smaller head opens
   }
+  // Slim and heighten the whole figure (feet stay at the origin) so the
+  // silhouette reads as an adult human instead of a squat figurine. Gentle so
+  // held props and the contact ring don't distort.
+  g.scale.set(0.95, 1.07, 0.95);
   castShadowsOnOpaque(g);
 }
 
@@ -1691,67 +1695,145 @@ export interface FaceOpts {
   open?: number;
 }
 
-/** Add eyes, nose, brows and a mouth to a head mesh (front = +z). */
+/**
+ * Paint a face (eyes, brows, nose shading, lips) onto a transparent canvas and
+ * return it as a decal texture. A drawn face reads as human at any camera
+ * distance, where protruding primitive eyeballs/cone-noses read as a doll.
+ * Browser-only — the caller falls back to the primitive face under Node.
+ */
+function makeFaceTexture(opts: FaceOpts): THREE.CanvasTexture {
+  const S = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2;
+  const hex = (n: number) => "#" + (n & 0xffffff).toString(16).padStart(6, "0");
+  const eyeCol = hex(opts.eye ?? 0x5b4636);
+  const browCol = hex(opts.brow ?? 0x2a2018);
+  const lipCol = hex(opts.lip ?? 0x9a5a52);
+  const mood = opts.mood ?? 0;
+  const open = Math.max(0.3, opts.open ?? 1);
+  const ellipse = (x: number, y: number, rx: number, ry: number, fill: string) => {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
+
+  const eyeY = S * 0.42;
+  const eyeDX = S * 0.165;
+
+  // soft eye-socket shading for depth
+  for (const s of [-1, 1]) ellipse(cx + s * eyeDX, eyeY + S * 0.012, S * 0.108, S * 0.072, "rgba(60,42,32,0.16)");
+  // eyes: sclera, iris, pupil, catch-light, upper-lid line
+  for (const s of [-1, 1]) {
+    const ex = cx + s * eyeDX;
+    ellipse(ex, eyeY, S * 0.082, S * 0.05 * open, "rgba(238,233,226,0.97)");
+    ellipse(ex, eyeY, S * 0.04, S * 0.04 * Math.min(1, open + 0.25), eyeCol);
+    ellipse(ex, eyeY, S * 0.018, S * 0.018, "#0a0a0c");
+    ellipse(ex - S * 0.014, eyeY - S * 0.014, S * 0.008, S * 0.008, "rgba(255,255,255,0.85)");
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(28,20,16,0.6)";
+    ctx.lineWidth = S * 0.013;
+    ctx.ellipse(ex, eyeY, S * 0.082, S * 0.05 * open, 0, Math.PI * 1.04, Math.PI * 1.96);
+    ctx.stroke();
+  }
+  // brows
+  for (const s of [-1, 1]) {
+    const ex = cx + s * eyeDX;
+    const by = eyeY - S * 0.085;
+    ctx.beginPath();
+    ctx.strokeStyle = browCol;
+    ctx.lineWidth = S * 0.026;
+    ctx.lineCap = "round";
+    ctx.moveTo(ex - s * S * 0.058, by + s * mood * S * 0.022);
+    ctx.quadraticCurveTo(ex, by - S * 0.02, ex + s * S * 0.058, by + S * 0.006 - s * mood * S * 0.022);
+    ctx.stroke();
+  }
+  // nose — a soft side shadow and nostril hints, no geometry
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(70,48,36,0.22)";
+  ctx.lineWidth = S * 0.02;
+  ctx.lineCap = "round";
+  ctx.moveTo(cx - S * 0.016, eyeY + S * 0.02);
+  ctx.lineTo(cx - S * 0.03, eyeY + S * 0.125);
+  ctx.quadraticCurveTo(cx, eyeY + S * 0.16, cx + S * 0.03, eyeY + S * 0.125);
+  ctx.stroke();
+  ellipse(cx - S * 0.026, eyeY + S * 0.142, S * 0.013, S * 0.009, "rgba(40,26,20,0.28)");
+  ellipse(cx + S * 0.026, eyeY + S * 0.142, S * 0.013, S * 0.009, "rgba(40,26,20,0.28)");
+  // lips
+  const my = S * 0.66;
+  ctx.beginPath();
+  ctx.fillStyle = lipCol;
+  ctx.moveTo(cx - S * 0.078, my);
+  ctx.quadraticCurveTo(cx, my - S * 0.028, cx + S * 0.078, my);
+  ctx.quadraticCurveTo(cx, my + S * 0.05, cx - S * 0.078, my);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(60,30,30,0.45)";
+  ctx.lineWidth = S * 0.01;
+  ctx.moveTo(cx - S * 0.078, my + mood * S * 0.022);
+  ctx.quadraticCurveTo(cx, my + S * 0.012, cx + S * 0.078, my + mood * S * 0.022);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Add a face to a head mesh (front = +z). Uses a painted face decal in the
+ *  browser, falling back to the old primitive features under Node. */
 export function addFace(head: THREE.Mesh, opts: FaceOpts): void {
   const r = opts.r ?? 0.15;
-  const eyeCol = opts.eye ?? 0x5b4636;
-  const browCol = opts.brow ?? 0x2a2018;
-  const lipCol = opts.lip ?? 0x8a4a44;
-  const mood = opts.mood ?? 0;
-  const open = opts.open ?? 1;
-  const z = r * 0.86; // front of the face
+  if (typeof document === "undefined") {
+    addPrimitiveFace(head, opts);
+    return;
+  }
+  const tex = makeFaceTexture(opts);
+  const decalMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    roughness: 0.8,
+    metalness: 0,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+  // A front sphere-section riding just outside the head, carrying the painted
+  // face — so the features sit on the real curved skin instead of poking out.
+  const decal = new THREE.Mesh(
+    new THREE.SphereGeometry(r * 1.004, 48, 36, Math.PI / 2 - 0.95, 1.9, Math.PI * 0.24, Math.PI * 0.52),
+    decalMat,
+  );
+  head.add(decal);
+  // small ears so the head reads in profile
+  for (const sx of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(r * 0.15, 10, 8), opts.skin);
+    ear.position.set(sx * r * 0.95, -r * 0.02, 0);
+    ear.scale.set(0.45, 0.85, 0.7);
+    head.add(ear);
+  }
+}
 
+/** The original protruding-primitive face — kept as the Node fallback. */
+function addPrimitiveFace(head: THREE.Mesh, opts: FaceOpts): void {
+  const r = opts.r ?? 0.15;
+  const z = r * 0.86;
   const white = new THREE.MeshStandardMaterial({ color: 0xece7e0, roughness: 0.4 });
-  const iris = new THREE.MeshStandardMaterial({ color: eyeCol, roughness: 0.35 });
-  const pupil = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.3 });
-  const browMat = new THREE.MeshStandardMaterial({ color: browCol, roughness: 0.8 });
-  const lipMat = new THREE.MeshStandardMaterial({ color: lipCol, roughness: 0.55 });
-
+  const iris = new THREE.MeshStandardMaterial({ color: opts.eye ?? 0x5b4636, roughness: 0.35 });
   for (const sx of [-1, 1]) {
     const ex = sx * r * 0.42;
-    const ey = r * 0.12;
-    // eyeball
     const eyeball = new THREE.Mesh(new THREE.SphereGeometry(r * 0.17, 10, 8), white);
-    eyeball.position.set(ex, ey, z * 0.92);
-    eyeball.scale.set(1, Math.max(0.15, open), 0.6);
+    eyeball.position.set(ex, r * 0.12, z * 0.92);
+    eyeball.scale.set(1, Math.max(0.15, opts.open ?? 1), 0.6);
     head.add(eyeball);
     const ir = new THREE.Mesh(new THREE.SphereGeometry(r * 0.09, 8, 8), iris);
-    ir.position.set(ex, ey, z * 0.99);
+    ir.position.set(ex, r * 0.12, z * 0.99);
     head.add(ir);
-    const pu = new THREE.Mesh(new THREE.SphereGeometry(r * 0.045, 6, 6), pupil);
-    pu.position.set(ex, ey, z * 1.02);
-    head.add(pu);
-    // brow
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(r * 0.34, r * 0.06, r * 0.06), browMat);
-    brow.position.set(ex, ey + r * 0.24, z * 0.95);
-    brow.rotation.z = sx * (0.12 - mood * 0.2);
-    head.add(brow);
-  }
-
-  // nose
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.34, 6), opts.skin);
-  nose.position.set(0, -r * 0.02, z * 1.0);
-  nose.rotation.x = Math.PI / 2;
-  head.add(nose);
-
-  // mouth — a slim box, tilted up/down by mood
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(r * 0.4, r * 0.07, r * 0.05), lipMat);
-  mouth.position.set(0, -r * 0.42, z * 0.92);
-  mouth.rotation.z = mood * 0.0;
-  // fake a curve with two end caps raised/lowered
-  for (const sx of [-1, 1]) {
-    const corner = new THREE.Mesh(new THREE.BoxGeometry(r * 0.08, r * 0.07, r * 0.05), lipMat);
-    corner.position.set(sx * r * 0.2, -r * 0.42 + mood * r * 0.08, z * 0.92);
-    head.add(corner);
-  }
-  head.add(mouth);
-
-  // ears
-  for (const sx of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(r * 0.16, 8, 8), opts.skin);
-    ear.position.set(sx * r * 0.92, 0, 0);
-    ear.scale.set(0.5, 0.9, 0.7);
-    head.add(ear);
   }
 }
 
