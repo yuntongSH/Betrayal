@@ -228,6 +228,39 @@ export interface Decks {
   rooms: RoomId[];
 }
 
+// ---------------------------------------------------------------------------
+// Legacy campaign — persistent modifiers carried between linked games
+// ---------------------------------------------------------------------------
+
+/** A named item a family has claimed; it strengthens across the saga. */
+export interface Heirloom {
+  cardId: CardId;
+  /** The family (character) it belongs to. */
+  charId: CharacterId;
+  name: string;
+  /** Which trait its bearer is hardened in, and by how much (grows when reforged). */
+  trait: Trait;
+  level: number;
+}
+
+/** A family line across the campaign — heirs are hardier than their forebears. */
+export interface Bloodline {
+  generation: number;
+  /** Inherited starting-trait bumps (index offsets), applied at chapter start. */
+  bonus: Partial<Record<Trait, number>>;
+}
+
+/**
+ * Persistent legacy state applied when a campaign chapter's game begins. The
+ * regular (one-off) game leaves this undefined; only the campaign sets it.
+ */
+export interface CampaignModifiers {
+  heirlooms: Heirloom[];
+  bloodlines: Record<CharacterId, Bloodline>;
+  /** Rooms permanently marked by past chapters (roomId -> the scar's tale). */
+  scars: Record<RoomId, string>;
+}
+
 export interface GameState {
   id: string;
   phase: Phase;
@@ -237,6 +270,8 @@ export interface GameState {
   turn: number;
   /** Chosen in the lobby; scales the haunt's monsters. Absent = standard. */
   difficulty?: Difficulty;
+  /** Legacy-campaign carry-over, applied at startGame. Absent for one-off games. */
+  campaign?: CampaignModifiers;
   players: PlayerState[];
   /** Turn order (player ids). */
   order: PlayerId[];

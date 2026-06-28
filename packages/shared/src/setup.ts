@@ -154,6 +154,34 @@ export function beginTurn(s: GameState): void {
 }
 
 /**
+ * Apply legacy-campaign carry-over at chapter start: heirs begin hardier
+ * (bloodline bumps), heirloom items are already in hand, and an heirloom steadies
+ * its bearer in its trait. A one-off game has no `campaign`, so this is a no-op.
+ */
+function applyCampaign(s: GameState): void {
+  const c = s.campaign;
+  if (!c) return;
+  const bump = (p: PlayerState, trait: Trait, by: number): void => {
+    const def = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+    if (!def || !by) return;
+    const max = def.traits[trait].values.length - 1;
+    // Never push onto the skull (index 0) and never past the top of the track.
+    p.traitIndex[trait] = Math.max(1, Math.min(max, (p.traitIndex[trait] ?? 0) + by));
+  };
+  for (const p of s.players) {
+    if (!p.characterId) continue;
+    const bl = c.bloodlines[p.characterId];
+    if (bl) for (const t of TRAITS) bump(p, t, bl.bonus[t] ?? 0);
+  }
+  for (const h of c.heirlooms) {
+    const owner = s.players.find((p) => p.characterId === h.charId);
+    if (!owner) continue;
+    if (!owner.inventory.includes(h.cardId)) owner.inventory.push(h.cardId);
+    bump(owner, h.trait, h.level);
+  }
+}
+
+/**
  * Transition from the lobby into exploration: shuffle turn order, build decks,
  * place the start tiles and drop everyone in the Entrance Hall.
  */
@@ -194,6 +222,8 @@ export function startGame(s: GameState): boolean {
   for (const p of s.players) {
     p.position = ENTRANCE_KEY;
   }
+
+  applyCampaign(s);
 
   s.activePlayerId = order[0] ?? null;
   s.turn = 1;

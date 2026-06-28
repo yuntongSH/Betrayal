@@ -51,6 +51,21 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .modal-card ul{margin:.2rem 0 .2rem 1.1rem;padding:0}
 .modal-card li{margin:.18rem 0}
 .modal-card .btn{margin-top:1.2rem}
+.btn.legacy{background:linear-gradient(180deg,#3a2c12,#241a09);border-color:#6a4e1d;color:#f0dcae}
+.btn.legacy:hover:not(:disabled){border-color:#e2c05a}
+.camp-chapter{color:var(--flame);font-variant:small-caps;letter-spacing:.05em;font-size:1.05rem;margin:.2rem 0 .6rem}
+.camp-sec{margin:.9rem 0 .2rem;color:#c8b48a;font-size:.82rem;text-transform:uppercase;letter-spacing:.06em}
+.camp-list{list-style:none;margin:.1rem 0;padding:0}
+.camp-list li{padding:.28rem .4rem;border-left:2px solid #3a2f20;margin:.2rem 0;color:#d8ccbe;font-size:.9rem}
+.camp-list li b{color:#f0e2d2}
+.camp-fam{display:flex;justify-content:space-between;gap:.5rem}
+.camp-gen{color:#9a8e80;font-size:.82rem}
+.chronicle-line{color:#b8ab9a;font-size:.86rem;font-style:italic;margin:.16rem 0;line-height:1.4}
+.legacy-pick{display:flex;flex-wrap:wrap;gap:.4rem;margin:.4rem 0}
+.legacy-pick .btn{margin-top:0;padding:.4rem .7rem;font-size:.86rem}
+.heir-name-row{display:flex;gap:.4rem;margin:.5rem 0}
+.heir-name-row input{flex:1;font:inherit;background:rgba(10,8,7,.8);border:1px solid var(--edge);border-radius:8px;color:var(--ink);padding:.5rem .7rem}
+.camp-empty{color:#7e7163;font-size:.86rem;font-style:italic}
 #toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);padding:.5rem 1rem;border-radius:10px;background:rgba(20,16,14,.88);border:1px solid rgba(226,168,90,.45);color:#f0e2d2;font-size:.9rem;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;z-index:50}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .muted{color:var(--dim)} .small{font-size:.78rem}
@@ -214,6 +229,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <div class="lobby-actions">
     <button class="btn primary" id="begin-btn" disabled>Begin the descent (<span id="party-count">0</span>)</button>
     <button class="btn" id="solo-btn">Play solo vs 3 bots</button>
+    <button class="btn legacy" id="legacy-btn">🕯️ Begin a Legacy</button>
     <button class="btn" id="howto-btn">How to play</button>
   </div>
   <p class="muted small">Pass-and-play on one screen, or play solo against bots. Small parties are topped up to 3 with bots. The full online multiplayer version lives in the GitHub repo.</p>
@@ -268,6 +284,14 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
     </ul>
     <button class="btn primary" id="help-close">Got it</button>
   </div>
+</div>
+
+<div id="campaign-overlay" class="modal-overlay">
+  <div class="modal-card" id="campaign-body"></div>
+</div>
+
+<div id="legacy-overlay" class="modal-overlay">
+  <div class="modal-card" id="legacy-body"></div>
 </div>
 
 <div id="atmos" aria-hidden="true">

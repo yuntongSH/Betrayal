@@ -141,9 +141,203 @@ function syncSoundBtn() {
   b.classList.toggle("off", !on);
 }
 
+// =========================================================================
+// LEGACY CAMPAIGN — a persistent saga of linked games, saved in the browser
+// =========================================================================
+const CAMP_KEY = "dh:campaign";
+const TRAIT_NAMES = ["speed", "might", "sanity", "knowledge"];
+function loadCampaign() { try { return JSON.parse(localStorage.getItem(CAMP_KEY) || "null"); } catch { return null; } }
+function saveCampaign(c) { try { localStorage.setItem(CAMP_KEY, JSON.stringify(c)); } catch { /* storage off */ } }
+function newCampaign(humanCharId) { return { chapter: 1, humanCharId, families: {}, heirlooms: [], scars: {}, chronicle: [] }; }
+
+/** Translate the saved campaign into the engine's per-game modifier object. */
+function campaignModifiers(c) {
+  const bloodlines = {};
+  for (const id in c.families) bloodlines[id] = { generation: c.families[id].gen, bonus: c.families[id].bonus || {} };
+  return { heirlooms: c.heirlooms.map((h) => ({ ...h })), bloodlines, scars: { ...c.scars } };
+}
+
+/** Which trait an item steadies its bearer in (drives the heirloom bonus). */
+function heirloomTrait(cardId) {
+  const e = DH.getCard(cardId)?.effect;
+  if (e?.kind === "item-passive" && e.trait) return e.trait;
+  if (e?.kind === "consumable" && e.use?.kind === "heal") return e.use.trait;
+  return "might";
+}
+
+function closeModals() {
+  for (const id of ["campaign-overlay", "legacy-overlay", "help-overlay"]) $(id).classList.remove("show");
+}
+
+/** Start (or continue) the legacy and show the saga screen. */
+function openLegacy() {
+  campaign = loadCampaign();
+  if (!campaign) {
+    const humanChar = (party[0] && party[0].charId) || DH.CHARACTERS[0].id;
+    campaign = newCampaign(humanChar);
+    saveCampaign(campaign);
+  }
+  renderCampaignScreen();
+  $("campaign-overlay").classList.add("show");
+}
+
+function renderCampaignScreen() {
+  const c = campaign;
+  const fam = DH.CHARACTERS_BY_ID[c.humanCharId];
+  const famState = c.families[c.humanCharId] || { gen: 1, bonus: {} };
+  const heir = c.heirlooms.length
+    ? `<ul class="camp-list">${c.heirlooms.map((h) => `<li><b>${h.name}</b> <span class="camp-gen">— ${DH.CHARACTERS_BY_ID[h.charId]?.name.split(" ").pop() ?? "family"}, +${h.level} ${h.trait}</span></li>`).join("")}</ul>`
+    : `<div class="camp-empty">No heirlooms forged yet.</div>`;
+  const scarIds = Object.keys(c.scars);
+  const scars = scarIds.length
+    ? `<ul class="camp-list">${scarIds.map((rid) => `<li><b>${DH.ROOMS_BY_ID[rid]?.name ?? rid}</b> <span class="camp-gen">— ${c.scars[rid]}</span></li>`).join("")}</ul>`
+    : `<div class="camp-empty">The house is unmarked… for now.</div>`;
+  const chron = c.chronicle.length
+    ? c.chronicle.slice(-8).map((l) => `<div class="chronicle-line">${l}</div>`).join("")
+    : `<div class="camp-empty">The saga has yet to be written.</div>`;
+  const bonusTxt = TRAIT_NAMES.filter((t) => famState.bonus[t]).map((t) => `+${famState.bonus[t]} ${t}`).join(", ");
+  $("campaign-body").innerHTML =
+    `<div class="camp-chapter">Chapter ${c.chapter}</div>` +
+    `<h2>The ${fam.name.split(" ").pop()} Legacy</h2>` +
+    `<p class="camp-fam"><span>You play <b>${fam.name}</b></span><span class="camp-gen">generation ${famState.gen}${bonusTxt ? " · " + bonusTxt : ""}</span></p>` +
+    `<div class="camp-sec">Heirlooms</div>${heir}` +
+    `<div class="camp-sec">The house remembers</div>${scars}` +
+    `<div class="camp-sec">Chronicle</div>${chron}` +
+    `<button class="btn primary" id="camp-descend">Descend into Chapter ${c.chapter}</button> ` +
+    `<button class="btn" id="camp-close">Not yet</button> ` +
+    `<button class="btn danger" id="camp-abandon">Abandon the legacy</button>`;
+  $("camp-descend").onclick = () => beginChapter();
+  $("camp-close").onclick = closeModals;
+  $("camp-abandon").onclick = () => {
+    if (confirm("Abandon this legacy? The saga will be lost.")) { try { localStorage.removeItem(CAMP_KEY); } catch {} campaign = null; closeModals(); }
+  };
+}
+
+/** Begin a campaign chapter: solo game with the saga's carry-over applied. */
+function beginChapter() {
+  if (!campaign) return;
+  inCampaign = true; legacyShown = false;
+  state = DH.createGame("legacy", (Math.random() * 1e9) | 0);
+  state.difficulty = chosenDifficulty;
+  const human = campaign.humanCharId;
+  const pid = "p" + human;
+  DH.reduce(state, { type: "join", playerId: pid, name: DH.CHARACTERS_BY_ID[human].name });
+  DH.reduce(state, { type: "choose-character", playerId: pid, characterId: human });
+  for (let i = 0; i < 3; i++) DH.reduce(state, { type: "add-bot", playerId: pid });
+  state.campaign = campaignModifiers(campaign); // applied at start-game
+  DH.reduce(state, { type: "start-game", playerId: state.players[0].id });
+  closeModals();
+  $("lobby").style.display = "none";
+  $("game").style.display = "block";
+  Sound.start(); syncSoundBtn();
+  if (!renderer) initScene();
+  onResize();
+  render();
+  driveBots();
+}
+
+/** Resolve a finished chapter: record it, scar the house, advance bloodlines,
+ *  then let the player forge an heirloom before the next chapter. */
+function showLegacyEnd() {
+  if (legacyShown || !campaign) return;
+  legacyShown = true;
+  const c = campaign;
+  const haunt = state.haunt;
+  const heroesWon = state.winner === "heroes";
+  const hn = haunt ? haunt.name : "the dark";
+  c.chronicle.push(
+    `Chapter ${c.chapter} — ${hn}: ` +
+    (heroesWon ? "the household survived." : (haunt && haunt.traitorIds.length === 0 ? "the house consumed them." : "the traitor triumphed.")),
+  );
+  // Scar the room where the haunt began — cursed ground ever after.
+  if (haunt && haunt.startRoomKey && state.house[haunt.startRoomKey]) {
+    const rid = state.house[haunt.startRoomKey].roomId;
+    if (!c.scars[rid]) c.scars[rid] = `Marked in Chapter ${c.chapter}, when ${hn} began here.`;
+  }
+  // Every family that fell this chapter passes to a hardier heir.
+  for (const p of state.players) {
+    if (!p.characterId) continue;
+    const fam = c.families[p.characterId] || (c.families[p.characterId] = { gen: 1, bonus: {} });
+    if (!p.alive) {
+      fam.gen += 1;
+      const t = TRAIT_NAMES[(Math.random() * 4) | 0];
+      fam.bonus[t] = Math.min(3, (fam.bonus[t] || 0) + 1);
+    }
+  }
+  saveCampaign(c);
+  renderLegacyOverlay();
+  $("legacy-overlay").classList.add("show");
+}
+
+function renderLegacyOverlay() {
+  const c = campaign;
+  const me = state.players.find((p) => p.characterId === c.humanCharId);
+  const heroesWon = state.winner === "heroes";
+  const title = heroesWon ? "The household endures" : (state.haunt && state.haunt.traitorIds.length === 0 ? "The house has fed" : "The betrayal is complete");
+  const survivedItems = me && me.alive ? me.inventory.filter((id) => DH.getCard(id)) : [];
+  const forgeable = [...new Set(survivedItems)];
+  let body =
+    `<div class="camp-chapter">Chapter ${c.chapter} ends</div>` +
+    `<h2>${title}</h2>` +
+    `<div class="chronicle-line">${c.chronicle[c.chronicle.length - 1]}</div>`;
+  if (me && me.alive && forgeable.length) {
+    body += `<div class="camp-sec">Claim an heirloom</div>` +
+      `<p class="camp-empty">Name one item your line carried through — it will pass down, stronger.</p>` +
+      `<div class="legacy-pick" id="legacy-pick">` +
+      forgeable.map((id) => {
+        const existing = c.heirlooms.find((h) => h.cardId === id && h.charId === c.humanCharId);
+        const lbl = existing ? `${existing.name} (strengthen)` : (DH.getCard(id)?.name ?? id);
+        return `<button class="btn" data-card="${id}">${lbl}</button>`;
+      }).join("") + `</div><div id="forge-slot"></div>`;
+  } else {
+    body += `<p class="camp-empty">${me && me.alive ? "Your bearer carries nothing to pass down this time." : "Your bearer did not survive — a hardier heir will take up the name."}</p>`;
+  }
+  body += `<button class="btn primary" id="legacy-continue">Continue the saga →</button>`;
+  $("legacy-body").innerHTML = body;
+  $("legacy-continue").onclick = () => advanceChapter();
+  for (const b of document.querySelectorAll("#legacy-pick .btn")) {
+    b.onclick = () => promptForge(b.dataset.card);
+  }
+}
+
+function promptForge(cardId) {
+  const c = campaign;
+  const existing = c.heirlooms.find((h) => h.cardId === cardId && h.charId === c.humanCharId);
+  const def = DH.getCard(cardId);
+  const slot = $("forge-slot");
+  slot.innerHTML =
+    `<div class="heir-name-row"><input id="heir-name" maxlength="34" value="${existing ? existing.name : (def?.name ?? "Heirloom")}" />` +
+    `<button class="btn primary" id="heir-forge">${existing ? "Strengthen" : "Forge"}</button></div>` +
+    `<div class="camp-empty">It will steady its bearer's ${heirloomTrait(cardId)}.</div>`;
+  $("heir-forge").onclick = () => {
+    const name = ($("heir-name").value || def?.name || "Heirloom").slice(0, 34);
+    if (existing) { existing.level = Math.min(3, existing.level + 1); existing.name = name; }
+    else c.heirlooms.push({ cardId, charId: c.humanCharId, name, trait: heirloomTrait(cardId), level: 1 });
+    saveCampaign(c);
+    // lock the choice in
+    $("legacy-pick").querySelectorAll(".btn").forEach((x) => (x.disabled = true));
+    slot.innerHTML = `<div class="chronicle-line">“${name}” is bound to your line.</div>`;
+  };
+}
+
+function advanceChapter() {
+  if (!campaign) return;
+  campaign.chapter += 1;
+  saveCampaign(campaign);
+  inCampaign = false;
+  closeModals(); // dismiss the legacy overlay before showing the saga screen
+  $("game").style.display = "none";
+  $("lobby").style.display = "block";
+  renderCampaignScreen();
+  $("campaign-overlay").classList.add("show");
+}
+
 // ---- game state ----------------------------------------------------------
 let state = null;
 let chosenDifficulty = "standard"; // set in the lobby; scales the haunt
+let campaign = null;      // loaded legacy campaign (when playing a saga)
+let inCampaign = false;   // is the current game a campaign chapter?
+let legacyShown = false;  // has this chapter's end-of-chapter screen shown?
 let lastHauntShown = null;
 let lastStinger = null; // haunt id whose reveal stinger has already played
 let botTimer = null; // pending local bot step
@@ -191,6 +385,7 @@ function buildLobby() {
 
 function beginGame(solo) {
   stopWardrobe();
+  inCampaign = false; // a one-off game is not part of a legacy
   state = DH.createGame("local", (Math.random() * 1e9) | 0);
   state.difficulty = chosenDifficulty; // applied when the house turns
   let roster = solo ? party.slice(0, 1) : party.slice();
@@ -989,6 +1184,11 @@ function updateHUD(legal) {
       `<p>${whoLine}</p>` +
       goalsBlock +
       `<button class="btn primary" onclick="window.__dismiss()">${amT ? "Begin the betrayal" : "Survive"}</button></div>`;
+  } else if (ended && inCampaign) {
+    // A campaign chapter ends into the legacy screen, not the plain result card.
+    ov.style.display = "none";
+    ov.innerHTML = "";
+    showLegacyEnd();
   } else if (ended) {
     ov.style.display = "grid";
     ov.innerHTML = `<div class="result"><div class="rtitle">${state.winner === "heroes" ? "The Heroes Survive" : (state.haunt && state.haunt.traitorIds.length === 0 ? "The House Prevails" : "The Traitor Triumphs")}</div>` +
@@ -1172,6 +1372,17 @@ $("howto-btn").onclick = openHelp;
 $("help-btn").onclick = openHelp;
 $("help-close").onclick = closeHelp;
 helpOv.onclick = (e) => { if (e.target === helpOv) closeHelp(); };
+
+// Legacy campaign entry point
+$("legacy-btn").onclick = openLegacy;
+for (const id of ["campaign-overlay", "legacy-overlay"]) {
+  const ov = $(id);
+  ov.onclick = (e) => { if (e.target === ov && id === "campaign-overlay") ov.classList.remove("show"); };
+}
+{
+  const saved = loadCampaign();
+  if (saved) $("legacy-btn").textContent = `🕯️ Continue Legacy · Ch.${saved.chapter}`;
+}
 
 initWardrobe();
 buildLobby();

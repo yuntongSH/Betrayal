@@ -80,7 +80,11 @@ export function effectiveTrait(p: PlayerState, trait: Trait): number {
 export function roomAura(s: GameState, p: PlayerState): number {
   if (!p.position) return 0;
   const room = s.house[p.position];
-  return room ? ROOMS_BY_ID[room.roomId]?.aura ?? 0 : 0;
+  if (!room) return 0;
+  const base = ROOMS_BY_ID[room.roomId]?.aura ?? 0;
+  // A room scarred by a past campaign chapter is cursed ground (−1 die).
+  const scarred = s.campaign?.scars?.[room.roomId] != null ? -1 : 0;
+  return base + scarred;
 }
 
 export function addLog(
