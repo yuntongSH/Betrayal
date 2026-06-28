@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { reduce } from "../engine";
-import { createGame, addBot, MIN_PLAYERS } from "../setup";
+import { beginTurn, createGame, addBot, MIN_PLAYERS } from "../setup";
 import { botStep, runBotTurn } from "../bot";
 import { getPlayer } from "../state";
+import { connections } from "../house";
+import { neighborKey } from "../grid";
 import type { GameState } from "../types";
 
 function lobbyWithBots(nBots: number): GameState {
@@ -64,14 +66,17 @@ describe("bots", () => {
     expect(Object.keys(s.house).length).toBeGreaterThan(5);
   });
 
-  it("botStep ends the turn once nothing is left to explore (no aimless pacing)", () => {
+  it("does not explore or pace between seen rooms once nothing is left to find", () => {
     const s = lobbyWithBots(3);
     reduce(s, { type: "start-game", playerId: s.players[0]!.id });
     s.decks.rooms = [];
     const step = botStep(s, s.activePlayerId!);
     // With no room drawable anywhere, the bot must not explore and must not pace
-    // between already-seen rooms — it ends its turn.
-    expect(step.action.type).toBe("end-turn");
+    // between already-seen rooms. It may still take a productive deliberate action
+    // (search/investigate) or simply end its turn — never a pointless walk.
+    expect(step.action.type).not.toBe("explore");
+    expect(step.action.type).not.toBe("move-to");
+    expect(["end-turn", "search", "investigate"]).toContain(step.action.type);
   });
 
   it("a bot never paces back and forth between rooms within a single turn", () => {
@@ -88,10 +93,14 @@ describe("bots", () => {
           const { action, endTurnAfter } = botStep(s, pid);
           reduce(s, action);
           if (action.type === "end-turn") break;
-          if (action.type === "move-to") {
+          // The no-pacing invariant is about purposeful EXPLORATION: a bot heads
+          // toward new ground and never re-enters a room it already stood in this
+          // turn (the bouncing the player reported). In the haunt the target set
+          // is foes, which can sit behind the bot — backtracking to hunt them is
+          // legitimate — and a mid-turn omen can flip the phase, so only assert
+          // while still exploring.
+          if (action.type === "move-to" && s.phase === "explore") {
             const pos = getPlayer(s, pid)!.position!;
-            // A purposeful bot heads toward new ground; it never re-enters a room
-            // it already stood in this turn (the bouncing the player reported).
             expect(visited.has(pos)).toBe(false);
             visited.add(pos);
           }
@@ -101,6 +110,52 @@ describe("bots", () => {
           }
         }
       }
+    }
+  });
+
+  it("a critically wounded bot with no item to drink rests to recover", () => {
+    const s = lobbyWithBots(3);
+    reduce(s, { type: "start-game", playerId: s.players[0]!.id });
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    p.inventory = []; // nothing to drink
+    p.traitIndex.might = 1; // one step from the skull
+    // Explore phase, no foes, no items — the bot catches its breath instead of
+    // wandering off into danger.
+    const step = botStep(s, pid);
+    expect(step.action.type).toBe("rest");
+  });
+
+  it("a wounded hero bot barricades a door a monster is about to come through", () => {
+    const s = lobbyWithBots(3);
+    reduce(s, { type: "start-game", playerId: s.players[0]!.id });
+    const pid = s.activePlayerId!;
+    const p = getPlayer(s, pid)!;
+    // A no-traitor "everyone vs the house" haunt, so no ally to swing at first.
+    s.players.forEach((q) => (q.side = "heroes"));
+    s.phase = "haunt";
+    p.traitIndex.might = 1; // one step from the skull — plays defensively
+    const room = s.house[p.position!]!;
+    const monsterRoom = connections(s, p.position!)[0]!; // a connected neighbour
+    s.haunt = {
+      id: "house-rises",
+      name: "The House Rises",
+      traitorIds: [],
+      startedById: pid,
+      startRoomKey: p.position,
+      monsters: [
+        { id: "m1", name: "Foe", position: monsterRoom, might: 3, hp: 5, attackType: "physical" },
+      ],
+      heroGoal: "",
+      traitorGoal: "",
+      vars: {},
+    };
+    beginTurn(s);
+    const step = botStep(s, pid);
+    expect(step.action.type).toBe("barricade");
+    if (step.action.type === "barricade") {
+      // the wedged door is the one the monster would have come through
+      expect(neighborKey(room.floor, room.x, room.y, step.action.door)).toBe(monsterRoom);
     }
   });
 });

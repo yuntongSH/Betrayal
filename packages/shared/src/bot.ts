@@ -10,12 +10,19 @@
  */
 import type { Action } from "./actions";
 import type { GameState, PlayerId, PlayerState } from "./types";
+import { TRAITS } from "./types";
 import { legalMoves, reduce } from "./engine";
 import { getPlayer } from "./state";
 import { openDoors, stepToward } from "./house";
+import { neighborKey } from "./grid";
 import { hasRoomForFloor } from "./decks";
 import { getCard } from "./content";
 import { Rng } from "./rng";
+
+/** Lowest trait track index a player sits at — 0 is the skull (death). */
+function lowestTraitIndex(p: PlayerState): number {
+  return Math.min(...TRAITS.map((t) => p.traitIndex[t] ?? 99));
+}
 
 /** Explored rooms that still have a doorway a new room could be drawn through. */
 function explorableFrontier(s: GameState): Set<string> {
@@ -90,6 +97,30 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
     }
   }
 
+  // Defensive barricade: a hero who's badly hurt walls off a door a monster is
+  // about to come through, buying a few rounds rather than trading blows it can't
+  // win. Reserved for real danger (one step from the skull) so bots still press
+  // the attack when they're healthy. (Past the attack checks: no monster here.)
+  if (s.phase === "haunt" && p.side === "heroes" && legal.barricadeDoors.length && lowestTraitIndex(p) <= 1) {
+    const room = s.house[p.position!];
+    const monsterRooms = new Set(
+      (s.haunt?.monsters ?? []).filter((m) => m.hp > 0 && m.position).map((m) => m.position),
+    );
+    if (room) {
+      for (const dir of legal.barricadeDoors) {
+        if (monsterRooms.has(neighborKey(room.floor, room.x, room.y, dir))) {
+          return { action: { type: "barricade", playerId: pid, door: dir }, endTurnAfter: false };
+        }
+      }
+    }
+  }
+
+  // Rest: critically wounded (a trait one step from the skull) with no item left
+  // to drink — catch your breath to step back from death. Forfeits the turn.
+  if (legal.canRest && lowestTraitIndex(p) <= 1) {
+    return { action: { type: "rest", playerId: pid }, endTurnAfter: true };
+  }
+
   if (s.movementLeft > 0) {
     const rng = new Rng((s.rngState ^ Math.imul(s.turn, 0x9e3779b1) ^ hash(pid)) >>> 0);
 
@@ -118,6 +149,22 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
     //    (legal.doors is already gated to doors that can actually draw a room.)
     if (legal.doors.length > 0) {
       return { action: { type: "explore", playerId: pid, door: rng.pick(legal.doors) }, endTurnAfter: true };
+    }
+
+    // 1b) No new room to find from here, but this room hasn't been rummaged —
+    //     occasionally search it for loot before moving on (gears bots up for
+    //     the haunt). Kept infrequent so bots don't strip-mine the item deck and
+    //     tilt the balance; explore phase only, so haunt bots stay aggressive.
+    if (legal.canSearch && s.phase === "explore" && rng.next() < 0.15) {
+      return { action: { type: "search", playerId: pid }, endTurnAfter: false };
+    }
+
+    // 1c) Occasionally pause to read the omens (a Knowledge check). Pure flavour
+    //     for a watching human — and balance-neutral, since a bot can't act on
+    //     the info, so generous use here won't skew the game. endTurnAfter false
+    //     keeps the turn going (it still has steps to spend).
+    if (legal.canInvestigate && rng.next() < 0.12) {
+      return { action: { type: "investigate", playerId: pid }, endTurnAfter: false };
     }
 
     // 2) Nothing to discover here: head TOWARD the nearest room that still can be
