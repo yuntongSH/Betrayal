@@ -37,6 +37,7 @@ export function createGame(id: string, seed: number): GameState {
     seed,
     rngState: seed >>> 0 || 0x12345678,
     turn: 0,
+    difficulty: "standard",
     players: [],
     order: [],
     activePlayerId: null,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { CHARACTERS, type Action, type Direction, type GameState } from "@dread-hollow/shared";
+import { CHARACTERS, type Action, type Difficulty, type Direction, type GameState } from "@dread-hollow/shared";
 import { Connection, type ServerMessage } from "../net/connection";
 
 /** Bots added for a one-click solo game (1 human + this many bots). */
@@ -28,6 +28,7 @@ interface Store {
   joinRoom: (code: string, name: string) => void;
   playSolo: (name: string) => void;
   addBot: () => void;
+  setDifficulty: (difficulty: Difficulty) => void;
   leave: () => void;
 
   // game intents (player id is injected automatically)
@@ -160,6 +161,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     addBot: () => act((playerId) => ({ type: "add-bot", playerId })),
+    setDifficulty: (difficulty) => act((playerId) => ({ type: "set-difficulty", playerId, difficulty })),
 
     joinRoom: (code, name) => {
       const conn = ensureConn();

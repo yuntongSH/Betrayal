@@ -782,6 +782,38 @@ kbd {
 }
 .btn.act:hover:not(:disabled) { border-color: #6fb3d6; }
 
+.difficulty {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0.2rem 0 0.6rem;
+}
+.diff-label {
+  color: var(--dim, #9a8e80);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-right: 0.2rem;
+}
+.diff-opt {
+  font: inherit;
+  cursor: pointer;
+  color: var(--dim, #9a8e80);
+  background: rgba(30, 24, 20, 0.7);
+  border: 1px solid var(--panel-edge, #3a2f28);
+  border-radius: 7px;
+  padding: 0.32rem 0.7rem;
+  font-size: 0.84rem;
+  transition: 0.15s;
+}
+.diff-opt:hover { color: #f0e2d2; border-color: var(--flame, #e2a85a); }
+.diff-opt.sel {
+  color: #f4e7dd;
+  background: linear-gradient(180deg, #3a2a1c, #241812);
+  border-color: var(--flame, #e2a85a);
+}
+
 /* haunt reveal overlay */
 .haunt-reveal {
   position: absolute;

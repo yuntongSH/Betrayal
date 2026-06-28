@@ -15,6 +15,11 @@ const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("leave"), playerId: z.string() }),
   z.object({ type: z.literal("choose-character"), playerId: z.string(), characterId: z.string() }),
   z.object({ type: z.literal("add-bot"), playerId: z.string() }),
+  z.object({
+    type: z.literal("set-difficulty"),
+    playerId: z.string(),
+    difficulty: z.enum(["relaxed", "standard", "nightmare"]),
+  }),
   z.object({ type: z.literal("start-game"), playerId: z.string() }),
   z.object({ type: z.literal("move-to"), playerId: z.string(), toKey: z.string() }),
   z.object({ type: z.literal("explore"), playerId: z.string(), door: Direction }),

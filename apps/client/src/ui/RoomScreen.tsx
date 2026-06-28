@@ -1,5 +1,11 @@
-import { CHARACTERS, TRAITS } from "@dread-hollow/shared";
+import { CHARACTERS, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+
+const DIFFICULTY_BLURB: Record<string, string> = {
+  relaxed: "Gentler haunts — monsters hit softer and die sooner.",
+  standard: "The tuned, intended challenge.",
+  nightmare: "The house is merciless — stronger, tougher horrors.",
+};
 
 export function RoomScreen() {
   const game = useStore((s) => s.game)!;
@@ -8,6 +14,7 @@ export function RoomScreen() {
   const chooseCharacter = useStore((s) => s.chooseCharacter);
   const startGame = useStore((s) => s.startGame);
   const addBot = useStore((s) => s.addBot);
+  const setDifficulty = useStore((s) => s.setDifficulty);
   const leave = useStore((s) => s.leave);
 
   const me = game.players.find((p) => p.id === playerId);
@@ -88,6 +95,19 @@ export function RoomScreen() {
 
           {me?.isHost ? (
             <>
+              <div className="difficulty" title={DIFFICULTY_BLURB[game.difficulty ?? "standard"]}>
+                <span className="diff-label">Difficulty</span>
+                {DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    className={`diff-opt ${(game.difficulty ?? "standard") === d ? "sel" : ""}`}
+                    onClick={() => setDifficulty(d)}
+                    title={DIFFICULTY_BLURB[d]}
+                  >
+                    {d[0]!.toUpperCase() + d.slice(1)}
+                  </button>
+                ))}
+              </div>
               <button
                 className="btn"
                 disabled={game.players.length >= CHARACTERS.length}

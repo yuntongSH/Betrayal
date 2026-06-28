@@ -143,6 +143,7 @@ function syncSoundBtn() {
 
 // ---- game state ----------------------------------------------------------
 let state = null;
+let chosenDifficulty = "standard"; // set in the lobby; scales the haunt
 let lastHauntShown = null;
 let lastStinger = null; // haunt id whose reveal stinger has already played
 let botTimer = null; // pending local bot step
@@ -191,6 +192,7 @@ function buildLobby() {
 function beginGame(solo) {
   stopWardrobe();
   state = DH.createGame("local", (Math.random() * 1e9) | 0);
+  state.difficulty = chosenDifficulty; // applied when the house turns
   let roster = solo ? party.slice(0, 1) : party.slice();
   if (roster.length === 0) {
     roster = [{ pid: "p" + DH.CHARACTERS[0].id, charId: DH.CHARACTERS[0].id }];
@@ -1153,6 +1155,24 @@ $("begin-btn").onclick = () => beginGame(false);
 $("solo-btn").onclick = () => beginGame(true);
 $("sound-btn").onclick = () => { if (!Sound.started) Sound.start(); else Sound.toggle(); syncSoundBtn(); };
 syncSoundBtn();
+
+// Difficulty selector (lobby)
+for (const b of document.querySelectorAll("#difficulty .diff-opt")) {
+  b.onclick = () => {
+    chosenDifficulty = b.dataset.d;
+    document.querySelectorAll("#difficulty .diff-opt").forEach((o) => o.classList.toggle("sel", o === b));
+  };
+}
+
+// How-to-play overlay
+const helpOv = $("help-overlay");
+const openHelp = () => helpOv.classList.add("show");
+const closeHelp = () => helpOv.classList.remove("show");
+$("howto-btn").onclick = openHelp;
+$("help-btn").onclick = openHelp;
+$("help-close").onclick = closeHelp;
+helpOv.onclick = (e) => { if (e.target === helpOv) closeHelp(); };
+
 initWardrobe();
 buildLobby();
 wardrobeShow(DH.CHARACTERS[0].id);

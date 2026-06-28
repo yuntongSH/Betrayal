@@ -588,6 +588,11 @@ export function reduce(s: GameState, action: Action): GameState {
       if (host?.isHost) addBot(s);
       break;
     }
+    case "set-difficulty": {
+      const host = getPlayer(s, action.playerId);
+      if (host?.isHost && s.phase === "lobby") s.difficulty = action.difficulty;
+      break;
+    }
     case "start-game": {
       const host = getPlayer(s, action.playerId);
       if (host?.isHost) startGame(s);

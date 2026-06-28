@@ -1,4 +1,4 @@
-import type { CardId, CharacterId, Direction, PlayerId } from "./types";
+import type { CardId, CharacterId, Difficulty, Direction, PlayerId } from "./types";
 
 /**
  * Player intents. The authoritative engine validates every one of these against
@@ -10,6 +10,8 @@ export type Action =
   | { type: "choose-character"; playerId: PlayerId; characterId: CharacterId }
   /** Host adds a computer-controlled player. */
   | { type: "add-bot"; playerId: PlayerId }
+  /** Host sets the difficulty (scales the haunt's monsters) before the game starts. */
+  | { type: "set-difficulty"; playerId: PlayerId; difficulty: Difficulty }
   | { type: "start-game"; playerId: PlayerId }
   /** Walk into an already-placed, connected room (or take a stair link). */
   | { type: "move-to"; playerId: PlayerId; toKey: string }

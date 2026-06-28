@@ -34,6 +34,16 @@ export type Phase = "lobby" | "explore" | "haunt" | "ended";
 
 export type Side = "heroes" | "traitor";
 
+/** Difficulty scales the monsters of the haunt (Standard is the tuned baseline). */
+export type Difficulty = "relaxed" | "standard" | "nightmare";
+export const DIFFICULTIES: readonly Difficulty[] = ["relaxed", "standard", "nightmare"];
+/** Multiplier applied to monster Might & HP when the house turns. */
+export const DIFFICULTY_FACTOR: Record<Difficulty, number> = {
+  relaxed: 0.7,
+  standard: 1,
+  nightmare: 1.35,
+};
+
 // ---------------------------------------------------------------------------
 // Characters
 // ---------------------------------------------------------------------------
@@ -225,6 +235,8 @@ export interface GameState {
   rngState: number;
   /** Round counter (increments when turn returns to the first player). */
   turn: number;
+  /** Chosen in the lobby; scales the haunt's monsters. Absent = standard. */
+  difficulty?: Difficulty;
   players: PlayerState[];
   /** Turn order (player ids). */
   order: PlayerId[];

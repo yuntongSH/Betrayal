@@ -4,6 +4,7 @@
  * so the engine can call into it without an import cycle.
  */
 import type { GameState, MonsterState, PlayerId, Side, Trait } from "./types";
+import { DIFFICULTY_FACTOR } from "./types";
 import { Rng } from "./rng";
 import { HAUNTS, HAUNTS_BY_ID, OMENS, ROOMS } from "./content";
 import type { HauntContext } from "./content";
@@ -106,6 +107,17 @@ export function triggerHaunt(
   };
   def.setup(s, traitorIds, ctx);
   s.rngState = ctx.rng.state;
+
+  // Dynamic balance: scale the freshly-spawned monsters to the chosen difficulty
+  // (Standard = 1, the tuned baseline; Relaxed softens them, Nightmare hardens).
+  const factor = DIFFICULTY_FACTOR[s.difficulty ?? "standard"] ?? 1;
+  if (factor !== 1) {
+    for (const m of s.haunt.monsters) {
+      m.might = Math.max(1, Math.round(m.might * factor));
+      m.hp = Math.max(1, Math.round(m.hp * factor));
+      m.maxHp = m.hp;
+    }
+  }
 
   s.phase = "haunt";
   const traitorNames = traitorIds

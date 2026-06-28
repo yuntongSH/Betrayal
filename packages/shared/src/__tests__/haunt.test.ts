@@ -76,6 +76,41 @@ describe("every haunt resolves under bot play (no soft-locks)", () => {
   }
 });
 
+describe("difficulty scales the haunt's monsters", () => {
+  // Trigger the same scenario at each difficulty and total its monsters' Might+HP.
+  function monsterTotal(difficulty: GameState["difficulty"], roomKey: string): number {
+    const s = startedGame();
+    getPlayer(s, "a")!.position = roomKey; // the trigger room steers haunt selection
+    s.difficulty = difficulty;
+    triggerHaunt(s, "a");
+    return (s.haunt?.monsters ?? []).reduce((acc, m) => acc + m.might + m.hp, 0);
+  }
+
+  it("Nightmare hardens and Relaxed softens, with Standard between", () => {
+    // Find a starting room whose haunt actually spawns monsters (a few haunts,
+    // like The Hunt, summon none — the traitor is the threat).
+    const rooms = [key("ground", 0, 2), key("ground", 0, 1), key("ground", 0, 0)];
+    const room = rooms.find((r) => monsterTotal("standard", r) > 0)!;
+    expect(room).toBeTruthy();
+
+    const relaxed = monsterTotal("relaxed", room);
+    const standard = monsterTotal("standard", room);
+    const nightmare = monsterTotal("nightmare", room);
+    expect(nightmare).toBeGreaterThan(standard);
+    expect(standard).toBeGreaterThan(relaxed);
+  });
+
+  it("only the host can change difficulty, and only in the lobby", () => {
+    const s = createGame("d", 1);
+    reduce(s, { type: "join", playerId: "a", name: "A" });
+    reduce(s, { type: "join", playerId: "b", name: "B" });
+    reduce(s, { type: "set-difficulty", playerId: "b", difficulty: "nightmare" });
+    expect(s.difficulty).toBe("standard"); // b isn't the host
+    reduce(s, { type: "set-difficulty", playerId: "a", difficulty: "nightmare" });
+    expect(s.difficulty).toBe("nightmare"); // a is the host
+  });
+});
+
 describe("trait tracks", () => {
   it("dropping a trait onto the skull space kills the explorer", () => {
     const s = startedGame();
