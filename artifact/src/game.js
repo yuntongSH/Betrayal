@@ -45,6 +45,11 @@ function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.P
 let state = null;
 let lastHauntShown = null;
 let botTimer = null; // pending local bot step
+let lastBotId = null; // which bot we're currently watching (for turn-handoff beats)
+// Bot pacing — slow enough for a human to follow what each player is doing: a
+// longer beat when a NEW bot takes over, steady steps within that bot's turn.
+const BOT_STEP_MS = 950;
+const BOT_TURN_START_MS = 1350;
 const party = []; // { pid, charId }
 
 // ---- three.js objects ----------------------------------------------------
@@ -485,12 +490,22 @@ function act(action) {
   driveBots();
 }
 
-/** Local bot driver: step the active bot on a timer, then hand back to humans. */
+/** Surface the latest thing the active bot did as an on-screen cue, so a human
+ *  can follow the other players' turns by watching rather than reading the log. */
+function announceBot(fromLogLen) {
+  const fresh = state.log.slice(fromLogLen);
+  if (fresh.length) toast(fresh[0].text);
+}
+
+/** Local bot driver: step the active bot on a timer, then hand back to humans.
+ *  Paced so a human can watch each move; a new bot's first beat is longer. */
 function driveBots() {
   if (botTimer) return;
   if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
   const active = state.players.find((p) => p.id === state.activePlayerId);
-  if (!active || !active.isBot) return;
+  if (!active || !active.isBot) { lastBotId = null; return; }
+  const newTurn = active.id !== lastBotId;
+  lastBotId = active.id;
   botTimer = setTimeout(() => {
     botTimer = null;
     const a = state.players.find((p) => p.id === state.activePlayerId);
@@ -499,6 +514,7 @@ function driveBots() {
       return;
     }
     const before = { pos: a.position, move: state.movementLeft };
+    const logLen = state.log.length;
     const step = DH.botStep(state, a.id);
     DH.reduce(state, step.action);
     const stalled =
@@ -509,9 +525,10 @@ function driveBots() {
     if ((step.endTurnAfter && step.action.type !== "end-turn") || stalled) {
       if (state.activePlayerId === a.id) DH.reduce(state, { type: "end-turn", playerId: a.id });
     }
+    announceBot(logLen);
     render();
     driveBots();
-  }, 650);
+  }, newTurn ? BOT_TURN_START_MS : BOT_STEP_MS);
 }
 
 // =========================================================================
@@ -573,10 +590,14 @@ function updateHUD(legal) {
   const haunt = state.phase === "haunt" || ended;
   const botActing = !!active && active.isBot && !ended;
 
+  const activeColor = active?.characterId ? DH.CHARACTERS_BY_ID[active.characterId]?.color : null;
+  const activeName = activeColor
+    ? `<span class="turn-name" style="color:${activeColor}">${active.name}</span>`
+    : (active?.name ?? "…");
   $("hud-top").innerHTML =
     `<div class="hud-turn">${state.phase === "haunt" ? '<span class="haunt-tag">THE HAUNT · </span>' : ""}` +
-    `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}Round ${state.turn} — ${active?.name ?? "…"}` +
-    `${!ended ? (botActing ? ' <span class="muted">(bot…)</span>' : ' <span class="you-tag">(your move)</span>') : ""}</div>` +
+    `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}Round ${state.turn} — ${activeName}` +
+    `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag">(your move)</span>') : ""}</div>` +
     `${!ended ? `<div class="hud-move">Movement: ${state.movementLeft}</div>` : ""}`;
 
   // party + log
@@ -726,7 +747,7 @@ function animate() {
       const [cx, cy, cz] = roomWorld(room);
       camDesired.set(cx, cy + 0.6, cz);
     }
-    controls.target.lerp(camDesired, 0.025);
+    controls.target.lerp(camDesired, 0.045);
   }
   controls.update();
 
