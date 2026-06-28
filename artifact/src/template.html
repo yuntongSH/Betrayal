@@ -31,12 +31,15 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .muted{color:var(--dim)} .small{font-size:.78rem}
 
 /* lobby */
-#lobby{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.2rem;gap:1rem;text-align:center}
+/* Scrolls as a whole and top-aligns so a tall party list (wardrobe + grid +
+   actions) is never clipped on short viewports — center-justify + overflow hid
+   the lower characters and the Begin/Solo buttons with no way to reach them. */
+#lobby{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:1.2rem 1.2rem 2rem;gap:1rem;text-align:center;overflow-y:auto}
 .title{font-size:2.6rem;margin:0;letter-spacing:.04em;text-shadow:0 0 24px rgba(232,168,90,.25)}
 .title .f{animation:flick 3s infinite;filter:drop-shadow(0 0 10px var(--flame))}
 .tagline{color:var(--dim);font-style:italic;max-width:520px;margin:0}
 .char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.7rem;max-width:780px;width:100%;
-  max-height:54vh;overflow:auto;padding:.3rem}
+  padding:.3rem}
 .char-card{display:flex;gap:.7rem;text-align:left;padding:.7rem;border-radius:12px;background:var(--panel);
   border:1px solid var(--edge);border-left-width:4px;cursor:pointer;color:var(--ink);font:inherit}
 .char-card:hover{transform:translateY(-2px)}
