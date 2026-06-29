@@ -1,9 +1,11 @@
-import { useMemo, useRef } from "react";
+import { Suspense, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { buildExplorerFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
+import { AVATARS } from "./avatars";
+import { Avatar } from "./Avatar";
 
 /** Shortest-arc angle lerp so a turn never spins the long way round. */
 function lerpAngle(a: number, b: number, t: number): number {
@@ -28,9 +30,12 @@ export function PlayerToken({
   isMe: boolean;
   side: "heroes" | "traitor" | null;
 }) {
+  // Prefer a real rigged model when one is mapped for this character; otherwise
+  // fall back to the procedural figure (also the Suspense fallback while loading).
+  const entry = archetype ? AVATARS[archetype] : undefined;
   const figure = useMemo(
-    () => buildExplorerFigure(color, { archetype }),
-    [color, archetype],
+    () => (entry ? null : buildExplorerFigure(color, { archetype })),
+    [entry, color, archetype],
   );
   const group = useRef<Group>(null);
   // a stable per-figure phase so identical figures don't bob in lockstep
@@ -66,13 +71,19 @@ export function PlayerToken({
     }
     g.rotation.y = yaw.current;
 
-    // Local idle animation (breathing / sway / bob) layered on top, around y≈0.
-    animateFigure(figure, t, { active: isActive, phase: phase.current, baseY: 0.02 });
+    // Local idle animation only for the procedural figure; the glTF avatar plays
+    // its own Idle clip via useAnimations.
+    if (figure) animateFigure(figure, t, { active: isActive, phase: phase.current, baseY: 0.02 });
   });
 
   return (
     <group ref={group}>
-      <primitive object={figure} />
+      {figure && <primitive object={figure} />}
+      {entry && (
+        <Suspense fallback={null}>
+          <Avatar entry={entry} />
+        </Suspense>
+      )}
 
       {/* a bright pillar of light marks whoever is up */}
       {isActive && (

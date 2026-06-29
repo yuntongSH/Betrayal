@@ -48,6 +48,8 @@ jobs:
         run: |
           mkdir -p _site
           cp artifact/dread-hollow.html _site/index.html
+          # ship the 3D character models referenced by the game (models/people/*)
+          cp -r artifact/models _site/models
           # avoid Jekyll processing of the static file
           touch _site/.nojekyll
 

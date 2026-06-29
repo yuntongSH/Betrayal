@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor } from "@dread-hollow/decor";
 
 const DH = window.DH;
@@ -12,6 +14,97 @@ const WALL_H = 2.7;
 const FLOOR_GAP = 7;
 const FLOOR_Y = { basement: -FLOOR_GAP, ground: 0, upper: FLOOR_GAP };
 const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", knowledge: "#7a6db0" };
+
+// ---- Path A: real rigged human models (glTF) -----------------------------
+// Maps a character archetype -> a model URL. When present, the wardrobe preview
+// and the in-game token load that rigged .glb (with its idle animation) instead
+// of the code-built primitive figure. Swap the URL for a Ready Player Me avatar
+// (.glb) to ship a real character — the wiring below is identical. (Soldier.glb
+// is a three.js example human, MIT-licensed, standing in so the pipeline is
+// demonstrable right now; it loads from the browser at runtime over the network.)
+// Neutral CC0 humans (Quaternius Universal Base Characters), hosted in-repo.
+// Two faced, realistic-proportioned bodies (male/female) themed per character by
+// height + tint; they ship in T-pose with no animation, so we lower the arms
+// procedurally into a relaxed stance (see attachAvatar). The procedural figure
+// is the fallback if a model fails to load.
+// Clothed, animated CC0 humans (Quaternius Ultimate Modular Men/Women) — each a
+// self-contained glTF with an Idle clip, mapped thematically to our cast and
+// themed by height. The procedural figure remains the offline fallback.
+const PPL = "models/people";
+const EXPLORER_MODELS = {
+  crow:   { url: `${PPL}/M_Farmer.gltf`,     h: 1.9 , tint: 0x6b4a2c }, // rustic, burly strongman
+  vance:  { url: `${PPL}/W_Formal.gltf`,     h: 1.68, tint: 0x46615f }, // cool clinical grey-teal
+  odette: { url: `${PPL}/W_Witch.gltf`,      h: 1.66, tint: 0x4a2d63 }, // deep séance violet
+  tobias: { url: `${PPL}/M_King.gltf`,       h: 1.75, tint: 0x40301f }, // dark monk-habit brown
+  thorne: { url: `${PPL}/M_Adventurer.gltf`, h: 1.8 , tint: 0x44472c }, // muted field olive
+  penny:  { url: `${PPL}/W_Casual.gltf`,     h: 1.36, tint: 0x8a6a30 }, // warm muted amber
+};
+let POSE_ARM = 1.15; // radians the upper arms drop from T-pose toward the sides
+const _gltfLoader = new GLTFLoader();
+const _gltfCache = new Map(); // url -> Promise<gltf>
+function loadGLTF(url) {
+  if (!_gltfCache.has(url)) {
+    _gltfCache.set(url, new Promise((res, rej) => _gltfLoader.load(url, res, undefined, rej)));
+  }
+  return _gltfCache.get(url);
+}
+/** Load the avatar for `archetype` into `group` (feet at y=0, ~targetH tall),
+ *  starting an idle clip whose mixer is pushed to `mixers`. Async — swaps in on
+ *  load; returns true if a model exists for this archetype. */
+function attachAvatar(group, archetype, targetH, mixers) {
+  const entry = EXPLORER_MODELS[archetype];
+  if (!entry) return false;
+  const url = entry.url;
+  const h = entry.h || targetH;
+  const rotY = entry.rotY || 0;
+  loadGLTF(url)
+    .then((gltf) => {
+      const model = cloneSkinned(gltf.scene);
+      model.rotation.y = rotY;
+      model.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true;
+        o.frustumCulled = false;
+        // Per-instance materials so a character's tint can't leak to others that
+        // share this body, then lerp gently toward the identity colour.
+        if (entry.tint != null) {
+          o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+            if (m.color) m.color.lerp(new THREE.Color(entry.tint), 0.28);
+          });
+        }
+      });
+      // These bodies load in T-pose with no animation — drop the upper arms to a
+      // relaxed stance so they read as a person standing, not a mannequin.
+      if (entry.pose) {
+        const la = model.getObjectByName("upperarm_l");
+        const ra = model.getObjectByName("upperarm_r");
+        if (la) la.rotation.z = -POSE_ARM;
+        if (ra) ra.rotation.z = POSE_ARM;
+      }
+      group.add(model);
+      group.updateMatrixWorld(true);
+      // Skinned-mesh bounds are unreliable until matrices update; measure now,
+      // and clamp to a plausible human height if the box came back degenerate.
+      let box = new THREE.Box3().setFromObject(model);
+      let size = box.max.y - box.min.y;
+      if (!(size > 0.3 && size < 6)) size = 1.8; // clamp degenerate skinned bounds
+      model.scale.setScalar(h / size);
+      group.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(model);
+      if (isFinite(box.min.y)) model.position.y -= box.min.y; // feet at the origin
+      group.userData.avatar = model;
+      if (gltf.animations && gltf.animations.length) {
+        const mixer = new THREE.AnimationMixer(model);
+        const idle = gltf.animations.find((a) => /idle/i.test(a.name)) || gltf.animations[0];
+        mixer.clipAction(idle).play();
+        mixers.push(mixer);
+      }
+    })
+    .catch((e) => console.warn("[avatar] load failed", url, e));
+  return true;
+}
+const tokenAvatarMixers = []; // advanced each frame in animate()
 const SPECIAL_GLOW = {
   "heal-sanity": 0x6fb6b5, "heal-might": 0xe8a85a, "drain-speed": 0x5a6f9a,
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
@@ -807,6 +900,9 @@ function makePlayerToken(p) {
   const char = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
   const g = new THREE.Group();
   const fig = buildExplorerFigure(char?.color ?? "#aaaaaa", { archetype: p.characterId });
+  if (attachAvatar(g, p.characterId, 1.6, tokenAvatarMixers)) {
+    fig.visible = false; // real model takes over; keep fig hidden for cheap cleanup
+  }
   g.add(fig);
 
   const beamLight = new THREE.PointLight(0xe8a85a, 5, 4, 2);
@@ -1245,6 +1341,7 @@ function animate() {
   const t = performance.now() / 1000;
   const dt = lastFrameT ? Math.min(0.05, t - lastFrameT) : 0.016;
   lastFrameT = t;
+  for (const m of tokenAvatarMixers) m.update(dt); // drive rigged-avatar idle clips
 
   // soft camera-follow: ease the orbit target toward the active player's room
   // (only nudges `target`, so the user can still orbit/zoom freely)
@@ -1320,6 +1417,8 @@ function animate() {
 // WARDROBE — an animated 3D preview of the focused character at select time
 // =========================================================================
 let wScene, wCam, wRenderer, wTurn, wFig, wRAF;
+const wMixers = []; // wardrobe-preview avatar animation mixers
+let wLastT = 0;
 function initWardrobe() {
   const stage = $("wardrobe-stage");
   if (!stage) return;
@@ -1346,8 +1445,11 @@ function initWardrobe() {
     if (!wRenderer) return;
     wRAF = requestAnimationFrame(loop);
     const t = performance.now() / 1000;
+    const dt = wLastT ? Math.min(0.05, t - wLastT) : 0.016;
+    wLastT = t;
     wTurn.rotation.y = t * 0.5;
-    if (wFig) animateFigure(wFig, t, { active: true, baseY: 0.02 });
+    for (const m of wMixers) m.update(dt);
+    if (wFig && wFig.visible) animateFigure(wFig, t, { active: true, baseY: 0.02 });
     wRenderer.render(wScene, wCam);
   })();
 }
@@ -1364,7 +1466,12 @@ function wardrobeShow(charId) {
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
     });
   }
+  // Drop any previously-loaded rigged avatar + its mixer before showing the next.
+  if (wTurn.userData.avatar) { wTurn.remove(wTurn.userData.avatar); wTurn.userData.avatar = null; }
+  wMixers.length = 0;
   wFig = buildExplorerFigure(c.color, { archetype: charId });
+  // If this character has a real rigged model, show it instead of the figure.
+  if (attachAvatar(wTurn, charId, 1.5, wMixers)) wFig.visible = false;
   wTurn.add(wFig);
   $("w-name").textContent = c.name;
   $("w-title").textContent = c.title;
