@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -48,10 +48,34 @@ function loadGLTF(url) {
   }
   return _gltfCache.get(url);
 }
+// Materials that ARE the person (face, hair, eyes) stay their natural colour —
+// tinting them made every face look dyed. Identity colour lands on clothing only.
+const PERSON_MATS = /skin|hair|eyebrow|eye|beard|teeth/i;
+
+/** Crossfade the avatar under `group` to the named clip (idle/walk/death/wave).
+ *  Safe to call before the async model arrives — the wish is remembered and
+ *  applied on load. Death plays once and freezes on the last frame. */
+function setAvatarClip(group, name, fade = 0.25) {
+  group.userData.wantClip = name;
+  const anim = group.userData.anim;
+  if (!anim) return;
+  const next = anim.actions[name] || anim.actions.idle;
+  if (!next || anim.current === next) return;
+  next.reset();
+  if (name === "death" || name === "wave") {
+    next.setLoop(THREE.LoopOnce, 1);
+    next.clampWhenFinished = name === "death";
+  }
+  next.fadeIn(fade).play();
+  if (anim.current) anim.current.fadeOut(fade);
+  anim.current = next;
+}
+
 /** Load the avatar for `archetype` into `group` (feet at y=0, ~targetH tall),
- *  starting an idle clip whose mixer is pushed to `mixers`. Async — swaps in on
- *  load; returns true if a model exists for this archetype. */
-function attachAvatar(group, archetype, targetH, mixers) {
+ *  registering idle/walk/death/wave clips on group.userData.anim (mixer pushed
+ *  to `mixers`). Async — swaps in on load; returns true if a model exists.
+ *  opts.greet: open with a wave before settling into idle (lobby wardrobe). */
+function attachAvatar(group, archetype, targetH, mixers, opts = {}) {
   const entry = EXPLORER_MODELS[archetype];
   if (!entry) return false;
   const url = entry.url;
@@ -66,11 +90,12 @@ function attachAvatar(group, archetype, targetH, mixers) {
         o.castShadow = true;
         o.frustumCulled = false;
         // Per-instance materials so a character's tint can't leak to others that
-        // share this body, then lerp gently toward the identity colour.
+        // share this body, then lerp the CLOTHES gently toward the identity
+        // colour — skin, hair and eyes keep their natural tones.
         if (entry.tint != null) {
           o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
           (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
-            if (m.color) m.color.lerp(new THREE.Color(entry.tint), 0.28);
+            if (m.color && !PERSON_MATS.test(m.name || "")) m.color.lerp(new THREE.Color(entry.tint), 0.3);
           });
         }
       });
@@ -82,6 +107,9 @@ function attachAvatar(group, archetype, targetH, mixers) {
         if (la) la.rotation.z = -POSE_ARM;
         if (ra) ra.rotation.z = POSE_ARM;
       }
+      // If a slower load resolves after a newer one (rapid wardrobe hovering),
+      // the last to land wins — never two bodies in one group.
+      if (group.userData.avatar) group.remove(group.userData.avatar);
       group.add(model);
       group.updateMatrixWorld(true);
       // Skinned-mesh bounds are unreliable until matrices update; measure now,
@@ -96,10 +124,34 @@ function attachAvatar(group, archetype, targetH, mixers) {
       group.userData.avatar = model;
       if (gltf.animations && gltf.animations.length) {
         const mixer = new THREE.AnimationMixer(model);
-        const idle = gltf.animations.find((a) => /idle/i.test(a.name)) || gltf.animations[0];
-        mixer.clipAction(idle).play();
+        const pick = (re) => {
+          const c = gltf.animations.find((a) => re.test(a.name));
+          return c ? mixer.clipAction(c) : null;
+        };
+        const anim = {
+          mixer,
+          actions: {
+            idle: pick(/^idle$/i) || mixer.clipAction(gltf.animations[0]),
+            walk: pick(/^walk$/i),
+            death: pick(/^death$/i),
+            wave: pick(/^wave$/i),
+          },
+          current: null,
+        };
+        group.userData.anim = anim;
+        // A wardrobe greeting settles into idle once the wave finishes.
+        mixer.addEventListener("finished", (e) => {
+          if (e.action === anim.actions.wave) setAvatarClip(group, "idle", 0.35);
+        });
+        const want = group.userData.wantClip;
+        setAvatarClip(group, want || (opts.greet && anim.actions.wave ? "wave" : "idle"), 0);
         mixers.push(mixer);
+        // Settle the skeleton out of its T-pose bind stance before hanging the
+        // keepsake — its attach transform reads the bone's current pose.
+        mixer.update(0.03);
       }
+      // Their keepsake rides a bone: Thorne's camera, Tobias's lit lantern…
+      attachKeepsake(model, archetype);
     })
     .catch((e) => console.warn("[avatar] load failed", url, e));
   return true;
@@ -960,7 +1012,9 @@ function disposeToken(tok) {
 // loop eases the actual position toward it, so movement reads as travel).
 function syncTokens(legal) {
   const byKey = {};
-  for (const p of state.players) if (p.alive && p.position) (byKey[p.position] ??= []).push({ kind: "p", id: p.id, p });
+  // The dead stay where the house took them — a fallen body in the room reads
+  // the story back to everyone who walks past it.
+  for (const p of state.players) if (p.position) (byKey[p.position] ??= []).push({ kind: "p", id: p.id, p });
   for (const m of state.haunt?.monsters ?? []) if (m.hp > 0 && m.position) (byKey[m.position] ??= []).push({ kind: "m", id: m.id, m });
 
   const attackable = new Set(legal.attackMonsters);
@@ -977,13 +1031,20 @@ function syncTokens(legal) {
       if (o.kind === "p") {
         if (!tok) { tok = makePlayerToken(o.p); tokenCache.set(o.id, tok); }
         tok.target.set(wx + ox, wy, wz + oz);
-        tok.active = state.activePlayerId === o.p.id;
+        const dead = !o.p.alive;
+        if (dead && !tok.dead) {
+          // First frame of death: the body falls where it stood and stays.
+          tok.dead = true;
+          setAvatarClip(tok.group, "death", 0.3);
+          if (tok.fig.visible) { tok.fig.rotation.x = -Math.PI / 2; tok.fig.position.y = 0.12; }
+        }
+        tok.active = !dead && state.activePlayerId === o.p.id;
         tok.beam.visible = tok.active;
         tok.beamLight.visible = tok.active;
         const traitor = o.p.side === "traitor";
-        tok.traitorLight.visible = traitor;
-        tok.el.className = "tok-lbl" + (traitor ? " traitor" : "");
-        tok.el.textContent = o.p.name + (traitor ? " ☠" : "");
+        tok.traitorLight.visible = traitor && !dead;
+        tok.el.className = "tok-lbl" + (traitor ? " traitor" : "") + (dead ? " dead" : "");
+        tok.el.textContent = dead ? "✝ " + o.p.name : o.p.name + (traitor ? " ☠" : "");
       } else {
         if (!tok) { tok = makeMonsterToken(o.m); tokenCache.set(o.id, tok); }
         tok.target.set(wx + ox, wy, wz + oz);
@@ -1398,7 +1459,15 @@ function animate() {
       tok.yaw += d * (1 - Math.exp(-12 * dt));
     }
     g.rotation.y = tok.yaw;
-    animateFigure(tok.fig, t, { active: tok.active, phase: tok.phase, baseY: tok.baseY });
+    // Feet match the glide: the rigged body strides while covering ground and
+    // settles back to idle on arrival. The dead stay exactly as they fell.
+    if (tok.kind === "p" && !tok.dead) {
+      const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
+      // Hysteresis so the clip can't flap right at the threshold.
+      tok.walking = speed > (tok.walking ? 0.22 : 0.5);
+      setAvatarClip(g, tok.walking ? "walk" : "idle");
+    }
+    if (!tok.dead) animateFigure(tok.fig, t, { active: tok.active, phase: tok.phase, baseY: tok.baseY });
   }
 
   // Ease every door toward its open/closed target and swing the leaf on its hinge.
@@ -1429,8 +1498,9 @@ function initWardrobe() {
   stage.appendChild(wRenderer.domElement);
   wScene = new THREE.Scene();
   wCam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
-  wCam.position.set(0, 1.05, 2.45);
-  wCam.lookAt(0, 0.82, 0);
+  // Framed for the tallest explorer (Crow, 1.9) with a little headroom.
+  wCam.position.set(0, 1.12, 2.85);
+  wCam.lookAt(0, 0.92, 0);
   wScene.add(new THREE.AmbientLight(0x4a4660, 0.75));
   const key = new THREE.DirectionalLight(0xffe6c2, 1.6); key.position.set(2.5, 4, 3); wScene.add(key);
   const fill = new THREE.DirectionalLight(0x6a86c0, 0.55); fill.position.set(-3, 2, 1.5); wScene.add(fill);
@@ -1468,14 +1538,34 @@ function wardrobeShow(charId) {
   }
   // Drop any previously-loaded rigged avatar + its mixer before showing the next.
   if (wTurn.userData.avatar) { wTurn.remove(wTurn.userData.avatar); wTurn.userData.avatar = null; }
+  wTurn.userData.anim = null;
+  wTurn.userData.wantClip = null;
   wMixers.length = 0;
   wFig = buildExplorerFigure(c.color, { archetype: charId });
-  // If this character has a real rigged model, show it instead of the figure.
-  if (attachAvatar(wTurn, charId, 1.5, wMixers)) wFig.visible = false;
+  // If this character has a real rigged model, show it instead of the figure —
+  // it greets you with a wave, then settles into its idle.
+  if (attachAvatar(wTurn, charId, 1.5, wMixers, { greet: true })) wFig.visible = false;
   wTurn.add(wFig);
   $("w-name").textContent = c.name;
-  $("w-title").textContent = c.title;
+  $("w-title").textContent = `${c.title}, ${c.age}`;
   $("w-flavor").textContent = c.flavor;
+  // The dossier: what the house already knows about this guest.
+  const dossier = [
+    ["Born", c.birthday],
+    ["Keeps", c.keepsake],
+    ["Fears", c.fear],
+    ["Hobbies", c.hobbies.join(" · ")],
+  ];
+  $("w-dossier").innerHTML = dossier
+    .map(([k, v]) => `<div class="dossier-row"><span class="dossier-key">${k}</span><span>${v}</span></div>`)
+    .join("");
+  $("w-bio").textContent = c.bio;
+  // The red thread: the bond tying this explorer to another of the six.
+  const bondTo = DH.CHARACTERS_BY_ID[c.bond.with];
+  const bondEl = $("w-bond");
+  bondEl.innerHTML =
+    `<span class="bond-thread">●</span> <button class="bond-link" style="color:${bondTo.color}">${bondTo.name}</button> — ${c.bond.text}`;
+  bondEl.querySelector(".bond-link").onclick = () => wardrobeShow(bondTo.id);
   $("w-traits").innerHTML = DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("");
   const inParty = party.some((p) => p.charId === charId);
   const btn = $("w-pick");
@@ -1493,6 +1583,12 @@ function stopWardrobe() {
   if (wRAF) cancelAnimationFrame(wRAF);
   wRenderer = null;
 }
+
+// Headless-verification handle (scripts/screenshot.mjs): read the live state
+// and force a re-render after mutating it. Harmless in normal play.
+Object.defineProperty(window, "__dh", {
+  value: { get state() { return state; }, render: () => render() },
+});
 
 // boot
 $("begin-btn").onclick = () => beginGame(false);

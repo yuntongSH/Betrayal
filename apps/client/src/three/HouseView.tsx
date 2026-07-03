@@ -177,6 +177,7 @@ export function HouseView() {
                 isActive={game.activePlayerId === p.id}
                 isMe={p.id === myId}
                 side={p.side}
+                alive={p.alive}
               />
             );
           }

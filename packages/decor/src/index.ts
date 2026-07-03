@@ -32,6 +32,7 @@ import {
 } from "./detail";
 
 export * from "./materials";
+export { attachKeepsake } from "./props";
 
 /**
  * @dread-hollow/decor

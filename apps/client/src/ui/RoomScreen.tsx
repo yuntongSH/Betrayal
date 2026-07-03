@@ -1,4 +1,6 @@
-import { CHARACTERS, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
+import { useState } from "react";
+import { CHARACTERS, CHARACTERS_BY_ID, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
+import type { CharacterDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 
 const DIFFICULTY_BLURB: Record<string, string> = {
@@ -6,6 +8,40 @@ const DIFFICULTY_BLURB: Record<string, string> = {
   standard: "The tuned, intended challenge.",
   nightmare: "The house is merciless — stronger, tougher horrors.",
 };
+
+/** The dossier: what the house already knows about this guest. */
+function Dossier({ c }: { c: CharacterDef }) {
+  const bondTo = CHARACTERS_BY_ID[c.bond.with]!;
+  const rows: [string, string][] = [
+    ["Born", c.birthday],
+    ["Keeps", c.keepsake],
+    ["Fears", c.fear],
+    ["Hobbies", c.hobbies.join(" · ")],
+  ];
+  return (
+    <div className="dossier" style={{ borderLeftColor: c.color }}>
+      <div className="dossier-head">
+        <strong>{c.name}</strong>
+        <em className="muted">
+          {c.title}, {c.age}
+        </em>
+      </div>
+      <div className="dossier-rows">
+        {rows.map(([k, v]) => (
+          <div key={k} className="dossier-row">
+            <span className="dossier-key">{k}</span>
+            <span>{v}</span>
+          </div>
+        ))}
+      </div>
+      <p className="dossier-bio">{c.bio}</p>
+      <p className="dossier-bond">
+        <span className="bond-thread">●</span>{" "}
+        <span style={{ color: bondTo.color, fontWeight: 600 }}>{bondTo.name}</span> — {c.bond.text}
+      </p>
+    </div>
+  );
+}
 
 export function RoomScreen() {
   const game = useStore((s) => s.game)!;
@@ -24,6 +60,13 @@ export function RoomScreen() {
   const everyoneReady =
     game.players.length > 0 && game.players.every((p) => p.characterId);
 
+  // The dossier follows the pointer, falling back to your pick.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const shown =
+    (hovered && CHARACTERS_BY_ID[hovered]) ||
+    (me?.characterId && CHARACTERS_BY_ID[me.characterId]) ||
+    CHARACTERS[0]!;
+
   return (
     <div className="room-screen">
       <header className="room-header">
@@ -38,7 +81,8 @@ export function RoomScreen() {
       </header>
 
       <div className="room-body">
-        <section className="char-grid">
+        <section className="char-col">
+          <div className="char-grid">
           {CHARACTERS.map((c) => {
             const owner = takenBy.get(c.id);
             const mine = owner?.id === playerId;
@@ -50,6 +94,8 @@ export function RoomScreen() {
                 style={{ borderColor: c.color }}
                 disabled={disabled}
                 onClick={() => chooseCharacter(c.id)}
+                onMouseEnter={() => setHovered(c.id)}
+                onMouseLeave={() => setHovered((h) => (h === c.id ? null : h))}
               >
                 <div className="char-avatar" style={{ background: c.color }}>
                   {c.name.charAt(0)}
@@ -73,6 +119,8 @@ export function RoomScreen() {
               </button>
             );
           })}
+          </div>
+          <Dossier c={shown} />
         </section>
 
         <aside className="party-panel">

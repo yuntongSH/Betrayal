@@ -55,6 +55,27 @@ export interface TraitTrackDef {
   start: number;
 }
 
+/** A backstory tie to another explorer — the cast forms a closed web of six. */
+export interface CharacterBond {
+  with: CharacterId;
+  /** One sentence of shared history, naming the other explorer. */
+  text: string;
+}
+
+/** In-voice lines the engine speaks at the story's hinge moments. */
+export interface CharacterLines {
+  /** Said stepping through the front door at game start. */
+  arrival: string;
+  /** Said at the haunt reveal when standing with the heroes. */
+  hauntHero: string;
+  /** Said at the haunt reveal when this explorer IS the traitor. */
+  hauntTraitor: string;
+  /** Last words. */
+  death: string;
+  /** Said when this explorer's side wins the night. */
+  victory: string;
+}
+
 export interface CharacterDef {
   id: CharacterId;
   name: string;
@@ -65,6 +86,18 @@ export interface CharacterDef {
   color: string;
   traits: Record<Trait, TraitTrackDef>;
   flavor: string;
+  /** Day they were born, dossier-style (e.g. "the 3rd of March"). */
+  birthday: string;
+  /** What they do when the world is quiet. */
+  hobbies: string[];
+  /** The one thing that undoes them. */
+  fear: string;
+  /** The signature possession they carry — also their in-world 3D prop. */
+  keepsake: string;
+  /** Longer dossier backstory, beyond the card-front `flavor` hook. */
+  bio: string;
+  bond: CharacterBond;
+  lines: CharacterLines;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +245,9 @@ export type LogKind =
   | "haunt"
   | "combat"
   | "death"
-  | "win";
+  | "win"
+  /** An explorer speaking in their own voice — arrivals, reveals, last words. */
+  | "voice";
 
 export interface LogEntry {
   id: number;

@@ -28,11 +28,12 @@ export interface Occupant {
   id: string;
 }
 
-/** Stable ordering of everyone standing in a given room key. */
+/** Stable ordering of everyone standing (or fallen) in a given room key. */
 export function occupantsAt(game: GameState, key: string): Occupant[] {
   const out: Occupant[] = [];
   for (const p of game.players) {
-    if (p.position === key && p.alive) out.push({ kind: "player", id: p.id });
+    // The dead stay where the house took them — a body in the room.
+    if (p.position === key) out.push({ kind: "player", id: p.id });
   }
   for (const m of game.haunt?.monsters ?? []) {
     if (m.position === key && m.hp > 0) out.push({ kind: "monster", id: m.id });

@@ -1,16 +1,35 @@
 import { useEffect, useMemo } from "react";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { attachKeepsake } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { AvatarEntry } from "./avatars";
 
+/** Face, hair and eyes keep their natural colour — identity tint lands on
+ *  clothing only, so nobody's skin looks dyed. */
+const PERSON_MATS = /skin|hair|eyebrow|eye|beard|teeth/i;
+
 /**
  * A clothed, rigged CC0 human (Quaternius) loaded as a glTF: cloned per-instance
- * (skeleton-aware), grounded and scaled to the character's height, gently tinted
- * toward its identity colour, shadow-casting, with its Idle clip playing. The
- * parent PlayerToken group still handles room-to-room glide and facing.
+ * (skeleton-aware), grounded and scaled to the character's height, clothes
+ * gently tinted toward its identity colour, shadow-casting, carrying the
+ * character's signature keepsake on a bone (Thorne's camera, Tobias's lantern…).
+ *
+ * The body acts the story out: Idle at rest, Walk while the parent token glides
+ * between rooms, and Death — played once, frozen on the floor — when the house
+ * takes them. The parent PlayerToken group still handles glide and facing.
  */
-export function Avatar({ entry }: { entry: AvatarEntry }) {
+export function Avatar({
+  entry,
+  archetype,
+  moving,
+  dead,
+}: {
+  entry: AvatarEntry;
+  archetype?: string;
+  moving?: boolean;
+  dead?: boolean;
+}) {
   const { scene, animations } = useGLTF(entry.url);
 
   const obj = useMemo(() => {
@@ -24,10 +43,10 @@ export function Avatar({ entry }: { entry: AvatarEntry }) {
         const src = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         const tinted = src.map((x) => {
           const c = (x as THREE.Material).clone() as THREE.MeshStandardMaterial;
-          if (c.color) c.color.lerp(new THREE.Color(entry.tint), 0.28);
+          if (c.color && !PERSON_MATS.test(c.name || "")) c.color.lerp(new THREE.Color(entry.tint), 0.3);
           return c;
         });
-        mesh.material = Array.isArray(mesh.material) ? tinted : tinted[0];
+        mesh.material = Array.isArray(mesh.material) ? tinted : tinted[0]!;
       }
     });
     // Scale to the character's height and drop the feet to the origin. Skinned
@@ -43,14 +62,34 @@ export function Avatar({ entry }: { entry: AvatarEntry }) {
     return m;
   }, [scene, entry]);
 
-  const { actions } = useAnimations(animations, obj);
+  const { actions, mixer } = useAnimations(animations, obj);
+
+  // Hang the keepsake once, AFTER settling the skeleton out of its T-pose bind
+  // stance — the attach transform reads the bone's current pose.
   useEffect(() => {
-    const idle = actions["Idle"] ?? Object.values(actions)[0];
-    idle?.reset().fadeIn(0.25).play();
+    if (!archetype) return;
+    actions["Idle"]?.reset().play();
+    mixer.update(0.03);
+    const prop = attachKeepsake(obj, archetype);
     return () => {
-      idle?.fadeOut(0.2);
+      prop?.removeFromParent();
     };
-  }, [actions]);
+  }, [actions, mixer, obj, archetype]);
+
+  // The story state machine: Death wins, Walk while gliding, Idle otherwise.
+  const clip = dead ? "Death" : moving ? "Walk" : "Idle";
+  useEffect(() => {
+    const action = actions[clip] ?? actions["Idle"] ?? Object.values(actions)[0];
+    if (!action) return;
+    if (clip === "Death") {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+    }
+    action.reset().fadeIn(0.25).play();
+    return () => {
+      action.fadeOut(0.25);
+    };
+  }, [actions, clip]);
 
   return <primitive object={obj} />;
 }

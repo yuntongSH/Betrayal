@@ -6,7 +6,7 @@
 import type { GameState, MonsterState, PlayerId, PlayerState, Side, Trait } from "./types";
 import { DIFFICULTY_FACTOR, MENTAL_TRAITS, PHYSICAL_TRAITS } from "./types";
 import { Rng } from "./rng";
-import { HAUNTS, HAUNTS_BY_ID, OMENS, ROOMS } from "./content";
+import { CHARACTERS_BY_ID, HAUNTS, HAUNTS_BY_ID, OMENS, ROOMS } from "./content";
 import type { HauntContext } from "./content";
 import {
   addLog,
@@ -130,6 +130,20 @@ export function triggerHaunt(
   } else {
     addLog(s, "No traitor walks among you — the house itself is the enemy.", "haunt");
   }
+  // The turn speaks: each traitor in their own voice, answered by one hero.
+  const speakerRng = Rng.fromState(s.rngState);
+  for (const id of traitorIds) {
+    const t = getPlayer(s, id);
+    const c = t?.characterId ? CHARACTERS_BY_ID[t.characterId] : undefined;
+    if (t && c) addLog(s, `${t.name}: “${c.lines.hauntTraitor}”`, "voice");
+  }
+  const heroSpeakers = livingHeroes(s).filter((p) => p.characterId);
+  if (heroSpeakers.length > 0) {
+    const h = speakerRng.pick(heroSpeakers);
+    const c = CHARACTERS_BY_ID[h.characterId!];
+    if (c) addLog(s, `${h.name}: “${c.lines.hauntHero}”`, "voice");
+  }
+  s.rngState = speakerRng.state;
   addLog(s, `Heroes: ${def.heroGoal}`, "haunt");
   checkWinNow(s);
 }
@@ -173,6 +187,10 @@ export function checkWinNow(s: GameState): void {
         : "The house settles, sated, around its new heart. The traitor wins.",
       "win",
     );
+    // The night's last word goes to a survivor on the winning side.
+    const v = s.players.find((p) => p.side === result && p.alive && p.characterId);
+    const c = v?.characterId ? CHARACTERS_BY_ID[v.characterId] : undefined;
+    if (v && c) addLog(s, `${v.name}: “${c.lines.victory}”`, "voice");
   }
 }
 

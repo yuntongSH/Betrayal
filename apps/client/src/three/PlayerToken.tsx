@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { buildExplorerFigure, animateFigure } from "@dread-hollow/decor";
@@ -21,6 +21,7 @@ export function PlayerToken({
   isActive,
   isMe,
   side,
+  alive = true,
 }: {
   position: [number, number, number];
   color: string;
@@ -29,6 +30,7 @@ export function PlayerToken({
   isActive: boolean;
   isMe: boolean;
   side: "heroes" | "traitor" | null;
+  alive?: boolean;
 }) {
   // Prefer a real rigged model when one is mapped for this character; otherwise
   // fall back to the procedural figure (also the Suspense fallback while loading).
@@ -46,6 +48,18 @@ export function PlayerToken({
   const target = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
+  // Feet match the glide: `moving` flips only on transitions (with hysteresis),
+  // so the rigged body strides while covering ground and idles on arrival.
+  const movingRef = useRef(false);
+  const [moving, setMoving] = useState(false);
+
+  // The procedural fallback can't play a Death clip — lay it where it fell.
+  useEffect(() => {
+    if (figure && !alive) {
+      figure.rotation.x = -Math.PI / 2;
+      figure.position.y = 0.12;
+    }
+  }, [figure, alive]);
 
   useFrame((state, dt) => {
     const g = group.current;
@@ -66,14 +80,21 @@ export function PlayerToken({
     // Turn to face the direction of travel while actually moving.
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;
-    if (dx * dx + dz * dz > 1e-6) {
+    if (alive && dx * dx + dz * dz > 1e-6) {
       yaw.current = lerpAngle(yaw.current, Math.atan2(dx, dz), 1 - Math.exp(-12 * dt));
     }
     g.rotation.y = yaw.current;
 
+    const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
+    const isMoving = alive && speed > (movingRef.current ? 0.22 : 0.5);
+    if (isMoving !== movingRef.current) {
+      movingRef.current = isMoving;
+      setMoving(isMoving);
+    }
+
     // Local idle animation only for the procedural figure; the glTF avatar plays
-    // its own Idle clip via useAnimations.
-    if (figure) animateFigure(figure, t, { active: isActive, phase: phase.current, baseY: 0.02 });
+    // its own clips via useAnimations. The dead lie exactly as they fell.
+    if (figure && alive) animateFigure(figure, t, { active: isActive, phase: phase.current, baseY: 0.02 });
   });
 
   return (
@@ -81,12 +102,12 @@ export function PlayerToken({
       {figure && <primitive object={figure} />}
       {entry && (
         <Suspense fallback={null}>
-          <Avatar entry={entry} />
+          <Avatar entry={entry} archetype={archetype} moving={moving} dead={!alive} />
         </Suspense>
       )}
 
       {/* a bright pillar of light marks whoever is up */}
-      {isActive && (
+      {isActive && alive && (
         <>
           <pointLight position={[0, 1.6, 0]} color="#e8a85a" intensity={5} distance={4} />
           <mesh position={[0, 1.6, 0]}>
@@ -95,14 +116,16 @@ export function PlayerToken({
           </mesh>
         </>
       )}
-      {side === "traitor" && (
+      {side === "traitor" && alive && (
         <pointLight position={[0, 1, 0]} color="#c2412f" intensity={4} distance={3} />
       )}
 
-      <Html position={[0, 1.9, 0]} center distanceFactor={12} occlude={false}>
-        <div className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""}`}>
-          {name}
-          {side === "traitor" ? " ☠" : ""}
+      <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={12} occlude={false}>
+        <div
+          className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
+        >
+          {alive ? name : `✝ ${name}`}
+          {alive && side === "traitor" ? " ☠" : ""}
         </div>
       </Html>
     </group>

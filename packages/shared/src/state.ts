@@ -117,6 +117,8 @@ export function modTrait(
   if (next <= 0) {
     p.alive = false;
     addLog(s, `${p.name} has been lost to the house.`, "death");
+    const c = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+    if (c) addLog(s, `${p.name}: “${c.lines.death}”`, "voice");
     dropInventory(s, p);
     return true;
   }

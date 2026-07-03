@@ -184,6 +184,12 @@ input:focus {
   gap: 1.2rem;
   min-height: 0;
 }
+.char-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 0;
+}
 .char-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -195,6 +201,68 @@ input:focus {
      its content — which defeats overflow:auto. Allow it to shrink to its cell so
      it actually scrolls when the character list is taller than the viewport. */
   min-height: 0;
+}
+/* The dossier: what the house already knows about the hovered guest. */
+.dossier {
+  flex: 0 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-left: 4px solid var(--flame);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.dossier-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+.dossier-head strong {
+  font-family: "Cinzel", Georgia, serif;
+  color: #efe2d3;
+}
+.dossier-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 0.45rem;
+}
+.dossier-row {
+  display: flex;
+  gap: 0.6rem;
+  color: #c9bfae;
+  font-size: 0.76rem;
+}
+.dossier-key {
+  flex: 0 0 3.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  color: var(--ink-dim);
+  padding-top: 0.12rem;
+}
+.dossier-bio {
+  margin: 0.5rem 0 0;
+  color: #b8ad9c;
+  font-size: 0.77rem;
+}
+/* The red thread — the bond tying this explorer to another of the six. */
+.dossier-bond {
+  margin: 0.5rem 0 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.76rem;
+  color: #c9bfae;
+  background: rgba(120, 30, 30, 0.08);
+  border-left: 2px solid var(--blood, #8c2f23);
+  border-radius: 0 8px 8px 0;
+}
+.bond-thread {
+  color: var(--blood-bright, #c2412f);
+  font-size: 0.6rem;
+  vertical-align: middle;
 }
 .char-card {
   display: flex;
@@ -366,6 +434,11 @@ input:focus {
 }
 .token-label.monster {
   color: #e88;
+}
+.token-label.dead {
+  color: #6a6058;
+  opacity: 0.7;
+  font-style: italic;
 }
 
 /* top status bar + controls */
@@ -625,6 +698,8 @@ kbd {
 .log-entry.k-combat { border-color: var(--blood); }
 .log-entry.k-death { border-color: #000; color: #c2517a; }
 .log-entry.k-win { border-color: var(--flame); color: var(--flame); }
+/* An explorer speaking in their own voice — arrivals, reveals, last words. */
+.log-entry.k-voice { border-color: #8a7a5a; color: #d8c9a8; font-style: italic; }
 
 /* dice */
 .dice-row {

@@ -229,6 +229,13 @@ export function startGame(s: GameState): boolean {
   s.turn = 1;
   s.phase = "explore";
   beginTurn(s);
+  // Each explorer crosses the threshold in turn order, in their own voice —
+  // the night's story starts before the first die is rolled.
+  for (const id of order) {
+    const p = getPlayer(s, id);
+    const c = p?.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+    if (p && c) addLog(s, `${p.name}, ${c.title}: “${c.lines.arrival}”`, "voice");
+  }
   addLog(s, "The front door closes. The house begins to wake.", "info");
   return true;
 }
