@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, ISLAND_R, RING } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, ISLAND_R, RING } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -93,6 +93,8 @@ function setAvatarClip(group, name, fade = 0.25) {
   group.userData.wantClip = name;
   const anim = group.userData.anim;
   if (!anim) return;
+  // The life layer stills its breath and closes the eyes for the fallen.
+  if (group.userData.life) group.userData.life.dead = name === "death";
   const next = anim.actions[name] || anim.actions.idle;
   if (!next || anim.current === next) return;
   next.reset();
@@ -133,6 +135,10 @@ function attachAvatar(group, archetype, targetH, mixers, opts = {}) {
           });
         }
       });
+      // Realism pass: smoothed normals, physical materials, per-character
+      // grooming, eyelids. After the tint (which it preserves), before the
+      // height fit below (its build broadening changes the silhouette).
+      refineExplorerAvatar(model, archetype);
       // These bodies load in T-pose with no animation — drop the upper arms to a
       // relaxed stance so they read as a person standing, not a mannequin.
       if (entry.pose) {
@@ -186,6 +192,12 @@ function attachAvatar(group, archetype, targetH, mixers, opts = {}) {
       }
       // Their keepsake rides a bone: Thorne's camera, Tobias's lit lantern…
       attachKeepsake(model, archetype);
+      // The life layer (breath, attention, blinks, relaxed hands) is additive
+      // AFTER the mixer: pushed to the same list, it updates later in the tick.
+      const life = attachAvatarLife(model, archetype);
+      group.userData.life = life;
+      if (group.userData.wantClip === "death") life.dead = true;
+      mixers.push(life);
     })
     .catch((e) => console.warn("[avatar] load failed", url, e));
   return true;
@@ -2273,16 +2285,28 @@ function initWardrobe() {
   wRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   wRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
   wRenderer.setSize(w, h);
+  // Same filmic response as the game view, so the portrait matches in-game skin.
+  wRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  wRenderer.toneMappingExposure = 1.12;
+  wRenderer.outputColorSpace = THREE.SRGBColorSpace;
   stage.appendChild(wRenderer.domElement);
   wScene = new THREE.Scene();
   wCam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
   // Framed for the tallest explorer (Crow, 1.9) with a little headroom.
   wCam.position.set(0, 1.12, 2.85);
   wCam.lookAt(0, 0.92, 0);
-  wScene.add(new THREE.AmbientLight(0x4a4660, 0.75));
-  const key = new THREE.DirectionalLight(0xffe6c2, 1.6); key.position.set(2.5, 4, 3); wScene.add(key);
-  const fill = new THREE.DirectionalLight(0x6a86c0, 0.55); fill.position.set(-3, 2, 1.5); wScene.add(fill);
-  const rim = new THREE.PointLight(0xe8975a, 10, 9, 2); rim.position.set(0, 1.5, -1.6); wScene.add(rim);
+  // A faint studio environment gives the physical materials (skin sheen, wet
+  // eyes, gold) something to reflect; intensity kept low for the mood. A tiny
+  // procedural equirect — PMREM-from-scene stalls SwiftShader for >30s.
+  wScene.environment = makeStudioEnvTexture();
+  wScene.environmentIntensity = 0.32;
+  // Three-point portrait: warm key high right, cool soft fill left, amber rim
+  // behind the shoulder, and a whisper of bounce from the pedestal.
+  wScene.add(new THREE.AmbientLight(0x4a4660, 0.35));
+  const key = new THREE.DirectionalLight(0xffe2b8, 2.1); key.position.set(1.9, 3.1, 2.7); wScene.add(key);
+  const fill = new THREE.DirectionalLight(0x7d95c9, 0.6); fill.position.set(-2.8, 1.5, 2.2); wScene.add(fill);
+  const rim = new THREE.PointLight(0xe8975a, 13, 9, 2); rim.position.set(-0.7, 2.3, -1.8); wScene.add(rim);
+  const bounce = new THREE.DirectionalLight(0x8a6a58, 0.3); bounce.position.set(0.4, -1, 2.5); wScene.add(bounce);
   const ped = new THREE.Mesh(
     new THREE.CylinderGeometry(0.5, 0.62, 0.1, 36),
     new THREE.MeshStandardMaterial({ color: 0x171320, roughness: 0.85 }),
