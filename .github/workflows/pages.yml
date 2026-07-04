@@ -75,8 +75,20 @@ jobs:
 
       - name: Wait before retry
         if: steps.deployment.outcome == 'failure'
-        run: sleep 70
+        run: sleep 90
 
       - name: Deploy to GitHub Pages (retry)
+        id: deployment-retry
         if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      # Back-to-back pushes can leave Pages throttled past the first retry —
+      # a longer second backoff has recovered every observed occurrence.
+      - name: Wait before final retry
+        if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
+        run: sleep 300
+
+      - name: Deploy to GitHub Pages (final retry)
+        if: steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure'
         uses: actions/deploy-pages@v4
