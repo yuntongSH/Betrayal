@@ -1,18 +1,28 @@
 /**
- * Procedural ambient sound — synthesized entirely with the Web Audio API, so
- * the project ships zero audio assets (and zero licensing worries).
+ * Audio façade — the app keeps importing `ambient` from here, but the music
+ * itself now lives in the shared DreadScore engine (@dread-hollow/decor):
+ * scene beds (lobby/explore/haunt/ended), a peril layer, and reveal stings.
  *
- * Three layers: a low detuned drone, filtered "wind" noise, and occasional
- * random creaks. Must be started from a user gesture (browser autoplay policy).
+ * This file only owns the glue: the autoplay-unlock AudioContext (must be
+ * created inside a user gesture — the AudioToggle click), mute (forwarded to
+ * setVolume), phase → setScene forwarding, setHeart → setPeril, and one local
+ * door-creak one-shot the score contract doesn't cover.
  */
+import { createDreadScore, type DreadScore } from "@dread-hollow/decor";
+
 type WindowWithWebkit = Window & { webkitAudioContext?: typeof AudioContext };
+
+export type ScoreScene = "lobby" | "explore" | "haunt" | "ended";
+export type ScoreSting = "omen" | "event" | "item" | "death" | "reveal";
 
 export class Ambient {
   private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private score: DreadScore | null = null;
   private started = false;
   private muted = false;
-  private creakTimer: number | null = null;
+  /** Remembered so a late start() joins the story where it stands. */
+  private scene: ScoreScene = "lobby";
+  private peril = false;
 
   get isStarted(): boolean {
     return this.started;
@@ -21,37 +31,27 @@ export class Ambient {
     return this.muted;
   }
 
+  /** Must be called from a user gesture (browser autoplay policy). */
   start(): void {
     if (this.started) return;
     const Ctx =
       window.AudioContext ?? (window as WindowWithWebkit).webkitAudioContext;
     if (!Ctx) return;
 
-    const ctx = new Ctx();
-    const master = ctx.createGain();
-    master.gain.value = 0;
-    master.connect(ctx.destination);
-
-    this.ctx = ctx;
-    this.master = master;
+    this.ctx = new Ctx();
+    void this.ctx.resume?.().catch(() => undefined);
     this.started = true;
 
-    this.buildDrone();
-    this.buildWind();
-
-    master.gain.linearRampToValueAtTime(this.muted ? 0 : 0.22, ctx.currentTime + 5);
-    this.scheduleCreak();
+    this.score = createDreadScore(this.ctx);
+    this.score.start();
+    this.score.setScene(this.scene);
+    this.score.setPeril(this.peril);
+    this.score.setVolume(this.muted ? 0 : 1);
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.ctx && this.master) {
-      this.master.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.master.gain.linearRampToValueAtTime(
-        muted ? 0 : 0.22,
-        this.ctx.currentTime + 0.6,
-      );
-    }
+    this.score?.setVolume(muted ? 0 : 1);
   }
 
   toggleMute(): boolean {
@@ -59,103 +59,36 @@ export class Ambient {
     return this.muted;
   }
 
-  private buildDrone(): void {
-    const ctx = this.ctx!;
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 240;
-    filter.connect(this.master!);
-
-    for (const freq of [55, 58.2, 82.5]) {
-      const osc = ctx.createOscillator();
-      osc.type = "triangle";
-      osc.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.value = 0.18;
-      osc.connect(g).connect(filter);
-      osc.start();
-
-      // slow breathing on the gain
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.05 + Math.random() * 0.05;
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 0.08;
-      lfo.connect(lfoGain).connect(g.gain);
-      lfo.start();
-    }
+  /** Phase → scene bed (store.ts forwards lobby/explore/haunt/ended). */
+  setScene(scene: ScoreScene): void {
+    if (this.scene === scene) return;
+    this.scene = scene;
+    this.score?.setScene(scene);
   }
 
-  private noiseBuffer(seconds: number): AudioBuffer {
-    const ctx = this.ctx!;
-    const len = Math.floor(ctx.sampleRate * seconds);
+  /** Peril layer while an explorer is one step from the skull; off to calm. */
+  setHeart(on: boolean): void {
+    this.peril = on;
+    this.score?.setPeril(on);
+  }
+
+  /** Reveal sting: card draws (item/event/omen), a death, or the haunt turn. */
+  sting(kind: ScoreSting): void {
+    if (this.muted) return;
+    this.score?.sting(kind);
+  }
+
+  /** A lower, longer creak — a door swinging on its hinges (local one-shot;
+   *  the score contract has no door SFX). */
+  doorCreak(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const len = Math.floor(ctx.sampleRate * 0.7);
     const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-    return buffer;
-  }
-
-  private buildWind(): void {
-    const ctx = this.ctx!;
     const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(4);
-    src.loop = true;
-
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = 480;
-    band.Q.value = 0.8;
-
-    const g = ctx.createGain();
-    g.gain.value = 0.12;
-
-    src.connect(band).connect(g).connect(this.master!);
-    src.start();
-
-    // drift the wind's pitch
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.07;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 260;
-    lfo.connect(lfoGain).connect(band.frequency);
-    lfo.start();
-  }
-
-  private scheduleCreak(): void {
-    if (!this.ctx) return;
-    const delay = 7000 + Math.random() * 13000;
-    this.creakTimer = window.setTimeout(() => {
-      this.creak();
-      this.scheduleCreak();
-    }, delay);
-  }
-
-  private creak(): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted) return;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(0.5);
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = 900 + Math.random() * 1400;
-    filter.Q.value = 6;
-
-    const g = ctx.createGain();
-    g.gain.value = 0;
-    g.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-
-    src.connect(filter).connect(g).connect(this.master!);
-    src.start();
-    src.stop(ctx.currentTime + 0.5);
-  }
-
-  /** A lower, longer creak — a door swinging on its hinges. */
-  doorCreak(): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(0.7);
+    src.buffer = buffer;
     const filter = ctx.createBiquadFilter();
     filter.type = "bandpass";
     filter.frequency.value = 330 + Math.random() * 220;
@@ -164,152 +97,19 @@ export class Ambient {
     g.gain.value = 0;
     g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    src.connect(filter).connect(g).connect(this.master);
+    src.connect(filter).connect(g).connect(ctx.destination);
     src.start();
     src.stop(ctx.currentTime + 0.7);
   }
 
-  /** Low double-thud heartbeat while an explorer is near death; off to silence. */
-  private heartTimer: number | null = null;
-  setHeart(on: boolean): void {
-    if (on) {
-      if (this.heartTimer != null || !this.ctx || this.muted) return;
-      const beat = () => {
-        const ctx = this.ctx;
-        if (!ctx || this.muted || !this.master) return;
-        const thump = (t: number, vol: number) => {
-          const o = ctx.createOscillator();
-          o.type = "sine";
-          o.frequency.setValueAtTime(72, t);
-          o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(vol, t + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-          o.connect(g).connect(this.master!);
-          o.start(t);
-          o.stop(t + 0.32);
-        };
-        const t = ctx.currentTime;
-        thump(t, 0.5);
-        thump(t + 0.33, 0.38);
-      };
-      beat();
-      this.heartTimer = window.setInterval(beat, 1150);
-    } else if (this.heartTimer != null) {
-      window.clearInterval(this.heartTimer);
-      this.heartTimer = null;
-    }
-  }
-
-  /** A dissonant swell + high shimmer when the house turns (the haunt reveal). */
-  stinger(): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const t = ctx.currentTime;
-    for (const fr of [110, 116.5, 220]) {
-      const o = ctx.createOscillator();
-      o.type = "sawtooth";
-      o.frequency.value = fr;
-      const f = ctx.createBiquadFilter();
-      f.type = "lowpass";
-      f.frequency.setValueAtTime(300, t);
-      f.frequency.linearRampToValueAtTime(1900, t + 0.7);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.13, t + 0.15);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 2.3);
-      o.connect(f).connect(g).connect(this.master);
-      o.start(t);
-      o.stop(t + 2.4);
-    }
-  }
-
-  /** A short reveal sting per drawn-card type — pluck, falling chime, or growl. */
-  cardSting(type: "item" | "event" | "omen"): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const t = ctx.currentTime;
-    const note = (freq: number, at: number, shape: OscillatorType, vol: number, decay: number) => {
-      const o = ctx.createOscillator();
-      o.type = shape;
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime(vol, at + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.001, at + decay);
-      o.connect(g).connect(this.master!);
-      o.start(at);
-      o.stop(at + decay + 0.05);
-    };
-    if (type === "item") {
-      note(660, t, "triangle", 0.18, 0.5);
-      note(880, t + 0.09, "triangle", 0.18, 0.5);
-    } else if (type === "event") {
-      note(523, t, "sine", 0.14, 0.4);
-      note(415, t + 0.12, "sine", 0.14, 0.4);
-      note(311, t + 0.24, "sine", 0.14, 0.4);
-    } else {
-      // Omen: two detuned saws through a low filter, plus a hiss of static.
-      for (const fr of [65, 69]) {
-        const o = ctx.createOscillator();
-        o.type = "sawtooth";
-        o.frequency.value = fr;
-        const f = ctx.createBiquadFilter();
-        f.type = "lowpass";
-        f.frequency.value = 400;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.2, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-        o.connect(f).connect(g).connect(this.master);
-        o.start(t);
-        o.stop(t + 1.3);
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = this.noiseBuffer(0.8);
-      const hp = ctx.createBiquadFilter();
-      hp.type = "highpass";
-      hp.frequency.value = 2400;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.06, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-      src.connect(hp).connect(g).connect(this.master);
-      src.start(t);
-      src.stop(t + 0.8);
-    }
-  }
-
-  /** A bell tolled twice for a fallen explorer, sagging in pitch as it rings. */
-  deathKnell(): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || !this.master) return;
-    const strike = (at: number) => {
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.setValueAtTime(98, at);
-      o.frequency.exponentialRampToValueAtTime(82, at + 0.5);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime(0.3, at + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, at + 2.2);
-      o.connect(g).connect(this.master!);
-      o.start(at);
-      o.stop(at + 2.3);
-    };
-    const t = ctx.currentTime;
-    strike(t);
-    strike(t + 0.7);
-  }
-
   dispose(): void {
-    if (this.creakTimer) window.clearTimeout(this.creakTimer);
-    if (this.heartTimer) window.clearInterval(this.heartTimer);
+    this.score?.stop();
+    this.score = null;
     this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.started = false;
   }
 }
 
-/** Shared singleton — one ambience for the whole app. */
+/** Shared singleton — one score for the whole app. */
 export const ambient = new Ambient();

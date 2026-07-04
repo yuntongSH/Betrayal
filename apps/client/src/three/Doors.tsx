@@ -11,6 +11,7 @@ import {
   type GameState,
 } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 import { FLOOR_Y, TILE, WALL_H } from "./layout";
 import { registerWall, unregisterWall } from "./followCam";
@@ -201,6 +202,7 @@ export function Doors() {
   }, [game]);
 
   useFrame((_, delta) => {
+    if (useBeats.getState().worldFrozen) return; // hold every leaf mid-swing
     const now = performance.now();
     const k = 1 - Math.exp(-7 * Math.min(0.05, delta));
     for (const st of states.current.values()) {

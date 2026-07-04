@@ -1,6 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore } from "../state/store";
+import { useBeats } from "../state/beats";
 import { roomWorld } from "./layout";
 import { trackedTokens, xrayWalls, type XrayData } from "./followCam";
 
@@ -31,6 +32,8 @@ const camDir = new THREE.Vector3();
  */
 export function XrayWalls() {
   useFrame(({ camera }, rawDt) => {
+    // Modal beat up: hold every wall at its current opacity (no fade lerps).
+    if (useBeats.getState().worldFrozen) return;
     const dt = Math.min(0.05, rawDt);
     const now = performance.now();
 

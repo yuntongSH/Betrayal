@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore } from "../state/store";
-import { pendingFx as beatQueue } from "../state/beats";
+import { pendingFx as beatQueue, useBeats } from "../state/beats";
 import { TILE, roomWorld } from "./layout";
 import { FX_COLORS, pendingFx, type FxRequest } from "./director";
 
@@ -54,6 +54,9 @@ export function BeatFX() {
   );
 
   useFrame(({ scene }, rawDt) => {
+    // Modal beat up: particles and light pulses hold (and new requests wait in
+    // their queues), so the room's flourish plays as the world resumes.
+    if (useBeats.getState().worldFrozen) return;
     const dt = Math.min(0.05, rawDt);
 
     // Drain new requests from the beat layer AND the director's own queue

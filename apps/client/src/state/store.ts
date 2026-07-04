@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { CHARACTERS, type Action, type Difficulty, type Direction, type GameState } from "@dread-hollow/shared";
 import { Connection, type ServerMessage } from "../net/connection";
+import { ambient } from "../audio/ambient";
 import { ingestBeats, resetBeats } from "./beats";
 
 /** Bots added for a one-click solo game (1 human + this many bots). */
@@ -74,6 +75,7 @@ export const useStore = create<Store>((set, get) => {
           status: "connected",
           error: null,
         });
+        ambient.setScene(msg.state.phase);
         if (pendingSolo) {
           pendingSolo = false;
           const conn = get().conn;
@@ -92,6 +94,8 @@ export const useStore = create<Store>((set, get) => {
       case "state":
         // The outgoing state object is the pre-action snapshot for beat diffing.
         ingestBeats(get().game, msg.state, get().playerId);
+        // Phase transitions steer the score (lobby → explore → haunt → ended).
+        if (get().game?.phase !== msg.state.phase) ambient.setScene(msg.state.phase);
         set({ game: msg.state });
         break;
       case "error":
@@ -185,6 +189,7 @@ export const useStore = create<Store>((set, get) => {
 
     leave: () => {
       get().conn?.send({ t: "leave-room" });
+      ambient.setScene("lobby");
       set({ game: null, roomCode: null, status: "idle" });
     },
 

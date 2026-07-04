@@ -86,7 +86,11 @@ describe("bots", () => {
       let guard = 0;
       while (s.phase !== "ended" && guard++ < 250) {
         const pid = s.activePlayerId!;
-        const visited = new Set<string>([getPlayer(s, pid)!.position!]);
+        // Where the bot has stood this turn → how many rooms it had discovered
+        // when it last stood there.
+        const visited = new Map<string, number>([
+          [getPlayer(s, pid)!.position!, s.turnExplored?.length ?? 0],
+        ]);
         let steps = 0;
         // cast: reduce() can flip phase to "ended" mid-turn, which TS can't see.
         while (s.activePlayerId === pid && (s.phase as string) !== "ended" && steps++ < 30) {
@@ -94,15 +98,23 @@ describe("bots", () => {
           reduce(s, action);
           if (action.type === "end-turn") break;
           // The no-pacing invariant is about purposeful EXPLORATION: a bot heads
-          // toward new ground and never re-enters a room it already stood in this
-          // turn (the bouncing the player reported). In the haunt the target set
-          // is foes, which can sit behind the bot — backtracking to hunt them is
-          // legitimate — and a mid-turn omen can flip the phase, so only assert
-          // while still exploring.
+          // toward new ground and never bounces between rooms without progress
+          // (the bouncing the player reported). Re-entering a room it stood in
+          // earlier this turn IS legal play when a discovery happened in between:
+          // symbol-less dead ends (a board-game staple — our Cloakroom, Coal
+          // Bunker, Dumbwaiter Shaft) don't halt movement, and the only way
+          // onward from one is back through the room the bot came from. In the
+          // haunt the target set is foes, which can sit behind the bot —
+          // backtracking to hunt them is legitimate — and a mid-turn omen can
+          // flip the phase, so only assert while still exploring.
           if (action.type === "move-to" && s.phase === "explore") {
             const pos = getPlayer(s, pid)!.position!;
-            expect(visited.has(pos)).toBe(false);
-            visited.add(pos);
+            const discovered = s.turnExplored?.length ?? 0;
+            if (visited.has(pos)) {
+              // allowed only en route from new ground — never a pure oscillation
+              expect(discovered).toBeGreaterThan(visited.get(pos)!);
+            }
+            visited.set(pos, discovered);
           }
           if (endTurnAfter) {
             if (s.activePlayerId === pid) reduce(s, { type: "end-turn", playerId: pid });

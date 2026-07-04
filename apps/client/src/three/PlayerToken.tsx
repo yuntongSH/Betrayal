@@ -102,6 +102,9 @@ export function PlayerToken({
       if (activePath.current) cursor.current.i = activePath.current.length;
       placed.current = true;
     }
+    // A modal beat owns the stage — hold this walker exactly where it stands
+    // (dt-based systems resume seamlessly when the card dismisses).
+    if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
     // Waypoint walking around the furniture when a path is set; otherwise the
     // exponential glide (floor changes, elevator jumps, clear straight lines).

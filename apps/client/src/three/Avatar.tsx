@@ -4,6 +4,7 @@ import { useGLTF, useAnimations } from "@react-three/drei";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { attachKeepsake, refineExplorerAvatar, attachAvatarLife } from "@dread-hollow/decor";
 import * as THREE from "three";
+import { useBeats } from "../state/beats";
 import type { AvatarEntry } from "./avatars";
 
 /** Face, hair and eyes keep their natural colour — identity tint lands on
@@ -69,6 +70,13 @@ export function Avatar({
 
   const { actions, mixer } = useAnimations(animations, obj);
 
+  // World freeze: while a modal beat is up the clips hold their exact pose —
+  // timeScale 0 zeroes the mixer's own frame updates without losing clip time.
+  const frozen = useBeats((s) => s.worldFrozen);
+  useEffect(() => {
+    mixer.timeScale = frozen ? 0 : 1;
+  }, [mixer, frozen]);
+
   // The life layer: breathing, attention drift, blinks, relaxed hands —
   // additive AFTER the mixer (useAnimations subscribed its frame callback
   // first, so ours runs later in the same tick) so the clips still win.
@@ -76,14 +84,21 @@ export function Avatar({
   useEffect(() => {
     life.dead = !!dead;
   }, [life, dead]);
-  useFrame((_, dt) => life.update(Math.min(0.05, dt)));
+  useFrame((_, dt) => {
+    if (useBeats.getState().worldFrozen) return; // hold the pose with the mixer
+    life.update(Math.min(0.05, dt));
+  });
 
   // Hang the keepsake once, AFTER settling the skeleton out of its T-pose bind
-  // stance — the attach transform reads the bone's current pose.
+  // stance — the attach transform reads the bone's current pose. (Force a live
+  // timeScale for the one-off pose update in case we mount mid-freeze.)
   useEffect(() => {
     if (!archetype) return;
     actions["Idle"]?.reset().play();
+    const ts = mixer.timeScale;
+    mixer.timeScale = 1;
     mixer.update(0.03);
+    mixer.timeScale = ts;
     const prop = attachKeepsake(obj, archetype);
     return () => {
       prop?.removeFromParent();

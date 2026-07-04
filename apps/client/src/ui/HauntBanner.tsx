@@ -1,26 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
-import { ambient } from "../audio/ambient";
 
-/** A one-time dramatic reveal when the haunt begins, dismissible per scenario. */
+/** A one-time dramatic reveal when the haunt begins, dismissible per scenario.
+ *  (The reveal sting fires from the beats ingest the moment the house turns.) */
 export function HauntBanner() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const beatsBusy = useBeats((s) => !!s.active || s.queue.length > 0);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const stungFor = useRef<string | null>(null);
 
   const haunt = game.haunt;
   useEffect(() => {
     // Reset dismissal if a (hypothetical) new haunt id appears.
     if (haunt && dismissed && dismissed !== haunt.id) setDismissed(null);
-    // Sound the dissonant swell once, the moment the house turns.
-    if (haunt && game.phase === "haunt" && stungFor.current !== haunt.id) {
-      stungFor.current = haunt.id;
-      ambient.stinger();
-    }
-  }, [haunt, dismissed, game.phase]);
+  }, [haunt, dismissed]);
 
   // Let the beat that triggered the haunt (usually an omen card) finish first.
   if (beatsBusy) return null;

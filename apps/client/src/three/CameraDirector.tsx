@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore } from "../state/store";
+import { useBeats } from "../state/beats";
 import { roomWorld } from "./layout";
 import { followTarget } from "./followCam";
 import { director } from "./director";
@@ -82,6 +83,9 @@ export function CameraDirector() {
 
   useFrame((_, rawDt) => {
     if (!game || !controls?.target) return;
+    // Modal beat up: the framing holds dead still (manual orbit stays live via
+    // OrbitControls); all easing state resumes from here when the card drains.
+    if (useBeats.getState().worldFrozen) return;
     const dt = Math.min(0.05, rawDt);
     const now = performance.now();
     const active = game.players.find((p) => p.id === game.activePlayerId);

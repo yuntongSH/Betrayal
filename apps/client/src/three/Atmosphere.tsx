@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { useBeats } from "../state/beats";
 
 /** Slow-drifting dust motes caught in the moonlight. */
 function Dust({ count = 500 }: { count?: number }) {
@@ -18,6 +19,7 @@ function Dust({ count = 500 }: { count?: number }) {
   useFrame((state, dt) => {
     const pts = ref.current;
     if (!pts) return;
+    if (useBeats.getState().worldFrozen) return; // motes hang in the frozen air
     const t = state.clock.elapsedTime;
     const attr = pts.geometry.getAttribute("position") as THREE.BufferAttribute;
     const a = attr.array as Float32Array;
@@ -55,6 +57,7 @@ function Wisp({ base }: { base: [number, number, number] }) {
   useFrame((state) => {
     const l = ref.current;
     if (!l) return;
+    if (useBeats.getState().worldFrozen) return; // the flames hold their breath
     const t = state.clock.elapsedTime;
     const seed = base[0] + base[2];
     // layered flame flicker: shimmer + body sway + drift, with rare draft dropouts

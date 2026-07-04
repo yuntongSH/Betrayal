@@ -75,6 +75,11 @@ interface BeatsState {
   vignette: { type: string; seq: number };
   /** Trait changes from the last couple of seconds (expired by timer). */
   traitDeltas: TraitDelta[];
+  /** True from the moment a modal beat shows until the modal queue drains.
+   *  Every 3D useFrame site consumes this and halts its simulation (early
+   *  return / dt clamped to 0 / mixer timeScale 0) so the frozen frame behind
+   *  the card matches the moment the card describes. DOM/CSS keeps animating. */
+  worldFrozen: boolean;
 }
 
 export const useBeats = create<BeatsState>(() => ({
@@ -85,6 +90,7 @@ export const useBeats = create<BeatsState>(() => ({
   toasts: [],
   vignette: { type: "", seq: 0 },
   traitDeltas: [],
+  worldFrozen: false,
 }));
 
 /** True while a modal beat is up or pending — game input should be swallowed. */
@@ -137,6 +143,7 @@ function maybeActivate(): void {
   const s = useBeats.getState();
   if (s.active || gapTimer) return;
   if (s.queue.length === 0) {
+    if (s.worldFrozen) useBeats.setState({ worldFrozen: false }); // belt and braces
     flushHeldToasts();
     return;
   }
@@ -148,6 +155,7 @@ function maybeActivate(): void {
     activeInteractive: interactive,
     activeHoldMs: interactive ? null : hold,
     queue: rest,
+    worldFrozen: true,
   });
   showEffects(beat);
   if (!interactive) modalTimer = setTimeout(dismissActive, hold);
@@ -159,7 +167,9 @@ export function dismissActive(): void {
     clearTimeout(modalTimer);
     modalTimer = null;
   }
-  useBeats.setState({ active: null });
+  // Unfreeze the 3D world exactly when the modal queue drains; a queued
+  // follow-up modal keeps it frozen through the 250ms gap (no jerky resume).
+  useBeats.setState((s) => ({ active: null, worldFrozen: s.queue.length > 0 }));
   gapTimer = setTimeout(() => {
     gapTimer = null;
     maybeActivate();
@@ -172,8 +182,7 @@ function showEffects(beat: Beat): void {
   const type: FxType = beat.kind === "death" ? "death" : (beat.cardType ?? "item");
   if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type });
   useBeats.setState((s) => ({ vignette: { type, seq: s.vignette.seq + 1 } }));
-  if (beat.kind === "death") ambient.deathKnell();
-  else ambient.cardSting(type as CardType);
+  ambient.sting(beat.kind === "death" ? "death" : (type as CardType));
 }
 
 /** Clear everything (a reconnect must not replay history). */
@@ -191,6 +200,7 @@ export function resetBeats(): void {
     activeHoldMs: null,
     toasts: [],
     traitDeltas: [],
+    worldFrozen: false,
   });
 }
 
@@ -264,7 +274,7 @@ function specialToast(def: RoomDef, discovered: boolean): { glyph: string; text:
     return { glyph: "☓", text: `Cursed ground — ${def.aura} dice to every roll here`, color: "#c2412f" };
   switch (def.special) {
     case "mystic-elevator":
-      return { glyph: "⇅", text: "The Mystic Elevator — it can carry you to another floor", color: "#8f6fd8" };
+      return { glyph: "⇅", text: "The Caged Lift — it can carry you to another floor", color: "#8f6fd8" };
     case "grand-staircase":
     case "stairs-up":
     case "stairs-down":
@@ -405,6 +415,7 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
       pendingFx.push({ roomKey: key, type: "haunt" });
     }
     useBeats.setState((s) => ({ vignette: { type: "haunt", seq: s.vignette.seq + 1 } }));
+    ambient.sting("reveal"); // the dissonant swell, the moment the house turns
   }
 
   // Special-room note when the watched player arrives somewhere notable

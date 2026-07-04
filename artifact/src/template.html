@@ -131,7 +131,8 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 #hud-top,#hud-left,#hud-right,#hud-bottom,#hud-hint{z-index:2}
 .haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)}
 #hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:4rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
-#hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:4rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
+/* bottom clears the minimap panel parked in the corner below it */
+#hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:17.5rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
 /* current-room info card */
 .room-info{padding:.6rem .7rem}
 .ri-head{display:flex;align-items:center;justify-content:space-between;gap:.4rem}
@@ -178,7 +179,22 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .result .rtitle{font-size:2.2rem;color:var(--flame);text-shadow:0 0 30px rgba(232,168,90,.5);margin-bottom:.4rem}
 #hud-hint{position:absolute;bottom:1.1rem;left:1.1rem;max-width:300px;color:var(--dim);font-size:.8rem;pointer-events:none}
 @keyframes flick{0%,100%{opacity:1}48%{opacity:.85}50%{opacity:.55}52%{opacity:.9}70%{opacity:.7}}
-@media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}}
+@media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}.minimap{width:170px}}
+
+/* ===== Minimap — clickable 2D floor plan, bottom-right ===== */
+.minimap{position:absolute;right:.8rem;bottom:1.1rem;z-index:3;width:230px;
+  display:flex;flex-direction:column;gap:4px;background:var(--panel);border:1px solid var(--edge);
+  border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.45)}
+.minimap-floors{display:flex;gap:4px;justify-content:flex-end}
+.mm-tab{font:inherit;font-size:.68rem;width:22px;height:20px;padding:0;line-height:1;border-radius:5px;
+  cursor:pointer;color:var(--dim);background:rgba(30,24,20,.7);border:1px solid var(--edge)}
+.mm-tab:hover{color:var(--ink);border-color:var(--flame)}
+.mm-tab.sel{color:#f4e7dd;background:linear-gradient(180deg,#3a2a1c,#241812);border-color:var(--flame)}
+.minimap-canvas{width:100%;aspect-ratio:1/1;display:block;border-radius:6px;background:rgba(8,7,12,.55)}
+.minimap-tip{position:absolute;pointer-events:none;z-index:4;background:rgba(20,16,14,.94);
+  border:1px solid var(--edge);color:#f0e2d2;font-size:.72rem;padding:.14rem .45rem;border-radius:6px;
+  white-space:nowrap;opacity:0;transform:translate(-50%,-135%);transition:opacity .12s}
+.minimap-tip.show{opacity:1}
 
 /* ---- cinematic atmosphere: vignette + ember warmth + film grain ---- */
 #atmos{position:fixed;inset:0;pointer-events:none;z-index:9}
@@ -287,23 +303,61 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 .die{width:17px;height:17px;font-size:11px}
 
 /* ===== Beats — cinematic card reveals, death banners, toasts ===== */
+/* The world FREEZES behind a modal (see animate's dt clamp), so the backdrop
+   stays light — a soft radial vignette that lets the held scene read through. */
 .card-reveal{position:absolute;inset:0;z-index:9;display:grid;place-items:center;
-  background:rgba(2,2,5,.62);animation:reveal-dim .35s ease}
+  background:radial-gradient(120% 95% at 50% 42%,rgba(0,0,0,.45) 45%,rgba(0,0,0,.78) 100%);
+  animation:reveal-dim .35s ease}
 .card-flip{perspective:1100px}
-.draw-card{width:min(340px,86vw);aspect-ratio:5/7;border-radius:16px;padding:1.5rem 1.3rem;
-  display:flex;flex-direction:column;align-items:center;text-align:center;gap:.55rem;
+/* ---- Card v2: an occult trading card ---- */
+.draw-card{width:min(340px,86vw);aspect-ratio:5/7;border-radius:16px;padding:1.25rem 1.15rem 1rem;
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:.5rem;
   background:linear-gradient(170deg,#181214,#0c0a0e 60%);border:2px solid var(--bc);
   box-shadow:0 0 70px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6);
-  animation:card-flip-in .62s cubic-bezier(.2,.9,.3,1.15) both}
+  animation:card-flip-in .62s cubic-bezier(.2,.9,.3,1.15) both,card-float 5.5s ease-in-out .9s infinite}
 .draw-card.t-item {--bc:#e2a85a;--bg-glow:rgba(226,168,90,.45)}
 .draw-card.t-event{--bc:#8f6fd8;--bg-glow:rgba(143,111,216,.45)}
 .draw-card.t-omen {--bc:#c2412f;--bg-glow:rgba(194,65,47,.55)}
-.dc-icon{width:64px;height:64px;margin-top:.6rem}.dc-icon svg{width:100%;height:100%;fill:var(--bc)}
-.dc-kicker{letter-spacing:.22em;text-transform:uppercase;font-size:.72rem;color:var(--bc)}
-.dc-name{font-size:1.65rem;line-height:1.15;color:#f4e7dd}
-.dc-text{font-size:.98rem;line-height:1.45;color:#cfc4b8;flex:1}
-.dc-holder{font-size:.78rem;color:#8d8177}
-.dc-continue{margin-bottom:.4rem}
+/* layered engraved frame: outer + inner hairline and four corner ornaments */
+.card-frame{position:absolute;inset:8px;border:1px solid color-mix(in srgb,var(--bc) 50%,transparent);
+  border-radius:11px;pointer-events:none}
+.card-frame::before{content:"";position:absolute;inset:4px;
+  border:1px solid color-mix(in srgb,var(--bc) 24%,transparent);border-radius:8px}
+.card-frame i{position:absolute;width:15px;height:15px;border:2px solid var(--bc);opacity:.85}
+.card-frame i:nth-child(1){top:-1px;left:-1px;border-right:0;border-bottom:0;border-top-left-radius:10px}
+.card-frame i:nth-child(2){top:-1px;right:-1px;border-left:0;border-bottom:0;border-top-right-radius:10px}
+.card-frame i:nth-child(3){bottom:-1px;left:-1px;border-right:0;border-top:0;border-bottom-left-radius:10px}
+.card-frame i:nth-child(4){bottom:-1px;right:-1px;border-left:0;border-top:0;border-bottom-right-radius:10px}
+/* type ribbon — ITEM amber / EVENT violet / OMEN skull-red (--bc per type) */
+.card-ribbon{margin-top:.15rem;padding:.24rem 1.1rem;font-size:.66rem;font-weight:700;
+  letter-spacing:.34em;text-indent:.34em;color:#140e0a;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--bc) 86%,#fff 14%),var(--bc));
+  clip-path:polygon(9px 0,calc(100% - 9px) 0,100% 50%,calc(100% - 9px) 100%,9px 100%,0 50%)}
+/* art plate — the type's sigil over a procedural backdrop varying by type */
+.card-art{position:relative;width:calc(100% - 14px);height:124px;border-radius:8px;
+  display:grid;place-items:center;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--bc) 40%,rgba(0,0,0,.4));box-shadow:inset 0 0 26px rgba(0,0,0,.75)}
+.t-item .card-art{background:repeating-linear-gradient(45deg,rgba(226,168,90,.08) 0 2px,transparent 2px 10px),
+  radial-gradient(circle at 50% 40%,#3a2a16,#171009 78%)}
+.t-event .card-art{background:repeating-radial-gradient(circle at 50% 50%,rgba(143,111,216,.10) 0 2px,transparent 2px 13px),
+  radial-gradient(circle at 50% 40%,#2a1d42,#120d1c 78%)}
+.t-omen .card-art{background:repeating-conic-gradient(from 0deg at 50% 50%,rgba(194,65,47,.09) 0deg 6deg,transparent 6deg 26deg),
+  radial-gradient(circle at 50% 40%,#3a150e,#160907 78%)}
+.card-art-icon{width:74px;height:74px;filter:drop-shadow(0 0 16px color-mix(in srgb,var(--bc) 55%,transparent))}
+.card-art-icon svg{width:100%;height:100%;fill:var(--bc)}
+.card-kicker{letter-spacing:.22em;text-transform:uppercase;font-size:.68rem;color:var(--bc);opacity:.9}
+/* the name in the display serif over a thin engraved rule */
+.card-name{position:relative;width:100%;font-family:"Cinzel",Georgia,serif;font-size:1.45rem;
+  line-height:1.12;color:#f4e7dd;padding-bottom:.42rem}
+.card-name::after{content:"";position:absolute;left:16%;right:16%;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--bc) 80%,transparent),transparent)}
+.card-rules{font-size:.95rem;line-height:1.5;color:#cfc4b8;flex:1;display:flex;align-items:center;padding:0 .4rem}
+.card-footer{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:#8d8177}
+.dc-continue{margin-bottom:.35rem}
+/* the countdown drains along the engraved frame's bottom rule */
+.draw-card .card-timer{left:9px;right:9px;bottom:9px;border-radius:1px}
+@keyframes card-float{0%,100%{transform:translateY(0);box-shadow:0 0 60px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6)}
+  50%{transform:translateY(-6px);box-shadow:0 0 88px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6)}}
 .beat-vignette{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}
 .beat-vignette.flash{animation:vignette-flash .9s ease-out}
 .beat-vignette.t-item {box-shadow:inset 0 0 18vmax rgba(226,168,90,.5)}
@@ -385,7 +439,12 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <div id="hud-bottom" class="hud-bottom"></div>
   <button id="sound-btn" class="icon-btn" title="Toggle sound" aria-label="Toggle sound">🔈</button>
   <button id="help-btn" class="icon-btn" title="How to play" aria-label="How to play">?</button>
-  <div id="hud-hint">Drag to orbit · arrow keys / WASD to move · click a glowing room or flame arrow · click a monster to strike</div>
+  <div id="hud-hint">Drag to orbit · arrows/WASD move relative to your explorer — ↑ walks the way they face · click a glowing room, flame arrow or map square · click a monster to strike</div>
+  <div id="minimap" class="minimap" aria-label="Floor map">
+    <div id="minimap-floors" class="minimap-floors"></div>
+    <canvas id="minimap-canvas" class="minimap-canvas"></canvas>
+    <div id="minimap-tip" class="minimap-tip"></div>
+  </div>
   <div id="overlay"></div>
   <div id="beat-layer">
     <div class="beat-vignette"></div>

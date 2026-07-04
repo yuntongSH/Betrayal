@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, ISLAND_R, RING } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, createDreadScore, ISLAND_R, RING } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -207,8 +207,9 @@ const SPECIAL_GLOW = {
   "heal-sanity": 0x6fb6b5, "heal-might": 0xe8a85a, "drain-speed": 0x5a6f9a,
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
 };
-const DIRS = ["north", "east", "south", "west"];
-// Arrows/WASD are interpreted relative to the camera, then snapped to a grid dir.
+const DIRS = ["north", "east", "south", "west"]; // clockwise — index+1 is a right turn
+// Arrows/WASD are interpreted relative to the HERO's facing (see onKeyMove):
+// "up" walks the way the explorer faces, left/right are HIS flanks.
 const SCREEN_KEY = {
   ArrowUp: "up", w: "up", W: "up",
   ArrowDown: "down", s: "down", S: "down",
@@ -220,6 +221,16 @@ function snapGrid(vx, vz) {
   let best = "north", bd = -Infinity;
   for (const d in GRID_AXIS) { const [ax, az] = GRID_AXIS[d]; const dot = vx * ax + vz * az; if (dot > bd) { bd = dot; best = d; } }
   return best;
+}
+/** The hero's facing as a grid direction: the direction he last travelled
+ *  (recorded by the walker — ring arcs make the raw yaw lie mid-walk), else
+ *  his settled body yaw snapped to the nearest compass direction. Because he
+ *  turns to face each move, chained ↑ presses walk on naturally. */
+function heroFacingDir(tok) {
+  if (!tok) return "north";
+  if (tok.travelDir) return tok.travelDir;
+  // token yaw convention: facing vector = (sin yaw, 0, cos yaw)
+  return snapGrid(Math.sin(tok.yaw), Math.cos(tok.yaw));
 }
 let _toastT;
 function toast(msg) {
@@ -234,35 +245,23 @@ function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
 // island prop — [0,0] parked characters on top of the room's centerpiece.
 function ring(i, n, rad) { if (n <= 1) return [0, rad]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
 
-// ---- procedural audio (Web Audio, zero assets) ---------------------------
-// A low drone + filtered wind bed, with reactive cues: a creak when a door
-// swings, a heartbeat while you're near death, and a dissonant swell when the
-// house turns. Must be started from a user gesture (the lobby button click).
+// ---- audio (Web Audio) ----------------------------------------------------
+// Diegetic SFX (door creaks) stay procedural and local; the MUSIC — an
+// adaptive score with scenes (lobby / explore / haunt / ended), a peril layer
+// and card/death/reveal stings — is the shared engine from
+// @dread-hollow/decor (createDreadScore). Everything hangs off one
+// AudioContext created inside a user gesture (browser autoplay unlock): the
+// first click/keypress on the page, or the lobby Begin button.
 const Sound = (() => {
-  let ctx = null, master = null, started = false, muted = false, heart = null, lastDoor = 0;
-  const VOL = 0.26;
+  let ctx = null, master = null, score = null, started = false, muted = false, lastDoor = 0;
+  let scene = "lobby"; // remembered so a scene chosen before start() lands then
+  const VOL = 0.26; // SFX bus level — the score manages its own internal mix
   function noise(sec) {
     const len = Math.floor(ctx.sampleRate * sec);
     const b = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = b.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     return b;
-  }
-  function drone() {
-    const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 210; f.connect(master);
-    for (const fr of [49, 55, 73.4]) {
-      const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = fr;
-      const g = ctx.createGain(); g.gain.value = 0.16; o.connect(g).connect(f); o.start();
-      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.04 + Math.random() * 0.05;
-      const lg = ctx.createGain(); lg.gain.value = 0.07; lfo.connect(lg).connect(g.gain); lfo.start();
-    }
-  }
-  function wind() {
-    const s = ctx.createBufferSource(); s.buffer = noise(4); s.loop = true;
-    const b = ctx.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = 460; b.Q.value = 0.8;
-    const g = ctx.createGain(); g.gain.value = 0.1; s.connect(b).connect(g).connect(master); s.start();
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06;
-    const lg = ctx.createGain(); lg.gain.value = 240; lfo.connect(lg).connect(b.frequency); lfo.start();
   }
   function creak(freq, dur, vol) {
     if (!started || muted) return;
@@ -274,90 +273,31 @@ const Sound = (() => {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(f).connect(g).connect(master); s.start(); s.stop(t + dur + 0.1);
   }
-  function thump(t, vol) {
-    const o = ctx.createOscillator(); o.type = "sine";
-    o.frequency.setValueAtTime(72, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.18);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-    o.connect(g).connect(master); o.start(t); o.stop(t + 0.32);
-  }
   return {
     start() {
       if (started) return;
       const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
-      ctx = new C(); master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
-      started = true; drone(); wind();
-      master.gain.linearRampToValueAtTime(muted ? 0 : VOL, ctx.currentTime + 4);
+      ctx = new C();
+      if (ctx.state === "suspended") ctx.resume(); // we're inside a user gesture
+      master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+      started = true;
+      master.gain.linearRampToValueAtTime(muted ? 0 : VOL, ctx.currentTime + 2);
+      score = createDreadScore(ctx);
+      score.start();
+      score.setScene(scene);
+      if (muted) score.setVolume(0);
     },
     door() { const now = performance.now(); if (now - lastDoor < 350) return; lastDoor = now; creak(330 + Math.random() * 220, 0.6, 0.22); },
-    setHeart(on) {
-      if (!started) return;
-      if (on && !heart && !muted) {
-        const beat = () => { if (muted) return; const t = ctx.currentTime; thump(t, 0.55); thump(t + 0.33, 0.4); };
-        beat(); heart = setInterval(beat, 1150);
-      } else if (!on && heart) { clearInterval(heart); heart = null; }
-    },
-    stinger() {
-      if (!started || muted) return;
-      const t = ctx.currentTime;
-      for (const fr of [110, 116.5, 220]) {
-        const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fr;
-        const f = ctx.createBiquadFilter(); f.type = "lowpass";
-        f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(1900, t + 0.7);
-        const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.13, t + 0.15); g.gain.exponentialRampToValueAtTime(0.001, t + 2.3);
-        o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 2.4);
-      }
-      const s = ctx.createBufferSource(); s.buffer = noise(2.2);
-      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2600;
-      const g2 = ctx.createGain(); g2.gain.setValueAtTime(0, t);
-      g2.gain.linearRampToValueAtTime(0.09, t + 0.2); g2.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
-      s.connect(hp).connect(g2).connect(master); s.start(t); s.stop(t + 2.2);
-    },
-    /** Short reveal sting per card type — item plucks, event chimes, omen dread. */
-    cardSting(type) {
-      if (!started || muted) return;
-      const t = ctx.currentTime;
-      const note = (freq, at, wave, vol, dur) => {
-        const o = ctx.createOscillator(); o.type = wave; o.frequency.value = freq;
-        const g = ctx.createGain(); g.gain.setValueAtTime(0, at);
-        g.gain.linearRampToValueAtTime(vol, at + 0.015);
-        g.gain.exponentialRampToValueAtTime(0.001, at + dur);
-        o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
-      };
-      if (type === "item") { note(660, t, "triangle", 0.18, 0.5); note(880, t + 0.09, "triangle", 0.18, 0.5); }
-      else if (type === "event") { [523, 415, 311].forEach((f, i) => note(f, t + i * 0.12, "sine", 0.14, 0.4)); }
-      else {
-        for (const fr of [65, 69]) {
-          const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fr;
-          const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 400;
-          const g = ctx.createGain(); g.gain.setValueAtTime(0.2, t);
-          g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-          o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 1.3);
-        }
-        const s = ctx.createBufferSource(); s.buffer = noise(0.8);
-        const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2400;
-        const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.06, t);
-        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-        s.connect(hp).connect(g2).connect(master); s.start(t); s.stop(t + 0.85);
-      }
-    },
-    /** A bell struck twice for a fallen explorer. */
-    deathKnell() {
-      if (!started || muted) return;
-      const t0 = ctx.currentTime;
-      for (const at of [t0, t0 + 0.7]) {
-        const o = ctx.createOscillator(); o.type = "sine";
-        o.frequency.setValueAtTime(98, at); o.frequency.exponentialRampToValueAtTime(82, at + 0.5);
-        const g = ctx.createGain(); g.gain.setValueAtTime(0.3, at);
-        g.gain.exponentialRampToValueAtTime(0.001, at + 2.2);
-        o.connect(g).connect(master); o.start(at); o.stop(at + 2.3);
-      }
-    },
+    /** Near-death heartbeat state — forwarded to the score's peril layer. */
+    setHeart(on) { score?.setPeril(!!on); },
+    /** Game phase -> musical scene: "lobby" | "explore" | "haunt" | "ended". */
+    setScene(s) { if (s === scene) return; scene = s; score?.setScene(s); },
+    /** One-shot musical sting: "omen" | "event" | "item" | "death" | "reveal". */
+    sting(kind) { if (!muted) score?.sting(kind); },
     setMuted(m) {
       muted = m;
       if (ctx && master) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.linearRampToValueAtTime(m ? 0 : VOL, ctx.currentTime + 0.5); }
-      if (m) this.setHeart(false);
+      score?.setVolume(m ? 0 : 1);
     },
     toggle() { this.setMuted(!muted); return muted; },
     get muted() { return muted; },
@@ -468,13 +408,20 @@ const Beats = (() => {
   // Every modal offers "Continue ▸" — a bot's draw auto-dismisses after
   // CARD_HOLD_MS (the .card-timer bar drains along the bottom edge to show it)
   // but a click / Continue / Enter / Space always advances immediately.
+  // Card v2 — an occult trading card: engraved layered frame with corner
+  // ornaments, a type ribbon, an art plate (the type's sigil over a procedural
+  // backdrop), display-serif name over a thin rule, rules text, and a footer
+  // naming the drawer. The timer bar and Continue hook are unchanged.
   function cardHtml(b) {
-    return `<div class="card-flip"><div class="draw-card t-${b.cardType}">` +
-      `<div class="dc-icon">${BEAT_SVG[b.cardType]}</div>` +
-      `<div class="dc-kicker">${BEAT_KICKER[b.cardType]}</div>` +
-      `<div class="dc-name">${b.name}</div>` +
-      `<div class="dc-text">${b.text}</div>` +
-      `<div class="dc-holder">${b.playerName} draws</div>` +
+    const t = b.cardType;
+    return `<div class="card-flip"><div class="draw-card t-${t}">` +
+      `<div class="card-frame"><i></i><i></i><i></i><i></i></div>` +
+      `<div class="card-ribbon">${t.toUpperCase()}</div>` +
+      `<div class="card-art"><div class="card-art-icon">${BEAT_SVG[t]}</div></div>` +
+      `<div class="card-kicker">${BEAT_KICKER[t]}</div>` +
+      `<div class="card-name">${b.name}</div>` +
+      `<div class="card-rules">${b.text}</div>` +
+      `<div class="card-footer">${b.playerName} draws</div>` +
       `<button class="btn primary dc-continue">Continue ▸</button>` +
       (b.interactive ? "" : `<div class="card-timer" style="animation-duration:${CARD_HOLD_MS}ms"></div>`) +
       `</div></div>`;
@@ -510,8 +457,8 @@ const Beats = (() => {
     flashVignette("t-" + type);
     focusPulse(b.roomKey);
     spawnBeatFx(b.roomKey, type);
-    if (b.kind === "death") Sound.deathKnell();
-    else Sound.cardSting(b.cardType);
+    if (b.kind === "death") Sound.sting("death");
+    else Sound.sting(b.cardType);
     // Every reveal gets its full reading time — no backlog fast-drain (driveBots
     // pauses while a beat is up, so the queue stays bounded regardless).
     if (!b.interactive) autoTimer = setTimeout(dismiss, CARD_HOLD_MS);
@@ -536,7 +483,7 @@ const Beats = (() => {
     if (def.aura > 0) return beatToast("✦", `Blessed ground — +${def.aura} die to every roll here`, "#e2c15a");
     if (def.aura < 0) return beatToast("☓", `Cursed ground — ${def.aura} dice to every roll here`, "#c2412f");
     const sp = def.special;
-    if (sp === "mystic-elevator") return beatToast("⇅", "The Mystic Elevator — it can carry you to another floor", "#8f6fd8");
+    if (sp === "mystic-elevator") return beatToast("⇅", "The Caged Lift — it can carry you to another floor", "#8f6fd8");
     if (sp === "grand-staircase" || sp === "stairs-up" || sp === "stairs-down") return beatToast("⇗", "Stairs — change floors here", "#e2a85a");
     if (sp === "vault") return beatToast("🗝", "A sealed vault — it wants the Iron Key", "#e2a85a");
     if (!discovered) return;
@@ -870,6 +817,7 @@ function advanceChapter() {
   closeModals(); // dismiss the legacy overlay before showing the saga screen
   $("game").style.display = "none";
   $("lobby").style.display = "block";
+  Sound.setScene("lobby");
   renderCampaignScreen();
   $("campaign-overlay").classList.add("show");
 }
@@ -896,6 +844,7 @@ let houseGroup, tokenGroup, arrowGroup, doorGroup;
 let dust, wisps = [];
 const tokenCache = new Map(); // entity id -> persistent token group (lerped toward its target)
 let lastFrameT = 0;
+let animT = 0; // the WORLD's clock (s) — halts while a modal beat freezes the scene
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
 const doorCache = new Map(); // boundary id -> { group, pivot, open, openTarget, closeAt }
 const camDesired = new THREE.Vector3(0, 0, 7); // soft camera-follow target
@@ -1084,7 +1033,8 @@ function initScene() {
   animate();
 }
 
-/** Arrow keys / WASD move the active human player (camera-relative); E ends the turn. */
+/** Arrow keys / WASD move the active human player relative to the HERO's
+ *  facing (↑ = the way he faces, ← → = his flanks, ↓ = behind); E ends the turn. */
 function onKeyMove(e) {
   if (!state) return;
   // A cinematic beat (card flip / death banner) is modal: Enter/Space advances
@@ -1112,23 +1062,23 @@ function onKeyMove(e) {
   const room = active.position ? state.house[active.position] : null;
   if (!room) return;
 
-  // Camera-relative basis projected on the ground: "up" = away from the camera.
-  let fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;
-  const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
-  const rx = -fz, rz = fx;
-  let vx, vz;
-  if (which === "up") { vx = fx; vz = fz; }
-  else if (which === "down") { vx = -fx; vz = -fz; }
-  else if (which === "right") { vx = rx; vz = rz; }
-  else { vx = -rx; vz = -rz; }
-  const dir = snapGrid(vx, vz);
+  // Hero-relative basis: forward is the explorer's current facing snapped to
+  // the grid (the walker already yaws the token as he travels); left/right/
+  // back rotate around it. After a move he faces his travel direction, so a
+  // run of ↑ presses chains straight ahead no matter where the camera sits.
+  const fwd = heroFacingDir(tokenCache.get(active.id));
+  const fi = DIRS.indexOf(fwd);
+  const dir = which === "up" ? fwd
+    : which === "down" ? DIRS[(fi + 2) % 4]
+    : which === "right" ? DIRS[(fi + 1) % 4]
+    : DIRS[(fi + 3) % 4];
 
   const legal = DH.legalMoves(state, active.id);
   if (legal.doors.includes(dir)) { e.preventDefault(); act({ type: "explore", playerId: active.id, door: dir }); return; }
   const nKey = DH.neighborKey(room.floor, room.x, room.y, dir);
   if (legal.explored.includes(nKey)) { e.preventDefault(); act({ type: "move-to", playerId: active.id, toKey: nKey }); return; }
   // Vertical fallback: stairs and the elevator have no compass direction, so
-  // "up"/"down" (away-from / toward the camera) also ascend/descend to a
+  // "up"/"down" (ahead of / behind the hero) also ascend/descend to a
   // reachable landing on another floor when no same-floor move applies.
   if (which === "up" || which === "down") {
     const RANK = { basement: 0, ground: 1, upper: 2 };
@@ -1566,11 +1516,13 @@ function planTokenPath(tok, toKey) {
   const from = tok.lastKey ? state.house[tok.lastKey] : null;
   const to = state.house[toKey];
   const hop = from && to && from.floor === to.floor ? Math.abs(to.x - from.x) + Math.abs(to.y - from.y) : 99;
-  if (!from || !to || hop > 1) { tok.path = null; return; }
+  if (!from || !to || hop > 1) { tok.path = null; tok.travelDir = null; return; } // jumps/floors: facing falls back to body yaw
   const cont = !!(tok.path && tok.path.length); // mid-walk: extend, don't restart
   const path = cont ? tok.path : [];
   const start = cont ? path[path.length - 1] : tok.group.position;
   if (hop === 1) {
+    // The hero's logical facing after this hop — feeds hero-relative keys.
+    tok.travelDir = to.x > from.x ? "east" : to.x < from.x ? "west" : to.y > from.y ? "south" : "north";
     const [ax, ay, az] = roomWorld(from);
     const [bx, by, bz] = roomWorld(to);
     const doorA = Math.atan2(bz - az, bx - ax); // old-room ring angle facing the shared door
@@ -1691,6 +1643,199 @@ function buildArrows(legal) {
 }
 
 // =========================================================================
+// MINIMAP — a clickable 2D floor plan, bottom-right. One floor at a time
+// (B/G/U tabs, auto-following the watched explorer), rooms as rounded squares
+// with doorway notches, reachable rooms highlighted on your turn, aura and
+// stairs/elevator glyphs, identity-coloured explorer dots (watched ringed)
+// and red monster dots. Redrawn on state change (from render()), never per
+// frame. Clicking a reachable room dispatches the SAME move as a 3D click.
+// =========================================================================
+const MM_TABS = [["basement", "B"], ["ground", "G"], ["upper", "U"]];
+const mm = { floor: "ground", followFloor: null, cell: 0, rooms: [], legal: null };
+
+/** Whose experience the minimap frames: the solo human, else the active
+ *  hotseat human, else the first human at the table. */
+function watchedPlayer() {
+  const humans = state.players.filter((p) => !p.isBot);
+  if (humans.length === 1) return humans[0];
+  const a = state.players.find((p) => p.id === state.activePlayerId);
+  return a && !a.isBot ? a : humans[0] ?? a ?? null;
+}
+
+function mmGlyph(special) {
+  if (special === "mystic-elevator") return "⇅";
+  if (special === "grand-staircase" || special === "stairs-up" || special === "stairs-down") return "⇗";
+  return null;
+}
+
+function drawMinimap(legal) {
+  const canvas = $("minimap-canvas");
+  if (!canvas || !state) return;
+  mm.legal = legal;
+
+  // Auto-follow: the map switches floors with the watched explorer.
+  const w = watchedPlayer();
+  const wFloor = w?.position ? DH.parseKey(w.position).floor : null;
+  if (wFloor && wFloor !== mm.followFloor) { mm.followFloor = wFloor; mm.floor = wFloor; }
+
+  const tabs = $("minimap-floors");
+  tabs.innerHTML = MM_TABS.map(([f, l]) =>
+    `<button class="mm-tab${mm.floor === f ? " sel" : ""}" data-f="${f}" title="${f}">${l}</button>`).join("");
+  for (const b of tabs.querySelectorAll(".mm-tab")) {
+    b.onclick = () => { mm.floor = b.dataset.f; drawMinimap(mm.legal); };
+  }
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = canvas.clientWidth || 216, H = canvas.clientHeight || 216;
+  if (canvas.width !== Math.round(W * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+  const g = canvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  mm.rooms = [];
+
+  const rooms = Object.values(state.house).filter((r) => r.floor === mm.floor);
+  if (!rooms.length) {
+    g.fillStyle = "rgba(138,128,118,.75)";
+    g.font = "italic 12px Georgia,serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("unexplored", W / 2, H / 2);
+    return;
+  }
+
+  // North-up auto-fit: grid north is y−1, which already draws upward.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const r of rooms) {
+    minX = Math.min(minX, r.x); maxX = Math.max(maxX, r.x);
+    minY = Math.min(minY, r.y); maxY = Math.max(maxY, r.y);
+  }
+  const cols = maxX - minX + 1, rows = maxY - minY + 1;
+  const pad = 8;
+  const cell = Math.min(34, (W - pad * 2) / cols, (H - pad * 2) / rows);
+  const ox = (W - cell * cols) / 2, oy = (H - cell * rows) / 2;
+  mm.cell = cell;
+
+  // Reachable rooms only light on the watched human's own turn — the same
+  // set the 3D view marks as walkable (legal.explored, for the active player).
+  const yourTurn = !!w && w.id === state.activePlayerId && !w.isBot &&
+    (state.phase === "explore" || state.phase === "haunt");
+  const reach = yourTurn ? new Set(legal.explored) : new Set();
+
+  const inset = 1.5, gapK = 0.38;
+  for (const r of rooms) {
+    const x0 = ox + (r.x - minX) * cell, y0 = oy + (r.y - minY) * cell;
+    const def = DH.ROOMS_BY_ID[r.roomId];
+    const reachable = reach.has(r.key);
+    mm.rooms.push({ key: r.key, x0, y0, name: def?.name ?? "Room", reachable });
+
+    const x1 = x0 + inset, y1 = y0 + inset, x2 = x0 + cell - inset, y2 = y0 + cell - inset;
+    g.beginPath();
+    g.roundRect(x1, y1, x2 - x1, y2 - y1, Math.max(2, cell * 0.14));
+    g.fillStyle = reachable ? "rgba(90,143,90,.32)" : "rgba(216,207,196,.09)";
+    g.fill();
+
+    // Doorway edges are notched open; solid walls draw through.
+    const doors = DH.placedDoorways(r);
+    g.lineWidth = 1;
+    g.strokeStyle = reachable ? "rgba(150,205,150,.9)" : "rgba(140,110,85,.6)";
+    const rr = Math.max(2, cell * 0.14);
+    for (const [d, ax, ay, bx, by] of [
+      ["north", x1 + rr, y1, x2 - rr, y1],
+      ["south", x1 + rr, y2, x2 - rr, y2],
+      ["west", x1, y1 + rr, x1, y2 - rr],
+      ["east", x2, y1 + rr, x2, y2 - rr],
+    ]) {
+      g.beginPath();
+      if (doors.has(d)) {
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const len = Math.hypot(bx - ax, by - ay) || 1;
+        const ux = (bx - ax) / len, uy = (by - ay) / len;
+        const gp = (cell * gapK) / 2;
+        g.moveTo(ax, ay); g.lineTo(mx - ux * gp, my - uy * gp);
+        g.moveTo(mx + ux * gp, my + uy * gp); g.lineTo(bx, by);
+      } else {
+        g.moveTo(ax, ay); g.lineTo(bx, by);
+      }
+      g.stroke();
+    }
+
+    // Stairs / elevator glyph, centered and faint under the occupant dots.
+    const glyph = mmGlyph(def?.special);
+    if (glyph) {
+      g.fillStyle = "rgba(232,168,90,.75)";
+      g.font = `${Math.max(9, cell * 0.42)}px Georgia,serif`;
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(glyph, x0 + cell / 2, y0 + cell / 2);
+    }
+    // Aura mark in the corner: blessed ✦ gold, cursed ☓ red.
+    if (def?.aura) {
+      g.fillStyle = def.aura > 0 ? "#e2c15a" : "#c2412f";
+      g.font = `${Math.max(7, cell * 0.28)}px Georgia,serif`;
+      g.textAlign = "left"; g.textBaseline = "top";
+      g.fillText(def.aura > 0 ? "✦" : "☓", x1 + 1.5, y1 + 1);
+    }
+  }
+
+  // Occupants: explorer dots in identity colours (the watched player ringed),
+  // monsters in threat red. Multiple occupants fan out on a small ring.
+  const occ = {};
+  for (const p of state.players) if (p.position) (occ[p.position] ??= []).push({ kind: "p", p });
+  for (const mn of state.haunt?.monsters ?? []) if (mn.hp > 0 && mn.position) (occ[mn.position] ??= []).push({ kind: "m" });
+  for (const rm of mm.rooms) {
+    const list = occ[rm.key];
+    if (!list) continue;
+    const rad = Math.max(2.5, cell * 0.11);
+    list.forEach((o, i) => {
+      const [dx, dz] = ring(i, list.length, cell * 0.2);
+      const cx = rm.x0 + cell / 2 + dx, cy = rm.y0 + cell / 2 + dz;
+      g.beginPath();
+      g.arc(cx, cy, rad, 0, Math.PI * 2);
+      if (o.kind === "m") g.fillStyle = "#c2412f";
+      else {
+        const c = o.p.characterId ? DH.CHARACTERS_BY_ID[o.p.characterId] : null;
+        g.fillStyle = o.p.alive ? (c?.color ?? "#888") : "#4a4440";
+      }
+      g.fill();
+      if (o.kind === "p" && w && o.p.id === w.id) {
+        g.lineWidth = 1.5;
+        g.strokeStyle = "#f4e7dd";
+        g.beginPath();
+        g.arc(cx, cy, rad + 2, 0, Math.PI * 2);
+        g.stroke();
+      }
+    });
+  }
+}
+
+// Minimap interactions — bound once (the canvas lives in the static template).
+if ($("minimap-canvas")) {
+  const canvas = $("minimap-canvas");
+  const tip = $("minimap-tip");
+  const roomAt = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    return mm.rooms.find((r) => x >= r.x0 && x < r.x0 + mm.cell && y >= r.y0 && y < r.y0 + mm.cell) ?? null;
+  };
+  canvas.addEventListener("pointermove", (e) => {
+    const r = roomAt(e);
+    canvas.style.cursor = r && r.reachable ? "pointer" : "default";
+    if (r) {
+      const prect = canvas.parentElement.getBoundingClientRect();
+      tip.textContent = r.name;
+      tip.style.left = `${e.clientX - prect.left}px`;
+      tip.style.top = `${e.clientY - prect.top}px`;
+      tip.classList.add("show");
+    } else tip.classList.remove("show");
+  });
+  canvas.addEventListener("pointerleave", () => tip.classList.remove("show"));
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!state || state.phase === "ended" || !Beats.idle()) return;
+    const r = roomAt(e);
+    // The SAME dispatch as clicking the lit 3D floor; anything else no-ops.
+    if (r && r.reachable) act({ type: "move-to", playerId: state.activePlayerId, toKey: r.key });
+  });
+}
+
+// =========================================================================
 // INPUT
 // =========================================================================
 function onClick(e) {
@@ -1777,11 +1922,14 @@ function driveBots() {
 function render() {
   // Tint the whole scene with dread once the house has turned.
   document.body.classList.toggle("haunting", state.phase === "haunt");
+  // The score follows the game's arc: exploration, the turn, the aftermath.
+  Sound.setScene(state.phase === "ended" ? "ended" : state.phase === "haunt" ? "haunt" : "explore");
   const me = state.activePlayerId;
   const legal = me ? DH.legalMoves(state, me) : { explored: [], doors: [], attackMonsters: [], attackPlayers: [], pickupItems: [], tradePartners: [] };
   buildHouse(legal);
   syncTokens(legal);
   buildArrows(legal);
+  drawMinimap(legal);
   updateHUD(legal);
 }
 
@@ -2001,7 +2149,7 @@ function updateHUD(legal) {
   // omen card that triggered it flips first, then the house turns).
   const ov = $("overlay");
   if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id && Beats.idle()) {
-    if (lastStinger !== state.haunt.id) { Sound.stinger(); lastStinger = state.haunt.id; }
+    if (lastStinger !== state.haunt.id) { Sound.sting("reveal"); lastStinger = state.haunt.id; }
     const amT = me?.side === "traitor";
     const noTraitor = state.haunt.traitorIds.length === 0;
     const tnames = state.haunt.traitorIds.map((id) => state.players.find((p) => p.id === id)?.name ?? "someone").join(", ");
@@ -2054,9 +2202,19 @@ function onResize() {
 
 function animate() {
   requestAnimationFrame(animate);
-  const t = performance.now() / 1000;
-  const dt = lastFrameT ? Math.min(0.05, t - lastFrameT) : 0.016;
-  lastFrameT = t;
+  const now = performance.now() / 1000;
+  const rawDt = lastFrameT ? Math.min(0.05, now - lastFrameT) : 0.016;
+  lastFrameT = now;
+  // While a modal beat (card flip / death banner) is up, the WORLD holds its
+  // breath: dt clamps to 0 so mixers, the waypoint walker, camera easing,
+  // x-ray fades and particle beats all stand perfectly still — but frames
+  // keep rendering (the frozen scene reads behind the lightened backdrop) and
+  // DOM/CSS animations (flip, timer bar) run on. Because everything below
+  // eases from its current value, nothing teleports when the queue drains.
+  const frozen = !Beats.idle();
+  const dt = frozen ? 0 : rawDt;
+  animT += dt;
+  const t = animT; // world clock — every time-driven flourish freezes with it
   for (const m of tokenAvatarMixers) m.update(dt); // drive rigged-avatar idle clips
 
   // Cinematic follow camera: a TACTICAL ⇄ CHASE machine on one scalar. While
@@ -2147,14 +2305,14 @@ function animate() {
     }
   }
 
-  if (dust) {
+  if (dust && dt > 0) {
     const a = dust.geometry.getAttribute("position");
     const arr = a.array;
     for (let i = 0; i < arr.length; i += 3) { arr[i + 1] += 0.012; if (arr[i + 1] > 20) arr[i + 1] = -18; }
     a.needsUpdate = true;
     dust.rotation.y += 0.0006;
   }
-  for (const l of wisps) {
+  if (dt > 0) for (const l of wisps) {
     const b = l.userData.base;
     const seed = b[0] + b[2];
     let f = 1 + Math.sin(t * 23 + seed) * 0.1 + Math.sin(t * 7.3 + seed * 2.1) * 0.16 + Math.sin(t * 1.7 + seed * 0.7) * 0.06;
@@ -2197,7 +2355,9 @@ function animate() {
     g.rotation.y = tok.yaw;
     // Feet match the glide: the rigged body strides while covering ground and
     // settles back to idle on arrival. The dead stay exactly as they fell.
-    if (tok.kind === "p" && !tok.dead) {
+    // (dt=0 = frozen frame: skip, so a mid-stride walker holds his pose
+    // instead of reading zero speed and crossfading to idle behind the card.)
+    if (tok.kind === "p" && !tok.dead && dt > 0) {
       const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
       // Hysteresis so the clip can't flap right at the threshold.
       tok.walking = speed > (tok.walking ? 0.4 : 0.8);
@@ -2397,6 +2557,17 @@ $("begin-btn").onclick = () => beginGame(false);
 $("solo-btn").onclick = () => beginGame(true);
 $("sound-btn").onclick = () => { if (!Sound.started) Sound.start(); else Sound.toggle(); syncSoundBtn(); };
 syncSoundBtn();
+
+// Autoplay unlock: the very first gesture anywhere starts the audio engine,
+// so the score's lobby scene plays under character selection. (Begin/solo
+// clicks still call Sound.start() themselves — whichever lands first wins.)
+const _unlockAudio = () => {
+  window.removeEventListener("pointerdown", _unlockAudio);
+  window.removeEventListener("keydown", _unlockAudio);
+  if (!Sound.started) { Sound.start(); syncSoundBtn(); }
+};
+window.addEventListener("pointerdown", _unlockAudio);
+window.addEventListener("keydown", _unlockAudio);
 
 // Difficulty selector (lobby)
 for (const b of document.querySelectorAll("#difficulty .diff-opt")) {

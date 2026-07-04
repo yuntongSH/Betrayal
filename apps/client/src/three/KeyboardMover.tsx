@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { DIRECTIONS, legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { followTarget } from "./followCam";
 
 /** Grid axes in world space (north = −z, east = +x). */
 const AXIS: Record<Direction, THREE.Vector3> = {
@@ -23,6 +23,11 @@ function snap(v: THREE.Vector3): Direction {
   return best;
 }
 
+/** Compass turns relative to a facing (the hero's left is facing rotated +90°). */
+const LEFT_OF: Record<Direction, Direction> = { north: "west", west: "south", south: "east", east: "north" };
+const RIGHT_OF: Record<Direction, Direction> = { north: "east", east: "south", south: "west", west: "north" };
+const BACK_OF: Record<Direction, Direction> = { north: "south", south: "north", east: "west", west: "east" };
+
 const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowUp: "up", w: "up", W: "up",
   ArrowDown: "down", s: "down", S: "down",
@@ -30,18 +35,20 @@ const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowRight: "right", d: "right", D: "right",
 };
 
+// Scratch — the hero's facing on the ground plane, rebuilt per keypress.
+const FACING = new THREE.Vector3();
+
 /**
- * Keyboard movement, lives inside the Canvas so it can read the live camera.
- * Arrows/WASD are interpreted **relative to the camera** — "up" always means
- * "away from you" no matter how the house is orbited — then snapped to the grid
- * direction the player actually walks. E ends the turn. When a press can't do
- * anything we flash a one-line reason instead of silently ignoring it.
+ * Keyboard movement. Arrows/WASD are interpreted **relative to the hero** —
+ * "up" continues the way he is walking/standing, "left" is *his* left — by
+ * reading the token group's live yaw (broadcast via followTarget by the active
+ * token; yaw = atan2(dx, dz), so facing = (sin yaw, 0, cos yaw)) and snapping
+ * it to the nearest grid direction. Since the walker always turns to face his
+ * travel direction, controls stay consistent hop after hop. E ends the turn.
+ * When a press can't do anything we flash a one-line reason instead of
+ * silently ignoring it.
  */
 export function KeyboardMover() {
-  const { camera, controls } = useThree() as unknown as {
-    camera: THREE.Camera;
-    controls: { target?: THREE.Vector3 } | null;
-  };
   const game = useStore((s) => s.game);
   const myId = useStore((s) => s.playerId);
   const moveTo = useStore((s) => s.moveTo);
@@ -70,20 +77,14 @@ export function KeyboardMover() {
       const room = me?.position ? game.house[me.position] : undefined;
       if (!room) return;
 
-      // Build a camera-relative basis on the ground plane.
-      const fwd = new THREE.Vector3();
-      const target = controls?.target ?? new THREE.Vector3();
-      fwd.subVectors(target, camera.position);
-      fwd.y = 0;
-      if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-      fwd.normalize();
-      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-      const v =
-        which === "up" ? fwd
-        : which === "down" ? fwd.clone().negate()
-        : which === "right" ? right
-        : right.clone().negate();
-      const dir = snap(v);
+      // The hero's facing, snapped to the grid: forward is where he looks.
+      FACING.set(Math.sin(followTarget.yaw), 0, Math.cos(followTarget.yaw));
+      const facing = snap(FACING);
+      const dir =
+        which === "up" ? facing
+        : which === "down" ? BACK_OF[facing]
+        : which === "left" ? LEFT_OF[facing]
+        : RIGHT_OF[facing];
 
       const legal = legalMoves(game, myId);
       if (legal.doors.includes(dir)) {
@@ -118,7 +119,7 @@ export function KeyboardMover() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [game, myId, moveTo, explore, endTurn, setNotice, camera, controls]);
+  }, [game, myId, moveTo, explore, endTurn, setNotice]);
 
   return null;
 }

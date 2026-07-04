@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { registerToken, unregisterToken } from "./followCam";
 import { followPath, type WalkPoint } from "./walk";
+import { useBeats } from "../state/beats";
 
 function lerpAngle(a: number, b: number, t: number): number {
   const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -64,6 +65,8 @@ export function MonsterToken({
       if (activePath.current) cursor.current.i = activePath.current.length; // never walk in from a stale path
       placed.current = true;
     }
+    // A modal beat owns the stage — hold position and pose until it drains.
+    if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
     // Same waypoint walk as players; the glide remains for floor jumps.
     const walking = activePath.current ? followPath(g.position, activePath.current, cursor.current, dt) : false;

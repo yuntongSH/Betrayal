@@ -11,6 +11,7 @@ import { HauntBanner } from "./HauntBanner";
 import { BeatOverlay } from "./BeatOverlay";
 import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
+import { Minimap } from "./Minimap";
 import { TRAIT_ICON, tagIcon } from "./icons";
 
 export function GameScreen() {
@@ -63,7 +64,7 @@ export function GameScreen() {
   const barricadeDoors = legal?.barricadeDoors ?? [];
   const myRoom = active && active.position ? game.house[active.position] : null;
 
-  // Keyboard movement (camera-relative) lives in <KeyboardMover/> inside the Canvas.
+  // Keyboard movement (hero-relative) lives in <KeyboardMover/> inside the Canvas.
 
   return (
     <div className="game-shell">
@@ -201,6 +202,8 @@ export function GameScreen() {
         )}
       </div>
 
+      <Minimap />
+
       <BeatOverlay />
       <HauntBanner />
 
@@ -241,8 +244,9 @@ export function GameScreen() {
       )}
 
       <div className="hud-hint">
-        Drag to orbit · arrow keys / WASD to move · click a glowing room or a
-        flame arrow · E ends your turn
+        Drag to orbit · ↑ walks your explorer onward, ←/→ step to their left
+        and right, ↓ turns back · click a glowing room, a flame arrow or the
+        map · E ends your turn
         {game.phase === "haunt" ? " · click a monster to strike · ✦ spectral foes are fought with the mind" : ""}
       </div>
     </div>

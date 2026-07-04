@@ -36,6 +36,7 @@ export * from "./materials";
 export { attachKeepsake } from "./props";
 export { refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture } from "./refine";
 export type { AvatarLife } from "./refine";
+export { createDreadScore, type DreadScore, type DreadScene, type StingKind } from "./audio";
 
 /**
  * @dread-hollow/decor

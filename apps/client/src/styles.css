@@ -859,6 +859,7 @@ kbd {
 @media (max-width: 720px) {
   .hud-right { display: none; }
   .hud-left { width: 64vw; max-width: 64vw; }
+  .minimap { display: none; }
 }
 
 /* --- misc --------------------------------------------------------------- */
@@ -979,8 +980,12 @@ kbd {
 .die{width:17px;height:17px;font-size:11px}
 
 /* ===== Beats — cinematic card reveals, toasts, vignette (event spec) ===== */
+/* The world FREEZES behind this backdrop — keep it light enough to read the
+   held frame (base ≈ rgba(0,0,0,.45)), with a soft radial vignette so the
+   card still pops. The artifact mirrors these exact values. */
 .card-reveal{position:absolute;inset:0;z-index:9;display:grid;place-items:center;
-  background:rgba(2,2,5,.62);animation:reveal-dim .35s ease}
+  background:radial-gradient(ellipse at 50% 44%,rgba(0,0,0,.30) 0%,rgba(0,0,0,.45) 55%,rgba(2,2,5,.72) 100%);
+  animation:reveal-dim .35s ease}
 .card-flip{perspective:1100px}
 .draw-card{width:min(340px,86vw);aspect-ratio:5/7;border-radius:16px;padding:1.5rem 1.3rem;
   display:flex;flex-direction:column;align-items:center;text-align:center;gap:.55rem;
@@ -1017,6 +1022,62 @@ kbd {
 @keyframes vignette-flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
 @keyframes toast-in{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
 
+/* ===== Card design v2 — occult trading card (mirrored by the artifact) =====
+   New classes (all card-*): card-ribbon, card-art, card-rule, card-flavor,
+   card-corner (+ tl/tr/bl/br). Existing class names & beat timings unchanged. */
+.draw-card{padding:1.25rem 1.1rem 1rem;gap:.5rem;
+  background:
+    radial-gradient(120% 90% at 50% 0%,color-mix(in srgb,var(--bc) 10%,transparent),transparent 55%),
+    repeating-linear-gradient(45deg,rgba(255,255,255,.012) 0 3px,transparent 3px 6px),
+    linear-gradient(170deg,#181214,#0c0a0e 60%);
+  /* flip in, then hover with a breathing glow while the card holds */
+  animation:card-flip-in .62s cubic-bezier(.2,.9,.3,1.15) both,
+    card-float 3.4s ease-in-out .62s infinite alternate,
+    card-breathe 2.8s ease-in-out .62s infinite alternate}
+@keyframes card-float{from{transform:translateY(0)}to{transform:translateY(-7px)}}
+@keyframes card-breathe{
+  from{box-shadow:0 0 55px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6)}
+  to{box-shadow:0 0 90px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6)}}
+/* engraved double frame: outer 2px border (existing) + inner etched line */
+.draw-card::before{content:"";position:absolute;inset:7px;border-radius:10px;pointer-events:none;
+  border:1px solid color-mix(in srgb,var(--bc) 45%,transparent);
+  box-shadow:inset 0 0 0 3px rgba(0,0,0,.35)}
+/* corner ornaments — two-sided L brackets, one per corner */
+.card-corner{position:absolute;width:15px;height:15px;pointer-events:none;
+  border:2px solid color-mix(in srgb,var(--bc) 80%,#fff 0%);opacity:.9}
+.card-corner.tl{top:11px;left:11px;border-right:none;border-bottom:none;border-top-left-radius:5px}
+.card-corner.tr{top:11px;right:11px;border-left:none;border-bottom:none;border-top-right-radius:5px}
+.card-corner.bl{bottom:11px;left:11px;border-right:none;border-top:none;border-bottom-left-radius:5px}
+.card-corner.br{bottom:11px;right:11px;border-left:none;border-top:none;border-bottom-right-radius:5px}
+/* type ribbon: ITEM amber / EVENT violet / OMEN skull-red (inherits --bc) */
+.card-ribbon{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:1;
+  padding:.24rem .95rem .3rem;font-size:.64rem;font-weight:bold;letter-spacing:.32em;
+  text-transform:uppercase;color:#140e0a;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--bc) 90%,#fff),color-mix(in srgb,var(--bc) 70%,#000));
+  clip-path:polygon(0 0,100% 0,calc(100% - 9px) 100%,9px 100%);
+  text-shadow:0 1px 0 color-mix(in srgb,var(--bc) 60%,#fff)}
+/* art plate: the type icon large over a procedural engraved-sunburst backdrop */
+.card-art{position:relative;align-self:stretch;height:9.4rem;margin-top:1.05rem;
+  display:grid;place-items:center;border-radius:9px;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--bc) 40%,#000);
+  background:
+    radial-gradient(circle at 50% 44%,color-mix(in srgb,var(--bc) 32%,transparent),transparent 70%),
+    repeating-conic-gradient(from 0deg at 50% 44%,color-mix(in srgb,var(--bc) 13%,transparent) 0deg 8deg,transparent 8deg 16deg),
+    radial-gradient(circle at 50% 46%,#221a20,#0b090d 78%);
+  box-shadow:inset 0 0 26px rgba(0,0,0,.75)}
+.draw-card .dc-icon{width:92px;height:92px;margin-top:0;
+  filter:drop-shadow(0 0 14px color-mix(in srgb,var(--bc) 55%,transparent))}
+/* name in the display serif over a thin engraved rule */
+.draw-card .dc-name{font-family:"Cinzel",Georgia,serif;letter-spacing:.03em;
+  text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.card-rule{align-self:center;width:62%;height:1px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--bc) 80%,#fff) 50%,transparent)}
+.draw-card .dc-text{padding:0 .35rem}
+/* flavor footer — small-caps whisper above the timer */
+.card-flavor{font-variant:small-caps;letter-spacing:.14em}
+/* auto-advance timer, seated inside the engraved frame's bottom edge */
+.draw-card .card-timer{left:10px;right:10px;bottom:9px;height:3px;border-radius:2px}
+
 /* death banner — same backdrop as the card reveal, no flip */
 .death-banner{width:min(460px,90vw);background:var(--panel);border:1px solid #7a1010;border-radius:14px;
   padding:1.6rem;text-align:center;box-shadow:0 0 70px rgba(122,16,16,.5);
@@ -1029,3 +1090,21 @@ kbd {
 .death-banner h2{margin:.1rem 0 0;font-size:1.9rem;color:#f4e7dd}
 .db-last{font-style:italic;color:#cfc4b8;margin:.5rem 0 .3rem}
 .death-banner .dc-continue{margin-top:.5rem}
+
+/* ===== Minimap — clickable bird's-eye map, bottom-right (artifact mirrors) ===== */
+.minimap{position:absolute;right:.9rem;bottom:4.4rem;width:230px;z-index:5;
+  background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;
+  padding:.4rem;backdrop-filter:blur(6px);
+  display:flex;flex-direction:column;gap:.3rem}
+.minimap-canvas{display:block;width:100%;border-radius:6px;background:rgba(5,5,9,.62)}
+.minimap-floors{display:flex;gap:.3rem;justify-content:center}
+.minimap-floor{font:inherit;font-size:.72rem;letter-spacing:.06em;cursor:pointer;
+  width:26px;height:20px;border-radius:5px;color:var(--ink-dim);
+  background:rgba(20,16,24,.6);border:1px solid var(--panel-edge);padding:0}
+.minimap-floor:hover{border-color:var(--flame);color:var(--ink)}
+.minimap-floor.sel{color:var(--flame);border-color:var(--flame);background:rgba(232,168,90,.14)}
+.minimap-tip{position:absolute;top:-1.7rem;left:50%;transform:translateX(-50%);
+  white-space:nowrap;pointer-events:none;font-size:.74rem;color:#f0e2d2;
+  background:rgba(20,16,14,.92);border:1px solid var(--panel-edge);border-radius:6px;
+  padding:.16rem .5rem}
+.minimap-tip.walk{border-color:var(--flame)}
