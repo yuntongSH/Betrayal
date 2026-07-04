@@ -149,8 +149,6 @@ export interface PlacedRoom {
   y: number;
   rotation: Rotation;
   exploredBy: PlayerId | null;
-  /** Set once a player has rummaged this room — it can only be searched once. */
-  searched?: boolean;
 }
 
 // ---------------------------------------------------------------------------

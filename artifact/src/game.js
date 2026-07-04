@@ -556,8 +556,6 @@ const Beats = (() => {
           pushCard(e, "item", m[2], m[1]);
         } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen — (.+)\.$/))) {
           pushCard(e, "omen", m[2], m[1]);
-        } else if (e.kind === "card" && (m = e.text.match(/^(.+) turns up (.+)!$/))) {
-          pushCard(e, "item", m[2], m[1]); // search success
         } else if (e.kind === "card" && (m = e.text.match(/^The Iron Key turns\. (.+) loots the vault!$/))) {
           // No standard string carries the card name — the prize is the item
           // just appended to the looter's inventory.
@@ -2122,9 +2120,6 @@ function updateHUD(legal) {
       bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})"><span class="bi">⚔</span><span>Attack ${name}</span></button>`;
     }
     // Deliberate actions — each spends a step, so they trade off against moving.
-    if (legal.canSearch) {
-      bottom += `<button class="btn act" title="Rummage this room for an item — but you might disturb something (costs 1 step)" onclick="window.__act({type:'search',playerId:'${active.id}'})"><span class="bi">🔍</span><span>Search</span></button>`;
-    }
     if (legal.canInvestigate) {
       bottom += `<button class="btn act" title="A Knowledge check to read the danger ahead (costs 1 step)" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
     }

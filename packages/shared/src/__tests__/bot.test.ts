@@ -76,7 +76,7 @@ describe("bots", () => {
     // (search/investigate) or simply end its turn — never a pointless walk.
     expect(step.action.type).not.toBe("explore");
     expect(step.action.type).not.toBe("move-to");
-    expect(["end-turn", "search", "investigate"]).toContain(step.action.type);
+    expect(["end-turn", "investigate"]).toContain(step.action.type);
   });
 
   it("a bot never paces back and forth between rooms within a single turn", () => {

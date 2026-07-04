@@ -32,8 +32,6 @@ export type Action =
   | { type: "pickup-item"; playerId: PlayerId; cardId: CardId }
   /** Hand one of your items to another explorer sharing your room. */
   | { type: "give-item"; playerId: PlayerId; toPlayerId: PlayerId; cardId: CardId }
-  /** Rummage the current room (once each) — find an item, or spring an event. */
-  | { type: "search"; playerId: PlayerId }
   /** Forfeit the rest of your movement to steady your most-wounded trait. */
   | { type: "rest"; playerId: PlayerId }
   /** Wedge a doorway shut so nothing can follow through it for a few rounds. */

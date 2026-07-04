@@ -20,7 +20,6 @@ export function GameScreen() {
   const endTurn = useStore((s) => s.endTurn);
   const attackPlayer = useStore((s) => s.attackPlayer);
   const pickupItem = useStore((s) => s.pickupItem);
-  const search = useStore((s) => s.search);
   const rest = useStore((s) => s.rest);
   const barricade = useStore((s) => s.barricade);
   const investigate = useStore((s) => s.investigate);
@@ -144,16 +143,6 @@ export function GameScreen() {
                 </button>
               );
             })}
-            {legal?.canSearch && (
-              <button
-                className="btn act"
-                onClick={search}
-                title="Rummage this room for an item — but you might disturb something (costs 1 step)"
-              >
-                <span className="bi">🔍</span>
-                <span>Search</span>
-              </button>
-            )}
             {legal?.canInvestigate && (
               <button
                 className="btn act"

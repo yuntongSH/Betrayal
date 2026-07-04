@@ -153,15 +153,7 @@ export function botStep(s: GameState, pid: PlayerId): BotStep {
       return { action: { type: "explore", playerId: pid, door: rng.pick(legal.doors) }, endTurnAfter: false };
     }
 
-    // 1b) No new room to find from here, but this room hasn't been rummaged —
-    //     occasionally search it for loot before moving on (gears bots up for
-    //     the haunt). Kept infrequent so bots don't strip-mine the item deck and
-    //     tilt the balance; explore phase only, so haunt bots stay aggressive.
-    if (legal.canSearch && s.phase === "explore" && rng.next() < 0.15) {
-      return { action: { type: "search", playerId: pid }, endTurnAfter: false };
-    }
-
-    // 1c) Occasionally pause to read the omens (a Knowledge check). Pure flavour
+    // 1b) Occasionally pause to read the omens (a Knowledge check). Pure flavour
     //     for a watching human — and balance-neutral, since a bot can't act on
     //     the info, so generous use here won't skew the game. endTurnAfter false
     //     keeps the turn going (it still has steps to spend).

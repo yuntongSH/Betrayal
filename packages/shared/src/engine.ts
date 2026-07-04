@@ -91,7 +91,7 @@ function recomputeMovement(s: GameState): void {
  * moving for the rest of your turn." Halt the active explorer's movement — bank
  * Speed-worth of spent steps (the same trick `rest` uses) so no later recompute
  * (e.g. a +Speed consumable) can refund it, then zero what's left. Non-movement
- * actions (attack, use-item) are unaffected; further explore / move / search /
+ * actions (attack, use-item) are unaffected; further explore / move /
  * investigate are blocked, since they all gate on `movementLeft`.
  */
 function haltMovement(s: GameState, p: PlayerState): void {
@@ -249,8 +249,7 @@ function resolveRoomDraws(s: GameState, p: PlayerState, room: PlacedRoom): void 
   // Discovering a room with a card symbol draws a card, which ends the active
   // explorer's move for the turn (board rule). You can't walk on — most rooms
   // have a symbol, so a turn is usually a single discovery; symbol-less rooms
-  // (corridors, landings) don't stop you. The deliberate `search` action draws
-  // too but is NOT a discovery, so it keeps its own one-step cost without halting.
+  // (corridors, landings) don't stop you.
   haltMovement(s, p);
 }
 
@@ -396,38 +395,14 @@ function handleGive(
 }
 
 // ---------------------------------------------------------------------------
-// Deliberate turn actions: search · rest · barricade · investigate
+// Deliberate turn actions: rest · barricade · investigate
 // ---------------------------------------------------------------------------
+// (There is deliberately NO "search the room" action: in the board game, cards
+// come ONLY from discovering a new symbol tile — a rummage-for-loot action
+// existed here once and was removed for rules fidelity.)
 
 /** Rounds a wedged-shut doorway holds before it gives way. */
 const BARRICADE_ROUNDS = 3;
-
-/** Rummage the current room (once each): usually an item, sometimes an event. */
-function handleSearch(s: GameState, playerId: PlayerId): void {
-  const p = getPlayer(s, playerId);
-  if (!p?.alive || !isActiveTurn(s, playerId) || !p.position || s.movementLeft <= 0) return;
-  const room = s.house[p.position];
-  if (!room || room.searched) return;
-  room.searched = true;
-  s.turnSpent = (s.turnSpent ?? 0) + 1; // a deliberate action: non-refundable
-  recomputeMovement(s);
-  addLog(s, `${p.name} searches the ${ROOMS_BY_ID[room.roomId]?.name ?? "room"}...`, "info");
-  const rng = Rng.fromState(s.rngState);
-  const sprung = rng.next() < 0.35; // ~1 in 3 disturbs something instead
-  s.rngState = rng.state;
-  if (sprung) {
-    drawAndResolve(s, p, "event");
-  } else {
-    const card = drawCard(s, "item");
-    if (card) {
-      p.inventory.push(card);
-      addLog(s, `${p.name} turns up ${getCard(card)?.name ?? "an item"}!`, "card");
-    } else {
-      addLog(s, "Nothing here but dust and old regrets.", "info");
-    }
-  }
-  checkWinNow(s);
-}
 
 /** Forfeit the rest of your movement to steady your most-wounded trait. */
 function handleRest(s: GameState, playerId: PlayerId): void {
@@ -639,9 +614,6 @@ export function reduce(s: GameState, action: Action): GameState {
     case "give-item":
       handleGive(s, action.playerId, action.toPlayerId, action.cardId);
       break;
-    case "search":
-      handleSearch(s, action.playerId);
-      break;
     case "rest":
       handleRest(s, action.playerId);
       break;
@@ -682,8 +654,6 @@ export interface LegalMoves {
   tradePartners: PlayerId[];
   /** One-shot consumables in the player's inventory they can spend now. */
   usableItems: CardId[];
-  /** This room can still be rummaged (search). */
-  canSearch: boolean;
   /** A wounded trait can be steadied by resting (forfeits movement). */
   canRest: boolean;
   /** Doorways to a connected room that can be wedged shut. */
@@ -702,7 +672,6 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     pickupItems: [],
     tradePartners: [],
     usableItems: [],
-    canSearch: false,
     canRest: false,
     barricadeDoors: [],
     canInvestigate: false,
@@ -752,7 +721,6 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
 
   // Deliberate turn actions (all spend movement, so they trade off against it).
   const room = s.house[p.position];
-  const canSearch = moving && !!room && !room.searched;
   const ch = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
   const canRest =
     moving && !!ch && TRAITS.some((t: Trait) => p.traitIndex[t] < ch.traits[t].values.length - 1);
@@ -773,7 +741,6 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     pickupItems,
     tradePartners,
     usableItems,
-    canSearch,
     canRest,
     barricadeDoors,
     canInvestigate,

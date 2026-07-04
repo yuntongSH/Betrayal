@@ -386,8 +386,6 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
         name: card?.name ?? "The Vault",
         rawText: card?.text ?? "The vault yields a prize.",
       });
-    } else if (e.kind === "card" && (m = e.text.match(/^(.+) turns up (.+)!$/))) {
-      enqueue(cardBeat(next, m[1]!, "item", m[2]!, e.text)); // search success
     } else if (e.kind === "death" && / has been lost to the house\.$/.test(e.text)) {
       const name = e.text.slice(0, -" has been lost to the house.".length);
       const p = next.players.find(

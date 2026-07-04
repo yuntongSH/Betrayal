@@ -357,30 +357,8 @@ describe("bot decision quality", () => {
   });
 });
 
-// ---- deliberate per-turn agency: search / rest / barricade / investigate ----
-describe("deliberate turn actions (search / rest / barricade / investigate)", () => {
-  it("search rummages a room once, costing a step", () => {
-    const s = startedGame();
-    const pid = s.activePlayerId!;
-    maxTraits(s, pid); // so a drawn event can't kill the searcher mid-test
-    const p = getPlayer(s, pid)!;
-    beginTurn(s);
-    const room = s.house[p.position!]!;
-    expect(room.searched).toBeFalsy();
-    expect(legalMoves(s, pid).canSearch).toBe(true);
-
-    const mvBefore = s.movementLeft;
-    reduce(s, { type: "search", playerId: pid });
-    expect(room.searched).toBe(true);
-    expect(s.movementLeft).toBe(mvBefore - 1);
-
-    // The room is rummaged now — searching again is a no-op (no extra cost).
-    expect(legalMoves(s, pid).canSearch).toBe(false);
-    const mvAfter = s.movementLeft;
-    reduce(s, { type: "search", playerId: pid });
-    expect(s.movementLeft).toBe(mvAfter);
-  });
-
+// ---- deliberate per-turn agency: rest / barricade / investigate ----
+describe("deliberate turn actions (rest / barricade / investigate)", () => {
   it("rest steadies the most-wounded trait and forfeits the rest of the turn", () => {
     const s = startedGame();
     const pid = s.activePlayerId!;

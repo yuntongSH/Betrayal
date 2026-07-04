@@ -47,8 +47,11 @@ The halt is applied uniformly to humans and bots:
   (the same mechanism `rest` uses), so a later recompute can't refund it.
 - It fires from `resolveRoomDraws` **only when the discovered room has a card
   symbol** — symbol-less rooms (corridors, landings) don't stop you, matching the
-  printed rule exactly. The deliberate `search` action draws too but is not a
-  discovery, so it keeps its own one-step cost instead of halting.
+  printed rule exactly. (An earlier house-rule `search` action could draw an
+  item/event from an already-discovered room; it was removed for fidelity —
+  in the board game, cards come only from discovering new symbol tiles, so
+  the engine now has no non-discovery draw path outside explicit card and
+  room-special effects.)
 - Bots dropped their artificial `endTurnAfter: true`, so the engine — not the bot
   AI — now paces exploration.
 - Tests: `engine.test.ts` covers both a symbol-less discovery (costs 1 step, no
