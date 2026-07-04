@@ -4,17 +4,41 @@
  *
  * Runs in CI (where a browser can be installed); see .github/workflows/
  * screenshots.yml. The artifact is fully client-side, so no game server is
- * needed — we just open the file and click "Play solo vs 3 bots".
+ * needed — but it is served over a local HTTP server rather than file://,
+ * because the Fetch API refuses file:// URLs and the character glTF models
+ * would silently fall back to primitive figures (and fail the error gate).
  */
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { dirname, extname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const artifactUrl = "file://" + resolve(root, "artifact/dread-hollow.html");
+const artifactDir = resolve(root, "artifact");
 const outDir = resolve(root, "screenshots");
 mkdirSync(outDir, { recursive: true });
+
+const MIME = {
+  ".html": "text/html",
+  ".gltf": "model/gltf+json",
+  ".glb": "model/gltf-binary",
+  ".bin": "application/octet-stream",
+  ".png": "image/png",
+};
+const server = createServer((req, res) => {
+  const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "");
+  const path = resolve(artifactDir, rel || "dread-hollow.html");
+  if (!path.startsWith(artifactDir) || !existsSync(path)) {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+  res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream" });
+  res.end(readFileSync(path));
+});
+await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
+const artifactUrl = `http://127.0.0.1:${server.address().port}/dread-hollow.html`;
 
 const browser = await chromium.launch({
   headless: true,
@@ -45,6 +69,7 @@ await page.screenshot({ path: resolve(outDir, "02-game.png") });
 console.log("captured 02-game.png");
 
 await browser.close();
+server.close();
 
 if (errors.length) {
   console.error("Page errors:\n" + errors.join("\n"));
