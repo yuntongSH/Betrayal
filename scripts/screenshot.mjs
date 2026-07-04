@@ -75,6 +75,7 @@ await page.waitForFunction(
       const tick = () => (++n >= 3 ? done(true) : requestAnimationFrame(tick));
       requestAnimationFrame(tick);
     }),
+  undefined, // second param is the page-function ARG — options come third
   { timeout: 120000 },
 );
 // give three.js time to render and a couple of bot turns to play
