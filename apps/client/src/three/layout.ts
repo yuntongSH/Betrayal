@@ -2,9 +2,9 @@ import type { Floor, GameState, PlacedRoom } from "@dread-hollow/shared";
 
 /** World-space sizing of the manor. Grid (x, y) maps to world (x, z); each
  *  floor is lifted to its own height so the house reads as a stacked dollhouse. */
-export const TILE = 4;
-export const WALL_H = 2.7;
-export const FLOOR_GAP = 7;
+export const TILE = 7;
+export const WALL_H = 3.2;
+export const FLOOR_GAP = 11;
 
 export const FLOOR_Y: Record<Floor, number> = {
   basement: -FLOOR_GAP,
@@ -17,7 +17,7 @@ export function roomWorld(r: PlacedRoom): [number, number, number] {
 }
 
 /** Spread N tokens sharing a room around a small ring so none overlap. */
-export function ringOffset(i: number, count: number, radius = 1): [number, number] {
+export function ringOffset(i: number, count: number, radius = 1.6): [number, number] {
   if (count <= 1) return [0, 0];
   const a = (i / count) * Math.PI * 2;
   return [Math.cos(a) * radius, Math.sin(a) * radius];

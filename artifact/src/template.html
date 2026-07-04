@@ -68,7 +68,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .camp-empty{color:#7e7163;font-size:.86rem;font-style:italic}
 #toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);padding:.5rem 1rem;border-radius:10px;background:rgba(20,16,14,.88);border:1px solid rgba(226,168,90,.45);color:#f0e2d2;font-size:.9rem;pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;z-index:50}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-.muted{color:var(--dim)} .small{font-size:.78rem}
+.muted{color:var(--dim)} .small{font-size:.82rem}
 
 /* lobby */
 /* Scrolls as a whole and top-aligns so a tall party list (wardrobe + grid +
@@ -112,16 +112,24 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 #game{display:none;height:100%;position:relative}
 #canvas-wrap{position:absolute;inset:0}
 #canvas-wrap canvas{position:absolute;inset:0;display:block}
-.label-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-.lbl3d{font-size:11px;color:var(--dim);white-space:nowrap;text-shadow:0 0 6px #000,0 0 6px #000;pointer-events:none}
+/* z-index:0 makes the layer its own stacking context — CSS2DRenderer writes an
+   inline positive z-index on every label, which must never escape to paint
+   over the HUD panels and buttons. */
+.label-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.lbl3d{font-size:13px;color:var(--dim);white-space:nowrap;text-shadow:0 0 6px #000,0 0 6px #000;pointer-events:none}
 .lbl3d.lit{color:var(--good)}
-.tok-lbl{font-size:11px;color:var(--ink);white-space:nowrap;text-shadow:0 0 6px #000,0 0 4px #000;pointer-events:none}
+.tok-lbl{font-size:13px;color:var(--ink);white-space:nowrap;text-shadow:0 0 6px #000,0 0 4px #000;pointer-events:none}
 .tok-lbl.traitor{color:var(--blood2)} .tok-lbl.monster{color:#e88}
 .tok-lbl.dead{color:#6a6058;opacity:.7;font-style:italic}
 
+/* Right padding reserves the ?/speaker button zone (they float at right
+   1.1rem–6rem) so the movement pips are never hidden behind them. */
 #hud-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
-  padding:.8rem 1.1rem;background:linear-gradient(180deg,rgba(0,0,0,.6),transparent);pointer-events:none}
-.haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)} .turn-name{font-weight:bold}
+  padding:.8rem 6.4rem .8rem 1.1rem;background:linear-gradient(180deg,rgba(0,0,0,.6),transparent);pointer-events:none}
+/* HUD sits above the label layer and below the overlays (#overlay 10,
+   .card-reveal 9, .beat-vignette 8). */
+#hud-top,#hud-left,#hud-right,#hud-bottom,#hud-hint{z-index:2}
+.haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)}
 #hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:4rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
 #hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:4rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
 /* current-room info card */
@@ -132,7 +140,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .ri-aura.good{background:rgba(111,182,181,.18);color:#9fd6d5}
 .ri-aura.bad{background:rgba(140,47,35,.22);color:#e8a39a}
 .ri-flavor{margin-top:.2rem;font-style:italic}
-.ri-notes{margin:.4rem 0 0;padding-left:1rem;font-size:.78rem;color:var(--ink);display:flex;flex-direction:column;gap:.2rem}
+.ri-notes{margin:.4rem 0 0;padding-left:1rem;font-size:.82rem;color:var(--ink);display:flex;flex-direction:column;gap:.2rem}
 /* inventory items: name row + a description line */
 .inv-li{flex-direction:column;align-items:stretch !important;gap:.1rem}
 .inv-row{display:flex;gap:.4rem;align-items:center}
@@ -141,35 +149,16 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 #hud-bottom{position:absolute;bottom:1.1rem;left:50%;transform:translateX(-50%);display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;max-width:min(90vw,860px)}
 .panel{background:var(--panel);border:1px solid var(--edge);border-radius:10px;backdrop-filter:blur(6px)}
 .roster{padding:.45rem .55rem;display:flex;flex-direction:column;gap:.18rem}
-.roster-row{display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.1rem .2rem;border-radius:5px}
-.roster-row.active{background:rgba(232,168,90,.14)} .roster-row.dead{opacity:.45;text-decoration:line-through}
-.roster-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
-.roster-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.roster-traitor{color:var(--blood2)}
-.log{flex:1;min-height:0;display:flex;flex-direction:column}
-.log-title{padding:.35rem .6rem;border-bottom:1px solid var(--edge);font-size:.76rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-.log-scroll{overflow-y:auto;padding:.45rem .6rem;display:flex;flex-direction:column;gap:.3rem;font-size:.8rem}
-.log-entry{line-height:1.35;border-left:2px solid transparent;padding-left:.5rem}
-.k-roll{border-color:#7a6db0}.k-card{border-color:#6fb6b5}.k-move{border-color:#4a4a55}
-.k-haunt{border-color:var(--blood2);color:#e8b3a8}.k-combat{border-color:var(--blood)}
-.k-death{border-color:#000;color:#c2517a}.k-win{border-color:var(--flame);color:var(--flame)}
-.k-voice{border-color:#8a7a5a;color:#d8c9a8;font-style:italic}
 .dice{display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle}
-.die{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:3px;font-size:10px;font-style:normal;
+.die{display:inline-grid;place-items:center;border-radius:3px;font-style:normal;
   background:#2a2018;border:1px solid #4a3a2a}
 .die.d0{opacity:.5}.die.d2{background:#4a3520;border-color:var(--flame);color:var(--flame)}
 .trait-panel{padding:.7rem;display:flex;flex-direction:column;gap:.55rem}
 .trait-panel.dead{opacity:.7}
 .tp-head{display:flex;align-items:center;gap:.5rem;border-left:3px solid;padding-left:.5rem}
-.tp-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#1a1410;font-weight:bold}
 .side-tag{margin-left:auto;font-size:.62rem;padding:.1rem .4rem;border-radius:4px;letter-spacing:.08em}
 .side-tag.traitor{background:var(--blood);color:#f4e7dd}.side-tag.heroes{background:#2c4a2c;color:#cfe}
 .tp-dead{color:var(--blood2);font-style:italic}
-.tp-traits{display:flex;flex-direction:column;gap:.32rem}
-.tp-th{display:flex;justify-content:space-between;font-size:.78rem;text-transform:capitalize}
-.tp-track{display:flex;gap:2px;margin-top:2px}
-.pip{flex:1;text-align:center;font-size:.68rem;padding:.1rem 0;border-radius:3px;background:rgba(0,0,0,.4);color:var(--dim)}
-.pip.skull{color:#c2517a}.pip.cur{color:#120d0a;font-weight:bold}
 .tp-inv ul{margin:.2rem 0 0;padding:0;list-style:none;font-size:.82rem}
 .tp-inv li{display:flex;gap:.4rem;align-items:center}.ii{width:1.1em;text-align:center}
 .ibtn{margin-left:auto;font:inherit;font-size:.68rem;padding:.05rem .4rem;border-radius:6px;cursor:pointer;border:1px solid rgba(120,200,150,.4);background:rgba(50,80,60,.5);color:#bfe8cd}
@@ -187,7 +176,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .hgoals .ga{opacity:1;border-color:var(--flame);background:rgba(232,168,90,.1)}
 .hgoals span{display:block;margin-bottom:.15rem}
 .result .rtitle{font-size:2.2rem;color:var(--flame);text-shadow:0 0 30px rgba(232,168,90,.5);margin-bottom:.4rem}
-#hud-hint{position:absolute;bottom:1.1rem;left:1.1rem;max-width:300px;color:var(--dim);font-size:.76rem;pointer-events:none}
+#hud-hint{position:absolute;bottom:1.1rem;left:1.1rem;max-width:300px;color:var(--dim);font-size:.8rem;pointer-events:none}
 @keyframes flick{0%,100%{opacity:1}48%{opacity:.85}50%{opacity:.55}52%{opacity:.9}70%{opacity:.7}}
 @media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}}
 
@@ -215,6 +204,117 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   color:#f2e6d6;font-size:.98rem;font-style:italic;letter-spacing:.015em;box-shadow:0 8px 34px rgba(0,0,0,.55);
   backdrop-filter:blur(3px);max-width:min(80vw,560px);text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ===== HUD v2 — icons over text ===== */
+.tp-avatar,.roster-avatar{border-radius:50%;display:grid;place-items:center;font-weight:bold;color:#141010;
+  font-family:"Cinzel",Georgia,serif;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 0 2.5px var(--pc),0 0 10px color-mix(in srgb,var(--pc) 45%,transparent)}
+.tp-avatar{width:44px;height:44px;font-size:1.35rem}
+.roster-avatar{width:20px;height:20px;font-size:.68rem;flex:0 0 auto}
+.roster-row.dead .roster-avatar,.trait-panel.dead .tp-avatar{filter:grayscale(1) brightness(.6)}
+.tp-traits{display:flex;flex-direction:column;gap:.42rem}
+.tp-trait{display:flex;align-items:center;gap:.45rem;border-radius:6px}
+.g-ico{width:19px;height:19px;flex:0 0 auto;color:var(--tc)} .g-ico svg{width:100%;height:100%;display:block}
+.g-val{width:27px;height:27px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;font-size:.95rem;
+  font-weight:bold;color:#efe2d3;background:radial-gradient(circle at 40% 32%,#241d18,#120d0a);
+  border:1px solid var(--tc);box-shadow:inset 0 0 6px rgba(0,0,0,.8)}
+.g-track{flex:1;display:flex;align-items:center;gap:2px;height:18px}
+.notch{flex:1;height:8px;border-radius:2px;background:rgba(0,0,0,.5);box-shadow:inset 0 0 0 1px rgba(120,90,70,.15)}
+.notch.on{background:color-mix(in srgb,var(--tc) 34%,#17110d)}
+.notch.cur{height:15px;background:var(--tc);box-shadow:0 0 8px var(--tc)}
+.notch.skull{flex:0 0 12px;height:auto;background:none;box-shadow:none;font-size:11px;line-height:1;text-align:center;color:#c2517a}
+.tp-trait.peril .notch.skull{animation:skull-pulse 1.2s ease-in-out infinite}
+@keyframes skull-pulse{0%,100%{transform:scale(1);text-shadow:none}50%{transform:scale(1.3);text-shadow:0 0 8px #c2412f}}
+.tp-trait.flash-up{animation:row-up .6s ease} .tp-trait.flash-down{animation:row-down .6s ease}
+.tp-trait.flash-up .g-val{animation:trait-up .6s ease} .tp-trait.flash-down .g-val{animation:trait-down .6s ease}
+@keyframes trait-up{30%{transform:scale(1.22);box-shadow:0 0 14px 3px rgba(111,174,111,.85);border-color:#6fae6f;color:#cfe8cf}}
+@keyframes trait-down{30%{transform:scale(1.22);box-shadow:0 0 14px 3px rgba(194,65,47,.9);border-color:#c2412f;color:#f0c9c2}}
+@keyframes row-up{0%{background:rgba(111,174,111,.22)}100%{background:transparent}}
+@keyframes row-down{0%{background:rgba(194,65,47,.25)}100%{background:transparent}}
+.roster-row{display:flex;align-items:center;gap:.5rem;font-size:.86rem;padding:.22rem .3rem;border-radius:7px}
+.roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
+.roster-row.dead{opacity:.45;filter:grayscale(.8)}
+.roster-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-ticks{display:flex;align-items:flex-end;gap:2.5px;height:14px;flex:0 0 auto}
+.roster-ticks i{width:3.5px;border-radius:1px;background:var(--tc);height:calc(3px + 11px*var(--h));opacity:.9}
+.roster-traitor{color:var(--blood2)}
+.event-log{margin-top:auto;background:none;border:none;backdrop-filter:none;display:flex;flex-direction:column;gap:.3rem;min-height:0}
+.log-head{display:flex;justify-content:flex-end;align-items:center;gap:.5rem}
+.log-title{font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-right:auto}
+.log-toggle{width:26px;height:26px;border-radius:50%;font-size:.85rem;cursor:pointer;background:rgba(20,16,24,.6);
+  border:1px solid var(--edge);color:var(--ink)} .log-toggle:hover{border-color:var(--flame)}
+.log-scroll{display:flex;flex-direction:column;gap:.3rem;font-size:.88rem}
+.log-entry{--age:0ms;display:flex;gap:.45rem;align-items:baseline;line-height:1.35;background:rgba(14,12,18,.74);
+  border:1px solid var(--edge);border-left:3px solid #4a4a55;border-radius:8px;padding:.38rem .6rem .38rem .5rem;
+  animation:log-in .3s ease both,log-age 8.6s linear forwards;animation-delay:var(--age),var(--age)}
+@keyframes log-in{from{transform:translateX(-10px)}}
+@keyframes log-age{0%,93%{opacity:1}100%{opacity:.4}}
+.li{flex:0 0 1.1em;text-align:center;line-height:1.2;color:var(--lk,var(--dim))}
+.log-entry.k-roll{border-left-color:#7a6db0;--lk:#7a6db0} .log-entry.k-card{border-left-color:#6fb6b5;--lk:#6fb6b5}
+.log-entry.k-move{border-left-color:#4a4a55;--lk:#6a6a78}
+.log-entry.k-haunt{border-left-color:var(--blood2);--lk:var(--blood2);color:#e8b3a8}
+.log-entry.k-combat{border-left-color:var(--blood);--lk:var(--blood2)}
+.log-entry.k-death{border-left-color:#000;--lk:#c2517a;color:#c2517a}
+.log-entry.k-win{border-left-color:var(--flame);--lk:var(--flame);color:var(--flame)}
+.log-entry.k-voice{border-left-color:#8a7a5a;--lk:#8a7a5a;color:#d8c9a8;font-style:italic}
+.event-log.open{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:.45rem;max-height:52vh}
+.event-log.open .log-scroll{overflow-y:auto} .event-log.open .log-entry{animation:none;opacity:1}
+.round-chip{font-variant:small-caps;letter-spacing:.08em;color:var(--dim);margin-right:.5rem}
+.turn-chip{display:inline-flex;align-items:center;gap:.4rem;font-weight:bold;vertical-align:-3px}
+.hud-move{display:flex;gap:3px;align-items:center;color:var(--flame)}
+.mp{width:15px;height:15px;display:inline-flex} .mp svg{width:100%;height:100%}
+/* Spent boots stay a readable ember-brown against the black sky, so
+   remaining-vs-spent reads at a glance. */
+.mp.spent{color:#6a5646;opacity:.8} .mp-more{font-size:.8rem;color:var(--flame)}
+.hud-bottom .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.15rem;font-size:1rem;border-radius:10px}
+.bi{font-size:1.3rem;line-height:1}
+.die{width:17px;height:17px;font-size:11px}
+
+/* ===== Beats — cinematic card reveals, death banners, toasts ===== */
+.card-reveal{position:absolute;inset:0;z-index:9;display:grid;place-items:center;
+  background:rgba(2,2,5,.62);animation:reveal-dim .35s ease}
+.card-flip{perspective:1100px}
+.draw-card{width:min(340px,86vw);aspect-ratio:5/7;border-radius:16px;padding:1.5rem 1.3rem;
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:.55rem;
+  background:linear-gradient(170deg,#181214,#0c0a0e 60%);border:2px solid var(--bc);
+  box-shadow:0 0 70px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6);
+  animation:card-flip-in .62s cubic-bezier(.2,.9,.3,1.15) both}
+.draw-card.t-item {--bc:#e2a85a;--bg-glow:rgba(226,168,90,.45)}
+.draw-card.t-event{--bc:#8f6fd8;--bg-glow:rgba(143,111,216,.45)}
+.draw-card.t-omen {--bc:#c2412f;--bg-glow:rgba(194,65,47,.55)}
+.dc-icon{width:64px;height:64px;margin-top:.6rem}.dc-icon svg{width:100%;height:100%;fill:var(--bc)}
+.dc-kicker{letter-spacing:.22em;text-transform:uppercase;font-size:.72rem;color:var(--bc)}
+.dc-name{font-size:1.65rem;line-height:1.15;color:#f4e7dd}
+.dc-text{font-size:.98rem;line-height:1.45;color:#cfc4b8;flex:1}
+.dc-holder{font-size:.78rem;color:#8d8177}
+.dc-continue{margin-bottom:.4rem}
+.beat-vignette{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}
+.beat-vignette.flash{animation:vignette-flash .9s ease-out}
+.beat-vignette.t-item {box-shadow:inset 0 0 18vmax rgba(226,168,90,.5)}
+.beat-vignette.t-event{box-shadow:inset 0 0 18vmax rgba(143,111,216,.5)}
+.beat-vignette.t-omen,.beat-vignette.t-death,.beat-vignette.t-haunt{box-shadow:inset 0 0 20vmax rgba(160,20,20,.55)}
+/* Above the card-reveal dim (z-9): a discovery toast fired by the same action
+   as a card flip must stay legible over the dimmed edge, not die behind it. */
+.beat-toasts{position:absolute;top:16%;left:50%;transform:translateX(-50%);z-index:10;
+  display:flex;flex-direction:column;gap:.5rem;align-items:center;pointer-events:none}
+.beat-toast{display:flex;gap:.55rem;align-items:center;padding:.55rem 1.1rem;border-radius:10px;
+  background:rgba(18,14,12,.9);border:1px solid var(--bc,#e2a85a);color:#f0e2d2;font-size:1rem;
+  animation:toast-in .3s ease both}
+.beat-toast.out{transition:opacity .5s;opacity:0}
+.death-banner{width:min(460px,90vw);background:var(--panel);border:1px solid #7a1010;border-radius:14px;
+  padding:1.5rem;text-align:center;box-shadow:0 0 70px rgba(122,16,16,.5);animation:reveal-dim .35s ease}
+.death-banner .kick{color:#c2517a}
+.death-banner h2{margin:.25rem 0;font-size:1.8rem;color:#f4e7dd}
+.db-disc{width:56px;height:56px;margin:0 auto .55rem;border-radius:50%;display:grid;place-items:center;
+  font-weight:bold;font-size:1.4rem;color:#141010;font-family:"Cinzel",Georgia,serif;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
+  box-shadow:0 0 0 2.5px var(--pc),0 0 12px color-mix(in srgb,var(--pc) 45%,transparent)}
+.db-words{margin:.6rem 0 .8rem;font-style:italic;color:#d8c9a8;line-height:1.5}
+@keyframes card-flip-in{from{transform:rotateY(100deg) scale(.9);opacity:0}to{transform:none;opacity:1}}
+@keyframes reveal-dim{from{opacity:0}to{opacity:1}}
+@keyframes vignette-flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+@keyframes toast-in{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
 </style>
 </head>
 <body>
@@ -255,11 +355,15 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <div id="hud-top"></div>
   <div id="hud-left"></div>
   <div id="hud-right"></div>
-  <div id="hud-bottom"></div>
+  <div id="hud-bottom" class="hud-bottom"></div>
   <button id="sound-btn" class="icon-btn" title="Toggle sound" aria-label="Toggle sound">🔈</button>
   <button id="help-btn" class="icon-btn" title="How to play" aria-label="How to play">?</button>
   <div id="hud-hint">Drag to orbit · arrow keys / WASD to move · click a glowing room or flame arrow · click a monster to strike</div>
   <div id="overlay"></div>
+  <div id="beat-layer">
+    <div class="beat-vignette"></div>
+    <div class="beat-toasts"></div>
+  </div>
 </div>
 
 <div id="help-overlay" class="modal-overlay">

@@ -52,9 +52,9 @@ export function KeyboardMover() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!game || !myId) return;
-      // A full-screen overlay (haunt reveal / help) is open — don't let arrows or
-      // E act on the board hidden behind it.
-      if (document.querySelector(".haunt-reveal, .help-overlay")) return;
+      // A full-screen overlay (haunt reveal / help / beat card) is open — don't
+      // let arrows or E act on the board hidden behind it.
+      if (document.querySelector(".haunt-reveal, .help-overlay, .card-reveal")) return;
       if (e.key === "e" || e.key === "E") {
         if (game.activePlayerId === myId && game.phase !== "ended") endTurn();
         return;

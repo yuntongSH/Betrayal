@@ -13,6 +13,7 @@ import {
 import { useStore } from "../state/store";
 import { ambient } from "../audio/ambient";
 import { FLOOR_Y, TILE, WALL_H } from "./layout";
+import { registerWall, unregisterWall } from "./followCam";
 
 const HALF = TILE / 2;
 const DOOR_MAX_SWING = Math.PI * 0.56;
@@ -58,25 +59,77 @@ function doorDescriptors(house: GameState["house"]): DoorDesc[] {
 }
 
 function Door({ desc, state }: { desc: DoorDesc; state: DoorState }) {
-  const DW = TILE * 0.44; // door opening width
-  const DHt = WALL_H * 0.92; // door height
+  const DW = 2.4; // door opening width — absolute: doors stay human-scale in the 7-unit rooms
+  const DHt = 2.6; // door height — grand but human, leaves a real header under the 3.2 wall
   const WT = 0.22; // dividing-wall thickness
   const LT = 0.12; // leaf thickness
   const stubW = HALF - DW / 2;
   const leafW = DW - 0.05;
   const leafH = DHt - 0.05;
 
+  // The stubs + header register with the x-ray system: when the chase camera
+  // swings behind a walker mid-doorway, these boundary pieces are exactly what
+  // hides them. Empty roomKey + zero normal make the facing pass a no-op; the
+  // world boxes are computed once (doors are static). Jambs and the swinging
+  // leaf stay solid — the leaf already opens on crossing.
+  const xrayMeshes = useRef(new Set<THREE.Mesh>());
+  useEffect(() => {
+    const meshes = xrayMeshes.current;
+    return () => {
+      for (const m of meshes) unregisterWall(m);
+      meshes.clear();
+    };
+  }, []);
+  const xrayRef =
+    (local: [number, number, number], size: [number, number, number]) =>
+    (m: THREE.Mesh | null) => {
+      if (!m) return;
+      if (!m.userData.xray) {
+        const [px, py, pz] = desc.position;
+        const [lx, ly, lz] = local;
+        const [sw, sh, sd] = size;
+        // rotation.y = π/2 maps local (x, z) → world (z, -x); the 90° AABB is exact
+        m.userData.xray = {
+          until: 0,
+          roomKey: "",
+          normal: new THREE.Vector3(0, 0, 0),
+          box: new THREE.Box3().setFromCenterAndSize(
+            new THREE.Vector3(
+              px + (desc.rotated ? lz : lx),
+              py + ly,
+              pz + (desc.rotated ? -lx : lz)
+            ),
+            new THREE.Vector3(desc.rotated ? sd : sw, sh, desc.rotated ? sw : sd)
+          ),
+        };
+      }
+      // Set-backed, so re-running on every render is harmless.
+      xrayMeshes.current.add(m);
+      registerWall(m);
+    };
+
   return (
     <group position={desc.position} rotation={[0, desc.rotated ? Math.PI / 2 : 0, 0]}>
-      {/* dividing-wall stubs either side of the opening */}
+      {/* dividing-wall stubs either side of the opening — each fadeable */}
       {[-1, 1].map((sx) => (
-        <mesh key={`stub${sx}`} position={[sx * (DW / 2 + stubW / 2), WALL_H / 2, 0]} castShadow receiveShadow>
+        <mesh
+          key={`stub${sx}`}
+          position={[sx * (DW / 2 + stubW / 2), WALL_H / 2, 0]}
+          castShadow
+          receiveShadow
+          ref={xrayRef([sx * (DW / 2 + stubW / 2), WALL_H / 2, 0], [stubW, WALL_H, WT])}
+        >
           <boxGeometry args={[stubW, WALL_H, WT]} />
           <meshStandardMaterial color="#241b14" roughness={1} />
         </mesh>
       ))}
-      {/* header above the door */}
-      <mesh position={[0, (DHt + WALL_H) / 2, 0]} castShadow receiveShadow>
+      {/* header above the door — fadeable like the stubs */}
+      <mesh
+        position={[0, (DHt + WALL_H) / 2, 0]}
+        castShadow
+        receiveShadow
+        ref={xrayRef([0, (DHt + WALL_H) / 2, 0], [DW, WALL_H - DHt, WT])}
+      >
         <boxGeometry args={[DW, WALL_H - DHt, WT]} />
         <meshStandardMaterial color="#241b14" roughness={1} />
       </mesh>

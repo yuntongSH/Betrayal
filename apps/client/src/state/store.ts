@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { CHARACTERS, type Action, type Difficulty, type Direction, type GameState } from "@dread-hollow/shared";
 import { Connection, type ServerMessage } from "../net/connection";
+import { ingestBeats, resetBeats } from "./beats";
 
 /** Bots added for a one-click solo game (1 human + this many bots). */
 const SOLO_BOTS = 3;
@@ -56,6 +57,8 @@ export const useStore = create<Store>((set, get) => {
   function handle(msg: ServerMessage): void {
     switch (msg.t) {
       case "joined":
+        // A (re)join must not replay history as cinematic beats.
+        resetBeats();
         try {
           localStorage.setItem(`dh:pid:${msg.code}`, msg.playerId);
           // Persist the secret resume token so a reconnect can reclaim this slot
@@ -87,6 +90,8 @@ export const useStore = create<Store>((set, get) => {
         }
         break;
       case "state":
+        // The outgoing state object is the pre-action snapshot for beat diffing.
+        ingestBeats(get().game, msg.state, get().playerId);
         set({ game: msg.state });
         break;
       case "error":

@@ -1,0 +1,365 @@
+/**
+ * Beats — cinematic presentation moments derived by diffing consecutive
+ * GameStates (the engine in `packages/shared` is untouched). A beat is a card
+ * draw, a discovery, a death, the haunt turning, or a special-room note.
+ *
+ * `card` and `death` beats are modal (one at a time, FIFO); `discovery` and
+ * `special` are non-blocking toasts; `haunt` never renders here — the existing
+ * haunt banner is simply gated until the modal queue drains.
+ *
+ * The log strings matched below come verbatim from frozen engine code
+ * (engine.ts:173/:213/:270/:274/:277/:424, state.ts:119) — safe to match.
+ */
+import { create } from "zustand";
+import { ALL_CARDS, ROOMS_BY_ID, getCard } from "@dread-hollow/shared";
+import type { CardDef, CardType, GameState, RoomDef } from "@dread-hollow/shared";
+import { ambient } from "../audio/ambient";
+import { focusPulse } from "../three/director";
+
+export { focusPulse };
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type BeatKind = "discovery" | "card" | "death" | "haunt" | "special";
+
+export interface Beat {
+  kind: BeatKind;
+  playerId: string | null;
+  playerName?: string;
+  roomKey: string | null;
+  /** card beats */
+  cardType?: CardType;
+  card?: CardDef;
+  /** Display fallbacks when the card lookup misses (future content). */
+  name?: string;
+  rawText?: string;
+  /** death beats */
+  charId?: string | null;
+}
+
+export interface BeatToast {
+  id: number;
+  glyph: string;
+  text: string;
+  color: string;
+  out: boolean;
+}
+
+/** In-3D side-effect request (light pulse + ember burst) drained by <BeatFX/>. */
+export type FxType = "item" | "event" | "omen" | "death" | "haunt" | "discovery";
+export interface FxRequest {
+  roomKey: string;
+  type: FxType;
+}
+export const pendingFx: FxRequest[] = [];
+
+interface BeatsState {
+  queue: Beat[];
+  active: Beat | null;
+  /** Whether the active modal waits for the watched player (vs auto-dismiss). */
+  activeInteractive: boolean;
+  toasts: BeatToast[];
+  /** Bumped per beat so the vignette animation restarts (t-item/t-omen/…). */
+  vignette: { type: string; seq: number };
+}
+
+export const useBeats = create<BeatsState>(() => ({
+  queue: [],
+  active: null,
+  activeInteractive: false,
+  toasts: [],
+  vignette: { type: "", seq: 0 },
+}));
+
+/** True while a modal beat is up or pending — game input should be swallowed. */
+export function beatsBusy(): boolean {
+  const s = useBeats.getState();
+  return !!s.active || s.queue.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Modal queue (250ms gap between modals; auto-dismiss for bots/remote players)
+// ---------------------------------------------------------------------------
+
+let watched: string | null = null;
+let modalTimer: ReturnType<typeof setTimeout> | null = null;
+let gapTimer: ReturnType<typeof setTimeout> | null = null;
+let toastSeq = 0;
+
+function enqueue(beat: Beat): void {
+  useBeats.setState((s) => ({ queue: [...s.queue, beat] }));
+  compressBacklog();
+  maybeActivate();
+}
+
+/** Bot play outruns the stage (the server steps ~1.1s; a modal holds ~2.6s+gap),
+ *  so a deep queue means reveals firing on rooms the actor already left. When
+ *  more than two beats wait, the oldest non-watched card beats collapse into
+ *  toasts — their focus pulse and room FX are skipped — keeping presentation
+ *  within about one action of live state. Deaths always stay modal. */
+function compressBacklog(): void {
+  let queue = useBeats.getState().queue;
+  const before = queue.length;
+  while (queue.length > 2) {
+    const i = queue.findIndex((b) => b.kind === "card" && b.playerId !== watched);
+    if (i < 0) break;
+    const b = queue[i];
+    const look = CARD_TOAST[b.cardType ?? "item"];
+    addToast(look.glyph, `${b.playerName ?? "The house"} — ${b.card?.name ?? b.name ?? "a card"}`, look.color);
+    queue = queue.filter((_, j) => j !== i);
+  }
+  if (queue.length !== before) useBeats.setState({ queue });
+}
+
+function maybeActivate(): void {
+  const s = useBeats.getState();
+  if (s.active || gapTimer) return;
+  if (s.queue.length === 0) {
+    flushHeldToasts();
+    return;
+  }
+  const [beat, ...rest] = s.queue;
+  const interactive = beat.playerId != null && beat.playerId === watched;
+  useBeats.setState({ active: beat, activeInteractive: interactive, queue: rest });
+  showEffects(beat);
+  if (!interactive) {
+    // A remaining backlog shortens the hold so the stage catches back up.
+    const hold =
+      beat.kind === "death" ? (rest.length > 0 ? 2400 : 3400) : rest.length > 0 ? 1500 : 2600;
+    modalTimer = setTimeout(dismissActive, hold);
+  }
+}
+
+export function dismissActive(): void {
+  if (!useBeats.getState().active) return;
+  if (modalTimer) {
+    clearTimeout(modalTimer);
+    modalTimer = null;
+  }
+  useBeats.setState({ active: null });
+  gapTimer = setTimeout(() => {
+    gapTimer = null;
+    maybeActivate();
+  }, 250);
+}
+
+/** Camera pulse + light/embers + vignette + sting, fired as a modal shows. */
+function showEffects(beat: Beat): void {
+  if (beat.roomKey) focusPulse(beat.roomKey);
+  const type: FxType = beat.kind === "death" ? "death" : (beat.cardType ?? "item");
+  if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type });
+  useBeats.setState((s) => ({ vignette: { type, seq: s.vignette.seq + 1 } }));
+  if (beat.kind === "death") ambient.deathKnell();
+  else ambient.cardSting(type as CardType);
+}
+
+/** Clear everything (a reconnect must not replay history). */
+export function resetBeats(): void {
+  if (modalTimer) clearTimeout(modalTimer);
+  if (gapTimer) clearTimeout(gapTimer);
+  modalTimer = null;
+  gapTimer = null;
+  pendingFx.length = 0;
+  heldToasts = [];
+  useBeats.setState({ queue: [], active: null, activeInteractive: false, toasts: [] });
+}
+
+// ---------------------------------------------------------------------------
+// Toasts (non-blocking; 2400ms visible, 500ms fade, max 2 stacked)
+// ---------------------------------------------------------------------------
+
+/** Toast dress per card type — matches the reveal card's border colors. */
+const CARD_TOAST: Record<CardType, { glyph: string; color: string }> = {
+  item: { glyph: "❖", color: "#e2a85a" },
+  event: { glyph: "❖", color: "#8f6fd8" },
+  omen: { glyph: "☠", color: "#c2412f" },
+};
+
+/** Toasts spawned while a reveal owns the stage, replayed once it drains. */
+let heldToasts: Array<{ glyph: string; text: string; color: string }> = [];
+
+function flushHeldToasts(): void {
+  if (heldToasts.length === 0) return;
+  const held = heldToasts;
+  heldToasts = [];
+  for (const t of held) addToast(t.glyph, t.text, t.color);
+}
+
+function addToast(glyph: string, text: string, color: string): void {
+  // A modal beat owns the stage (and its backdrop outranks the toast layer) —
+  // hold the toast until the reveal queue drains (flushed by maybeActivate)
+  // so its timers can't expire unseen behind the dim.
+  if (beatsBusy()) {
+    heldToasts.push({ glyph, text, color });
+    while (heldToasts.length > 4) heldToasts.shift();
+    return;
+  }
+  const id = ++toastSeq;
+  useBeats.setState((s) => {
+    const toasts = [...s.toasts, { id, glyph, text, color, out: false }];
+    while (toasts.length > 2) toasts.shift();
+    return { toasts };
+  });
+  setTimeout(() => {
+    useBeats.setState((s) => ({
+      toasts: s.toasts.map((t) => (t.id === id ? { ...t, out: true } : t)),
+    }));
+  }, 2400);
+  setTimeout(() => {
+    useBeats.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  }, 2900);
+}
+
+/** At most one special-room note per action; a room's aura outranks its special. */
+function specialToast(def: RoomDef, discovered: boolean): { glyph: string; text: string; color: string } | null {
+  if (def.aura && def.aura > 0)
+    return { glyph: "✦", text: `Blessed ground — +${def.aura} die to every roll here`, color: "#e2c15a" };
+  if (def.aura && def.aura < 0)
+    return { glyph: "☓", text: `Cursed ground — ${def.aura} dice to every roll here`, color: "#c2412f" };
+  switch (def.special) {
+    case "mystic-elevator":
+      return { glyph: "⇅", text: "The Mystic Elevator — it can carry you to another floor", color: "#8f6fd8" };
+    case "grand-staircase":
+    case "stairs-up":
+    case "stairs-down":
+      return { glyph: "⇗", text: "Stairs — change floors here", color: "#e2a85a" };
+    case "vault":
+      return { glyph: "🗝", text: "A sealed vault — it wants the Iron Key", color: "#e2a85a" };
+    case "heal-might":
+      return discovered ? { glyph: "✚", text: "+1 Might", color: "#7fae6a" } : null;
+    case "heal-sanity":
+      return discovered ? { glyph: "✚", text: "+1 Sanity", color: "#7fae6a" } : null;
+    case "drain-speed":
+      return discovered ? { glyph: "▼", text: "−1 Speed", color: "#c2412f" } : null;
+    case "pit":
+      return discovered ? { glyph: "▼", text: "−1 Might", color: "#c2412f" } : null;
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Detection — pre-action snapshot vs post-action state (single log pass)
+// ---------------------------------------------------------------------------
+
+const CARD_BY_NAME = new Map(ALL_CARDS.map((c) => [c.name, c]));
+
+function byName(next: GameState, name: string) {
+  return (
+    next.players.find((p) => p.name === name) ??
+    next.players.find((p) => p.id === next.activePlayerId)
+  );
+}
+
+function cardBeat(next: GameState, who: string, type: CardType, name: string, raw: string): Beat {
+  const p = byName(next, who);
+  return {
+    kind: "card",
+    playerId: p?.id ?? null,
+    playerName: p?.name ?? who,
+    roomKey: p?.position ?? null,
+    cardType: type,
+    card: CARD_BY_NAME.get(name),
+    name,
+    rawText: raw,
+  };
+}
+
+export function ingestBeats(prev: GameState | null, next: GameState, watchedId: string | null): void {
+  if (!prev) return;
+  watched = watchedId;
+  const snap = {
+    nextLogId: prev.nextLogId,
+    hauntId: prev.haunt?.id ?? null,
+    houseKeys: new Set(Object.keys(prev.house)),
+    posByPlayer: new Map(prev.players.map((p) => [p.id, p.position])),
+    aliveByPlayer: new Map(prev.players.map((p) => [p.id, p.alive])),
+    invLenByPlayer: new Map(prev.players.map((p) => [p.id, p.inventory.length])),
+  };
+
+  const fresh = next.log.filter((e) => e.id >= snap.nextLogId); // log ids are monotonic (state.ts:96)
+  for (const e of fresh) {
+    let m: RegExpMatchArray | null = null;
+    if (e.kind === "move" && (m = e.text.match(/^(.+) discovers the (.+)\.$/))) {
+      const p = byName(next, m[1]!);
+      const roomKey = p?.position ?? null;
+      // Belt and braces: only count it if the house genuinely grew a new tile.
+      if (roomKey && !snap.houseKeys.has(roomKey)) {
+        addToast("◈", `Discovered — ${m[2]!}`, "#d8c090");
+        focusPulse(roomKey);
+        pendingFx.push({ roomKey, type: "discovery" });
+        ambient.doorCreak();
+      }
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event — (.+?): /))) {
+      enqueue(cardBeat(next, m[1]!, "event", m[2]!, e.text));
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item — (.+)\.$/))) {
+      enqueue(cardBeat(next, m[1]!, "item", m[2]!, e.text));
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen — (.+)\.$/))) {
+      enqueue(cardBeat(next, m[1]!, "omen", m[2]!, e.text));
+    } else if (e.kind === "card" && / loots the vault!$/.test(e.text)) {
+      // Vault loot has no standard string: the prize is whatever card landed
+      // in the looter's inventory this action.
+      const p =
+        next.players.find(
+          (pl) => e.text.includes(pl.name) && pl.inventory.length > (snap.invLenByPlayer.get(pl.id) ?? 0),
+        ) ?? next.players.find((pl) => pl.id === next.activePlayerId);
+      const gained =
+        p && p.inventory.length > (snap.invLenByPlayer.get(p.id) ?? 0)
+          ? p.inventory[p.inventory.length - 1]
+          : undefined;
+      const card = gained ? getCard(gained) : undefined;
+      enqueue({
+        kind: "card",
+        playerId: p?.id ?? null,
+        playerName: p?.name,
+        roomKey: p?.position ?? null,
+        cardType: "item",
+        card: card ?? undefined,
+        name: card?.name ?? "The Vault",
+        rawText: card?.text ?? "The vault yields a prize.",
+      });
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) turns up (.+)!$/))) {
+      enqueue(cardBeat(next, m[1]!, "item", m[2]!, e.text)); // search success
+    } else if (e.kind === "death" && / has been lost to the house\.$/.test(e.text)) {
+      const name = e.text.slice(0, -" has been lost to the house.".length);
+      const p = next.players.find(
+        (pl) => pl.name === name && snap.aliveByPlayer.get(pl.id) === true && !pl.alive,
+      );
+      if (p) {
+        enqueue({
+          kind: "death",
+          playerId: p.id,
+          playerName: p.name,
+          roomKey: p.position ?? snap.posByPlayer.get(p.id) ?? null,
+          charId: p.characterId,
+        });
+      }
+    }
+  }
+
+  // The haunt is a state diff, not a log match. It never renders here — the
+  // existing haunt banner waits for the modal queue — but the 3D moment fires.
+  if (snap.hauntId === null && next.haunt) {
+    const wp = next.players.find((p) => p.id === next.activePlayerId);
+    const key = next.haunt.startRoomKey ?? wp?.position ?? null;
+    if (key) {
+      focusPulse(key, 2600);
+      pendingFx.push({ roomKey: key, type: "haunt" });
+    }
+    useBeats.setState((s) => ({ vignette: { type: "haunt", seq: s.vignette.seq + 1 } }));
+  }
+
+  // Special-room note when the watched player arrives somewhere notable
+  // (fires on move-to AND explore; discovery-only effects need a fresh tile).
+  const me = watchedId ? next.players.find((p) => p.id === watchedId) : undefined;
+  if (me?.position && snap.posByPlayer.get(me.id) !== me.position) {
+    const placed = next.house[me.position];
+    const def = placed ? ROOMS_BY_ID[placed.roomId] : undefined;
+    if (def) {
+      const t = specialToast(def, !snap.houseKeys.has(me.position));
+      if (t) addToast(t.glyph, t.text, t.color);
+    }
+  }
+}

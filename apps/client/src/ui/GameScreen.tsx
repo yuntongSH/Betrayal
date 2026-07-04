@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { ROOMS_BY_ID, TRAITS, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
+import { CHARACTERS_BY_ID, ROOMS_BY_ID, TRAITS, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
+import type { CSSProperties } from "react";
 import { useStore } from "../state/store";
 import { ambient } from "../audio/ambient";
 import { Scene } from "../three/Scene";
@@ -7,8 +8,10 @@ import { TraitPanel } from "./TraitPanel";
 import { EventLog } from "./EventLog";
 import { PartyRoster } from "./PartyRoster";
 import { HauntBanner } from "./HauntBanner";
+import { BeatOverlay } from "./BeatOverlay";
 import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
+import { TRAIT_ICON, tagIcon } from "./icons";
 
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
@@ -33,6 +36,13 @@ export function GameScreen() {
   const myTurn = game.activePlayerId === myId;
   const ended = game.phase === "ended";
   const haunt = game.phase === "haunt" || ended;
+
+  // Movement pips: the active explorer's Speed as winged-boot icons, spent
+  // ones dimmed; overflow beyond eight collapses into a "+N".
+  const activeChar = active?.characterId ? CHARACTERS_BY_ID[active.characterId] : undefined;
+  const spd = activeChar && active ? activeChar.traits.speed.values[active.traitIndex.speed]! : 0;
+  const pipTotal = Math.min(8, Math.max(spd, game.movementLeft));
+  const pipLit = Math.min(game.movementLeft, 8);
 
   // Reactive heartbeat: thuds while your explorer is one step from the skull.
   const me = game.players.find((p) => p.id === myId);
@@ -63,12 +73,34 @@ export function GameScreen() {
         <div className="hud-turn">
           {game.phase === "haunt" && <span className="haunt-tag">THE HAUNT · </span>}
           {ended && <span className="haunt-tag">CONCLUDED · </span>}
-          Round {game.turn} — {active?.name ?? "…"}
-          {myTurn && !ended && <span className="you-tag"> (your move)</span>}
+          <span className="round-chip">Round {game.turn}</span>
+          <span className="turn-chip">
+            {activeChar && (
+              <span
+                className="roster-avatar"
+                style={{ "--pc": activeChar.color } as CSSProperties}
+              >
+                {activeChar.name.charAt(0)}
+              </span>
+            )}
+            {active?.name ?? "…"}
+          </span>
+          {myTurn && !ended && <span className="you-tag"> — your move</span>}
         </div>
         <div className="hud-top-right">
-          {myTurn && !ended && (
-            <div className="hud-move">Movement left: {game.movementLeft}</div>
+          {!ended && (
+            <div className="hud-move" title={`Movement left: ${game.movementLeft}`}>
+              {Array.from({ length: pipTotal }, (_, i) => (
+                <span
+                  key={i}
+                  className={`mp${i < pipLit ? "" : " spent"}`}
+                  dangerouslySetInnerHTML={{ __html: TRAIT_ICON.speed }}
+                />
+              ))}
+              {game.movementLeft > 8 && (
+                <span className="mp-more">+{game.movementLeft - 8}</span>
+              )}
+            </div>
           )}
           <AudioToggle />
           <HelpButton />
@@ -94,7 +126,8 @@ export function GameScreen() {
                 onClick={() => pickupItem(cardId)}
                 title="Pick up from the floor"
               >
-                Take {getCard(cardId)?.name ?? "item"}
+                <span className="bi">{tagIcon(cardId)}</span>
+                <span>Take {getCard(cardId)?.name ?? "item"}</span>
               </button>
             ))}
             {attackTargets.map((id) => {
@@ -105,7 +138,8 @@ export function GameScreen() {
                   className="btn danger"
                   onClick={() => attackPlayer(id)}
                 >
-                  Attack {name}
+                  <span className="bi">⚔</span>
+                  <span>Attack {name}</span>
                 </button>
               );
             })}
@@ -115,7 +149,8 @@ export function GameScreen() {
                 onClick={search}
                 title="Rummage this room for an item — but you might disturb something (costs 1 step)"
               >
-                🔍 Search the room
+                <span className="bi">🔍</span>
+                <span>Search</span>
               </button>
             )}
             {legal?.canInvestigate && (
@@ -124,7 +159,8 @@ export function GameScreen() {
                 onClick={investigate}
                 title="A Knowledge check to read the danger ahead (costs 1 step)"
               >
-                👁 Investigate
+                <span className="bi">👁</span>
+                <span>Investigate</span>
               </button>
             )}
             {legal?.canRest && (
@@ -133,7 +169,8 @@ export function GameScreen() {
                 onClick={rest}
                 title="Catch your breath to recover your most-wounded trait — ends your movement"
               >
-                ✚ Steady yourself
+                <span className="bi">✚</span>
+                <span>Steady</span>
               </button>
             )}
             {barricadeDoors.map((dir) => {
@@ -151,17 +188,20 @@ export function GameScreen() {
                   onClick={() => barricade(dir)}
                   title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)"
                 >
-                  ⛓ Barricade → {nName}
+                  <span className="bi">⛓</span>
+                  <span>Barricade → {nName}</span>
                 </button>
               );
             })}
             <button className="btn primary" onClick={endTurn}>
-              End turn
+              <span className="bi">🕯</span>
+              <span>End turn</span>
             </button>
           </>
         )}
       </div>
 
+      <BeatOverlay />
       <HauntBanner />
 
       {notice && <div className="hud-notice">{notice}</div>}

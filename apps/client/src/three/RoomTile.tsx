@@ -1,11 +1,21 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Html } from "@react-three/drei";
+import * as THREE from "three";
 import { DIRECTIONS, placedDoorways } from "@dread-hollow/shared";
-import type { PlacedRoom, RoomDef } from "@dread-hollow/shared";
+import type { Direction, PlacedRoom, RoomDef } from "@dread-hollow/shared";
 import { buildRoomDecor, roomTheme, materials, surfaceFor } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
+import { registerWall, unregisterWall } from "./followCam";
 
 const HALF = TILE / 2;
+
+/** Unit outward normals per wall edge, for the x-ray "camera-facing" test. */
+const WALL_NORMAL: Record<Direction, THREE.Vector3> = {
+  north: new THREE.Vector3(0, 0, -1),
+  south: new THREE.Vector3(0, 0, 1),
+  east: new THREE.Vector3(1, 0, 0),
+  west: new THREE.Vector3(-1, 0, 0),
+};
 
 export function RoomTile({
   room,
@@ -26,7 +36,38 @@ export function RoomTile({
   const theme = useMemo(() => roomTheme(room.roomId), [room.roomId]);
   const surf = useMemo(() => surfaceFor(room.roomId), [room.roomId]);
   // The decorations are vanilla three Groups, memoized for the tile's lifetime.
-  const decor = useMemo(() => buildRoomDecor(room.roomId, TILE), [room.roomId]);
+  const decor = useMemo(() => buildRoomDecor(room.roomId, TILE, { doors }), [room.roomId, doors]);
+
+  // Wall-height trim (cornice, beams, pilasters — tagged `userData.xrayTrim`
+  // by the decor package) must ghost with the room's walls, or faded walls
+  // leave floating opaque bars over the characters. One proxy mesh per
+  // material carries the union box (room-local here; world after mount): a
+  // zero normal + this room's key means pass B ghosts it whenever the room is
+  // followed, and its material dims with fog-of-war via `userData.baseColor`.
+  const trim = useMemo(() => {
+    const byMat = new Map<THREE.MeshStandardMaterial, { proxy: THREE.Mesh; box: THREE.Box3 }>();
+    const mb = new THREE.Box3();
+    decor.traverse((o) => {
+      const m = o as THREE.InstancedMesh;
+      if (!m.isMesh || !m.userData.xrayTrim) return;
+      if (m.isInstancedMesh) {
+        m.computeBoundingBox();
+        mb.copy(m.boundingBox!);
+      } else {
+        m.geometry.computeBoundingBox();
+        mb.copy(m.geometry.boundingBox!);
+      }
+      for (let p: THREE.Object3D | null = m; p && p !== decor; p = p.parent) {
+        p.updateMatrix();
+        mb.applyMatrix4(p.matrix);
+      }
+      const mat = m.material as THREE.MeshStandardMaterial;
+      const seen = byMat.get(mat);
+      if (seen) seen.box.union(mb);
+      else byMat.set(mat, { proxy: m, box: mb.clone() });
+    });
+    return [...byMat.entries()].map(([mat, e]) => ({ mat, proxy: e.proxy, box: e.box }));
+  }, [decor]);
 
   // Procedural floor + wall materials (fresh per tile; cached textures shared).
   const floorMat = useMemo(
@@ -36,15 +77,48 @@ export function RoomTile({
         : materials.agedHardwood({ tint: theme.floor }),
     [room.roomId, theme.floor]
   );
-  const wallMat = useMemo(
-    () =>
+  // One material instance PER wall (textures are cached, so this is cheap):
+  // the x-ray system fades each occluding wall's opacity independently.
+  const wallMats = useMemo(() => {
+    const make = () =>
       surf.wall === "wallpaper"
         ? materials.peelingWallpaper({ tint: theme.wall })
         : surf.wall === "stone"
           ? materials.crackedStone({ tint: theme.wall })
-          : materials.stainedPlaster({ tint: theme.wall }),
-    [room.roomId, theme.wall]
-  );
+          : materials.stainedPlaster({ tint: theme.wall });
+    return {
+      north: make(),
+      south: make(),
+      east: make(),
+      west: make(),
+    } as Record<Direction, THREE.MeshStandardMaterial>;
+  }, [room.roomId, theme.wall]);
+
+  // Walls this tile has registered with the x-ray system; freed on unmount.
+  const wallsRef = useRef(new Set<THREE.Mesh>());
+  useEffect(() => {
+    const walls = wallsRef.current;
+    return () => {
+      for (const w of walls) unregisterWall(w);
+      walls.clear();
+    };
+  }, []);
+
+  // Register the trim proxies alongside the walls (same lifetime/cleanup).
+  useEffect(() => {
+    for (const t of trim) {
+      if (!t.proxy.userData.xray) {
+        t.proxy.userData.xray = {
+          until: 0,
+          roomKey: room.key,
+          normal: new THREE.Vector3(),
+          box: t.box.clone().translate(new THREE.Vector3(wx, wy, wz)),
+        };
+      }
+      wallsRef.current.add(t.proxy);
+      registerWall(t.proxy);
+    }
+  }, [trim, room.key, wx, wy, wz]);
 
   // Track the highlight on the (mutable) floor material each render.
   if (highlighted) {
@@ -56,6 +130,11 @@ export function RoomTile({
   // Fog-of-war: darken the floor for rooms far from any explorer's light.
   floorMat.color.set(theme.floor);
   floorMat.color.multiplyScalar(0.35 + 0.65 * litFactor);
+  // …and the wall-height trim with it (decor contract: baseColor * lit curve),
+  // so unlit rooms don't show near-black bars over emissive-highlighted floors.
+  for (const t of trim) {
+    t.mat.color.set(t.mat.userData.baseColor as number).multiplyScalar(0.35 + 0.65 * litFactor);
+  }
 
   return (
     <group position={[wx, wy, wz]}>
@@ -80,7 +159,8 @@ export function RoomTile({
         <boxGeometry args={[TILE, 0.3, TILE]} />
       </mesh>
 
-      {/* walls on every edge that has no doorway */}
+      {/* walls on every edge that has no doorway — each tagged + registered for
+          the x-ray fade (walls are static, so the world box is computed once) */}
       {DIRECTIONS.filter((d) => !doors.has(d)).map((d) => {
         const pos: [number, number, number] =
           d === "north"
@@ -95,7 +175,30 @@ export function RoomTile({
             ? [TILE, WALL_H, 0.2]
             : [0.2, WALL_H, TILE];
         return (
-          <mesh key={d} position={pos} castShadow receiveShadow material={wallMat}>
+          <mesh
+            key={d}
+            position={pos}
+            castShadow
+            receiveShadow
+            material={wallMats[d]}
+            ref={(m) => {
+              if (!m) return;
+              if (!m.userData.xray) {
+                m.userData.xray = {
+                  until: 0,
+                  roomKey: room.key,
+                  normal: WALL_NORMAL[d],
+                  box: new THREE.Box3().setFromCenterAndSize(
+                    new THREE.Vector3(wx + pos[0], wy + pos[1], wz + pos[2]),
+                    new THREE.Vector3(size[0], size[1], size[2])
+                  ),
+                };
+              }
+              // Set-backed, so re-running on every render/remount is harmless.
+              wallsRef.current.add(m);
+              registerWall(m);
+            }}
+          >
             <boxGeometry args={size} />
           </mesh>
         );
@@ -109,12 +212,12 @@ export function RoomTile({
       <pointLight
         position={[0, WALL_H * 0.55, 0]}
         color={theme.accent}
-        intensity={theme.accentIntensity * 7 * litFactor}
+        intensity={theme.accentIntensity * 20 * litFactor}
         distance={TILE * 1.9}
         decay={2.2}
       />
 
-      <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={14} occlude={false}>
+      <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={24} occlude={false}>
         <div className={`room-label ${highlighted ? "lit" : ""}`}>
           {def.name}
           {def.aura ? (def.aura > 0 ? " ✦" : " ☓") : ""}

@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
+import { followTarget, registerToken, unregisterToken } from "./followCam";
 
 /** Shortest-arc angle lerp so a turn never spins the long way round. */
 function lerpAngle(a: number, b: number, t: number): number {
@@ -14,6 +15,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 }
 
 export function PlayerToken({
+  tokenId,
   position,
   color,
   archetype,
@@ -23,6 +25,7 @@ export function PlayerToken({
   side,
   alive = true,
 }: {
+  tokenId: string;
   position: [number, number, number];
   color: string;
   archetype?: string;
@@ -52,6 +55,9 @@ export function PlayerToken({
   // so the rigged body strides while covering ground and idles on arrival.
   const movingRef = useRef(false);
   const [moving, setMoving] = useState(false);
+  // Movement readability: the walker's candle pool brightens while striding.
+  const glow = useRef(0);
+  const activeLight = useRef<THREE.PointLight>(null);
 
   // The procedural fallback can't play a Death clip — lay it where it fell.
   useEffect(() => {
@@ -60,6 +66,13 @@ export function PlayerToken({
       figure.position.y = 0.12;
     }
   }, [figure, alive]);
+
+  // The x-ray raycast tracks living explorers' lerped positions via this registry.
+  useEffect(() => {
+    if (!alive || !group.current) return;
+    registerToken(tokenId, group.current, 1.2);
+    return () => unregisterToken(tokenId);
+  }, [tokenId, alive]);
 
   useFrame((state, dt) => {
     const g = group.current;
@@ -73,9 +86,9 @@ export function PlayerToken({
       placed.current = true;
     }
     prev.current.copy(g.position);
-    // Slower glide (~0.22s) so another player's / a bot's room-to-room move reads
-    // as walking rather than a near-instant pop.
-    g.position.lerp(target.current, 1 - Math.exp(-4.5 * dt));
+    // Glide rate tuned so peak world-speed stays ~18 u/s at TILE = 7 — the Walk
+    // clip's pace still matches the ground covered (no ice-skating).
+    g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
 
     // Turn to face the direction of travel while actually moving.
     const dx = g.position.x - prev.current.x;
@@ -86,11 +99,24 @@ export function PlayerToken({
     g.rotation.y = yaw.current;
 
     const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
-    const isMoving = alive && speed > (movingRef.current ? 0.22 : 0.5);
+    const isMoving = alive && speed > (movingRef.current ? 0.4 : 0.8);
     if (isMoving !== movingRef.current) {
       movingRef.current = isMoving;
       setMoving(isMoving);
     }
+
+    // Feed the follow camera: whoever is up broadcasts their live position,
+    // heading, and stride state (exactly the walk-clip hysteresis above).
+    if (isActive && alive) {
+      followTarget.pos.copy(g.position);
+      followTarget.yaw = yaw.current;
+      followTarget.moving = movingRef.current;
+      followTarget.valid = true;
+    }
+
+    // Brighten the walker's pool while covering ground (readability at TILE 7).
+    glow.current += ((movingRef.current ? 1 : 0) - glow.current) * (1 - Math.exp(-6 * dt));
+    if (activeLight.current) activeLight.current.intensity = 5 + 4 * glow.current;
 
     // Local idle animation only for the procedural figure; the glTF avatar plays
     // its own clips via useAnimations. The dead lie exactly as they fell.
@@ -109,18 +135,18 @@ export function PlayerToken({
       {/* a bright pillar of light marks whoever is up */}
       {isActive && alive && (
         <>
-          <pointLight position={[0, 1.6, 0]} color="#e8a85a" intensity={5} distance={4} />
-          <mesh position={[0, 1.6, 0]}>
-            <cylinderGeometry args={[0.05, 0.5, 3.2, 12, 1, true]} />
+          <pointLight ref={activeLight} position={[0, 1.6, 0]} color="#e8a85a" intensity={5} distance={6} />
+          <mesh position={[0, 1.9, 0]}>
+            <cylinderGeometry args={[0.05, 0.55, 3.8, 12, 1, true]} />
             <meshBasicMaterial color="#e8a85a" transparent opacity={0.12} depthWrite={false} />
           </mesh>
         </>
       )}
       {side === "traitor" && alive && (
-        <pointLight position={[0, 1, 0]} color="#c2412f" intensity={4} distance={3} />
+        <pointLight position={[0, 1, 0]} color="#c2412f" intensity={4} distance={4} />
       )}
 
-      <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={12} occlude={false}>
+      <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={21} occlude={false}>
         <div
           className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
         >

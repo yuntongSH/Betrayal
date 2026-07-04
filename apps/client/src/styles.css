@@ -398,6 +398,22 @@ input:focus {
   display: block;
   touch-action: none;
 }
+/* Drei <Html> labels carry huge inline z-indexes (the default zIndexRange tops
+   out near 16.7M). Isolating the canvas layer traps those values in their own
+   stacking context so room/token labels can never paint over the HUD; the HUD
+   chrome then gets an explicit tier of its own, below the overlays (beat
+   toasts 7, vignette 8, card reveal 9, haunt 10, help 20, notice 30). */
+.game-shell div:has(> canvas) {
+  isolation: isolate;
+}
+.hud-top,
+.hud-left,
+.hud-right,
+.hud-bottom,
+.hud-hint,
+.hud-result {
+  z-index: 5;
+}
 .game-loading {
   display: grid;
   place-items: center;
@@ -465,9 +481,7 @@ input:focus {
 .you-tag {
   color: var(--flame);
 }
-.hud-move {
-  color: var(--ink-dim);
-}
+/* .hud-move lives in the HUD v2 block below (movement pips). */
 .hud-top-right {
   display: flex;
   align-items: center;
@@ -625,81 +639,7 @@ kbd {
   flex-direction: column;
   gap: 0.2rem;
 }
-.roster-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  padding: 0.12rem 0.2rem;
-  border-radius: 5px;
-}
-.roster-row.active {
-  background: rgba(232, 168, 90, 0.14);
-}
-.roster-row.dead {
-  opacity: 0.45;
-  text-decoration: line-through;
-}
-.roster-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-.roster-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.roster-traitor {
-  color: var(--blood-bright);
-}
-.roster-room {
-  flex: 0 0 auto;
-}
-
-/* event log */
-.event-log {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.log-title {
-  padding: 0.4rem 0.7rem;
-  border-bottom: 1px solid var(--panel-edge);
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-}
-.log-scroll {
-  overflow-y: auto;
-  padding: 0.5rem 0.7rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.82rem;
-}
-.log-entry {
-  line-height: 1.35;
-  border-left: 2px solid transparent;
-  padding-left: 0.5rem;
-}
-.log-entry.k-roll { border-color: #7a6db0; }
-.log-entry.k-card { border-color: #6fb6b5; }
-.log-entry.k-move { border-color: #4a4a55; }
-.log-entry.k-haunt { border-color: var(--blood-bright); color: #e8b3a8; }
-.log-entry.k-combat { border-color: var(--blood); }
-.log-entry.k-death { border-color: #000; color: #c2517a; }
-.log-entry.k-win { border-color: var(--flame); color: var(--flame); }
-/* An explorer speaking in their own voice — arrivals, reveals, last words. */
-.log-entry.k-voice { border-color: #8a7a5a; color: #d8c9a8; font-style: italic; }
+/* roster chips + the event-log toast feed live in the HUD v2 block below. */
 
 /* dice */
 .dice-row {
@@ -741,15 +681,7 @@ kbd {
   border-left: 3px solid;
   padding-left: 0.5rem;
 }
-.tp-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #1a1410;
-  font-weight: bold;
-}
+/* .tp-avatar is the portrait medallion — HUD v2 block below. */
 .side-tag {
   margin-left: auto;
   font-size: 0.65rem;
@@ -760,25 +692,7 @@ kbd {
 .side-tag.traitor { background: var(--blood); color: #f4e7dd; }
 .side-tag.heroes { background: #2c4a2c; color: #cfe; }
 .tp-dead { color: var(--blood-bright); font-style: italic; }
-.tp-traits { display: flex; flex-direction: column; gap: 0.35rem; }
-.tp-trait-head {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  text-transform: capitalize;
-}
-.tp-track { display: flex; gap: 2px; margin-top: 2px; }
-.pip {
-  flex: 1;
-  text-align: center;
-  font-size: 0.7rem;
-  padding: 0.1rem 0;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.4);
-  color: var(--ink-dim);
-}
-.pip.skull { color: #c2517a; }
-.pip.cur { color: #120d0a; font-weight: bold; }
+/* trait gauges (.tp-traits, .tp-trait, .g-*, .notch) — HUD v2 block below. */
 .tp-inv ul { margin: 0.2rem 0 0; padding: 0; list-style: none; font-size: 0.82rem; }
 .tp-inv li { display: flex; gap: 0.4rem; align-items: center; }
 .inv-li { flex-direction: column; align-items: stretch; gap: 0.1rem; }
@@ -978,3 +892,119 @@ kbd {
   from { transform: translate(-50%, 12px); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
 }
+
+/* ===== HUD v2 — icons over text ===== */
+.tp-avatar,.roster-avatar{border-radius:50%;display:grid;place-items:center;font-weight:bold;color:#141010;
+  font-family:"Cinzel",Georgia,serif;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 0 2.5px var(--pc),0 0 10px color-mix(in srgb,var(--pc) 45%,transparent)}
+.tp-avatar{width:44px;height:44px;font-size:1.35rem}
+.roster-avatar{width:20px;height:20px;font-size:.68rem;flex:0 0 auto}
+.roster-row.dead .roster-avatar,.trait-panel.dead .tp-avatar{filter:grayscale(1) brightness(.6)}
+.tp-traits{display:flex;flex-direction:column;gap:.42rem}
+.tp-trait{display:flex;align-items:center;gap:.45rem;border-radius:6px}
+.g-ico{width:19px;height:19px;flex:0 0 auto;color:var(--tc)} .g-ico svg{width:100%;height:100%;display:block}
+.g-val{width:27px;height:27px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;font-size:.95rem;
+  font-weight:bold;color:#efe2d3;background:radial-gradient(circle at 40% 32%,#241d18,#120d0a);
+  border:1px solid var(--tc);box-shadow:inset 0 0 6px rgba(0,0,0,.8)}
+.g-track{flex:1;display:flex;align-items:center;gap:2px;height:18px}
+.notch{flex:1;height:8px;border-radius:2px;background:rgba(0,0,0,.5);box-shadow:inset 0 0 0 1px rgba(120,90,70,.15)}
+.notch.on{background:color-mix(in srgb,var(--tc) 34%,#17110d)}
+.notch.cur{height:15px;background:var(--tc);box-shadow:0 0 8px var(--tc)}
+.notch.skull{flex:0 0 14px;height:14px;background:none;box-shadow:none;color:#cdbfa8;display:inline-flex}
+.notch.skull svg{width:100%;height:100%;display:block}
+.tp-trait.peril .notch.skull{animation:skull-pulse 1.2s ease-in-out infinite}
+@keyframes skull-pulse{0%,100%{transform:scale(1);filter:none}50%{transform:scale(1.3);filter:drop-shadow(0 0 3px #c2412f)}}
+.tp-trait.flash-up{animation:row-up .6s ease} .tp-trait.flash-down{animation:row-down .6s ease}
+.tp-trait.flash-up .g-val{animation:trait-up .6s ease} .tp-trait.flash-down .g-val{animation:trait-down .6s ease}
+@keyframes trait-up{30%{transform:scale(1.22);box-shadow:0 0 14px 3px rgba(111,174,111,.85);border-color:#6fae6f;color:#cfe8cf}}
+@keyframes trait-down{30%{transform:scale(1.22);box-shadow:0 0 14px 3px rgba(194,65,47,.9);border-color:#c2412f;color:#f0c9c2}}
+@keyframes row-up{0%{background:rgba(111,174,111,.22)}100%{background:transparent}}
+@keyframes row-down{0%{background:rgba(194,65,47,.25)}100%{background:transparent}}
+.roster-row{display:flex;align-items:center;gap:.5rem;font-size:.86rem;padding:.22rem .3rem;border-radius:7px}
+.roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
+.roster-row.dead{opacity:.45;filter:grayscale(.8)}
+.roster-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-ticks{display:flex;align-items:flex-end;gap:2.5px;height:14px;flex:0 0 auto}
+.roster-ticks i{width:3.5px;border-radius:1px;background:var(--tc);height:calc(3px + 11px*var(--h));opacity:.9}
+.roster-traitor{color:var(--blood-bright)}
+.event-log{margin-top:auto;background:none;border:none;backdrop-filter:none;display:flex;flex-direction:column;gap:.3rem;min-height:0}
+.log-head{display:flex;justify-content:flex-end;align-items:center;gap:.5rem}
+.log-title{font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin-right:auto}
+.log-toggle{width:26px;height:26px;border-radius:50%;font-size:.85rem;cursor:pointer;background:rgba(20,16,24,.6);
+  border:1px solid var(--panel-edge);color:var(--ink)} .log-toggle:hover{border-color:var(--flame)}
+.log-scroll{display:flex;flex-direction:column;gap:.3rem;font-size:.88rem}
+.log-entry{--age:0ms;display:flex;gap:.45rem;align-items:baseline;line-height:1.35;background:rgba(14,12,18,.74);
+  border:1px solid var(--panel-edge);border-left:3px solid #4a4a55;border-radius:8px;padding:.38rem .6rem .38rem .5rem;
+  animation:log-in .3s ease both,log-age 8.6s linear forwards;animation-delay:var(--age),var(--age)}
+@keyframes log-in{from{transform:translateX(-10px)}}
+@keyframes log-age{0%,93%{opacity:1}100%{opacity:.4}}
+.li{flex:0 0 1.1em;text-align:center;line-height:1.2;color:var(--lk,var(--ink-dim))}
+.log-entry.k-roll{border-left-color:#7a6db0;--lk:#7a6db0} .log-entry.k-card{border-left-color:#6fb6b5;--lk:#6fb6b5}
+.log-entry.k-move{border-left-color:#4a4a55;--lk:#6a6a78}
+.log-entry.k-haunt{border-left-color:var(--blood-bright);--lk:var(--blood-bright);color:#e8b3a8}
+.log-entry.k-combat{border-left-color:var(--blood);--lk:var(--blood-bright)}
+.log-entry.k-death{border-left-color:#000;--lk:#c2517a;color:#c2517a}
+.log-entry.k-win{border-left-color:var(--flame);--lk:var(--flame);color:var(--flame)}
+.log-entry.k-voice{border-left-color:#8a7a5a;--lk:#8a7a5a;color:#d8c9a8;font-style:italic}
+/* Compact feed stays glanceable: the card reveal already delivers the rules
+   text, so toasts clamp to two lines; the open Chronicle keeps the prose. */
+.log-entry .log-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.event-log.open{background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;padding:.45rem;max-height:52vh}
+.event-log.open .log-scroll{overflow-y:auto} .event-log.open .log-entry{animation:none;opacity:1}
+.event-log.open .log-text{-webkit-line-clamp:unset}
+.round-chip{font-variant:small-caps;letter-spacing:.08em;color:var(--ink-dim);margin-right:.5rem}
+.turn-chip{display:inline-flex;align-items:center;gap:.4rem;font-weight:bold;vertical-align:-3px}
+.hud-move{display:flex;gap:3px;align-items:center;color:var(--flame)}
+.mp{width:15px;height:15px;display:inline-flex} .mp svg{width:100%;height:100%}
+.mp.spent{color:#4a4038;opacity:.45} .mp-more{font-size:.8rem;color:var(--flame)}
+.hud-bottom .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.15rem;font-size:1rem;border-radius:10px}
+.bi{font-size:1.3rem;line-height:1}
+.die{width:17px;height:17px;font-size:11px}
+
+/* ===== Beats — cinematic card reveals, toasts, vignette (event spec) ===== */
+.card-reveal{position:absolute;inset:0;z-index:9;display:grid;place-items:center;
+  background:rgba(2,2,5,.62);animation:reveal-dim .35s ease}
+.card-flip{perspective:1100px}
+.draw-card{width:min(340px,86vw);aspect-ratio:5/7;border-radius:16px;padding:1.5rem 1.3rem;
+  display:flex;flex-direction:column;align-items:center;text-align:center;gap:.55rem;
+  background:linear-gradient(170deg,#181214,#0c0a0e 60%);border:2px solid var(--bc);
+  box-shadow:0 0 70px var(--bg-glow),inset 0 0 40px rgba(0,0,0,.6);
+  animation:card-flip-in .62s cubic-bezier(.2,.9,.3,1.15) both}
+.draw-card.t-item {--bc:#e2a85a;--bg-glow:rgba(226,168,90,.45)}
+.draw-card.t-event{--bc:#8f6fd8;--bg-glow:rgba(143,111,216,.45)}
+.draw-card.t-omen {--bc:#c2412f;--bg-glow:rgba(194,65,47,.55)}
+.dc-icon{width:64px;height:64px;margin-top:.6rem}.dc-icon svg{width:100%;height:100%;fill:var(--bc)}
+.dc-kicker{letter-spacing:.22em;text-transform:uppercase;font-size:.72rem;color:var(--bc)}
+.dc-name{font-size:1.65rem;line-height:1.15;color:#f4e7dd}
+.dc-text{font-size:.98rem;line-height:1.45;color:#cfc4b8;flex:1}
+.dc-holder{font-size:.78rem;color:#8d8177}
+.dc-continue{margin-bottom:.4rem} /* style like existing .btn.primary */
+.beat-vignette{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}
+.beat-vignette.flash{animation:vignette-flash .9s ease-out}
+.beat-vignette.t-item {box-shadow:inset 0 0 18vmax rgba(226,168,90,.5)}
+.beat-vignette.t-event{box-shadow:inset 0 0 18vmax rgba(143,111,216,.5)}
+.beat-vignette.t-omen,.beat-vignette.t-death,.beat-vignette.t-haunt{box-shadow:inset 0 0 20vmax rgba(160,20,20,.55)}
+.beat-toasts{position:absolute;top:16%;left:50%;transform:translateX(-50%);z-index:7;
+  display:flex;flex-direction:column;gap:.5rem;align-items:center;pointer-events:none}
+.beat-toast{display:flex;gap:.55rem;align-items:center;padding:.55rem 1.1rem;border-radius:10px;
+  background:rgba(18,14,12,.9);border:1px solid var(--bc,#e2a85a);color:#f0e2d2;font-size:1rem;
+  animation:toast-in .3s ease both}
+.beat-toast.out{transition:opacity .5s;opacity:0}
+@keyframes card-flip-in{from{transform:rotateY(100deg) scale(.9);opacity:0}to{transform:none;opacity:1}}
+@keyframes reveal-dim{from{opacity:0}to{opacity:1}}
+@keyframes vignette-flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+@keyframes toast-in{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+
+/* death banner — same backdrop as the card reveal, no flip */
+.death-banner{width:min(460px,90vw);background:var(--panel);border:1px solid #7a1010;border-radius:14px;
+  padding:1.6rem;text-align:center;box-shadow:0 0 70px rgba(122,16,16,.5);
+  display:flex;flex-direction:column;align-items:center;gap:.35rem}
+.db-disc{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-weight:bold;
+  font-size:1.7rem;color:#141010;font-family:"Cinzel",Georgia,serif;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 0 2.5px var(--pc),0 0 12px color-mix(in srgb,var(--pc) 45%,transparent)}
+.db-kicker{color:var(--blood-bright);letter-spacing:.22em;text-transform:uppercase;font-size:.78rem;margin-top:.5rem}
+.death-banner h2{margin:.1rem 0 0;font-size:1.9rem;color:#f4e7dd}
+.db-last{font-style:italic;color:#cfc4b8;margin:.5rem 0 .3rem}
+.death-banner .dc-continue{margin-top:.5rem}

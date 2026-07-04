@@ -66,7 +66,7 @@ function DoorMarker({
   const { dx, dy } = DIR_DELTA[dir];
   const pos: [number, number, number] = [
     base[0] + dx * (HALF + 0.4),
-    base[1] + 0.9,
+    base[1] + 1.0,
     base[2] + dy * (HALF + 0.4),
   ];
   const rot: [number, number, number] =
@@ -94,10 +94,10 @@ function DoorMarker({
       }}
     >
       <mesh rotation={rot}>
-        <coneGeometry args={[0.3, 0.7, 4]} />
+        <coneGeometry args={[0.4, 0.95, 4]} />
         <meshStandardMaterial color="#e8a85a" emissive="#e8a85a" emissiveIntensity={1.2} />
       </mesh>
-      <pointLight color="#e8a85a" intensity={3} distance={2.5} />
+      <pointLight color="#e8a85a" intensity={4} distance={3.5} />
     </group>
   );
 }
@@ -163,13 +163,14 @@ export function HouseView() {
         const room = game.house[key]!;
         const [wx, wy, wz] = roomWorld(room);
         return occ.map((o, i) => {
-          const [ox, oz] = ringOffset(i, occ.length, 1.1);
+          const [ox, oz] = ringOffset(i, occ.length, 1.6);
           if (o.kind === "player") {
             const p = game.players.find((pp) => pp.id === o.id)!;
             const char = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
             return (
               <PlayerToken
                 key={o.id}
+                tokenId={o.id}
                 position={[wx + ox, wy, wz + oz]}
                 color={char?.color ?? "#aaaaaa"}
                 archetype={p.characterId ?? undefined}
@@ -186,6 +187,7 @@ export function HouseView() {
           return (
             <MonsterToken
               key={o.id}
+              tokenId={`m:${o.id}`}
               position={[wx + ox, wy, wz + oz]}
               name={m.name}
               hp={m.hp}

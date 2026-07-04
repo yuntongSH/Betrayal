@@ -1,14 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CHARACTERS_BY_ID, ROOMS_BY_ID, TRAITS, getCard, legalMoves } from "@dread-hollow/shared";
-import type { RoomDef, Trait } from "@dread-hollow/shared";
+import type { CSSProperties, ReactNode } from "react";
+import type { RoomDef, Trait, TraitTrackDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
-
-const TRAIT_COLOR: Record<Trait, string> = {
-  speed: "#d8b54a",
-  might: "#c2412f",
-  sanity: "#6fb6b5",
-  knowledge: "#7a6db0",
-};
+import { SKULL_ICON, TRAIT_COLOR, TraitIcon, tagIcon } from "./icons";
 
 /** Plain-language notes on what a room does — its standing aura and any
  *  one-time effect on discovery — so a player knows what they walked into. */
@@ -37,30 +32,50 @@ function roomNotes(def: RoomDef): string[] {
   return notes;
 }
 
-function tagIcon(cardId: string): string {
-  const card = getCard(cardId);
-  if (!card) return "•";
-  if (card.type === "omen") return "☠";
-  if (card.effect.kind === "consumable") return "🧪";
-  if (card.effect.kind === "item-passive") {
-    switch (card.effect.tag) {
-      case "weapon":
-        return "⚔";
-      case "armor":
-        return "🛡";
-      case "key":
-        return "🗝";
-      case "light":
-        return "🔦";
-      case "holy":
-        return "✝";
-      case "occult":
-        return "👁";
-      default:
-        return "•";
+/** One trait as an iconographic gauge: glyph, value medallion, and a notched
+ *  track with a skull terminus. Flashes green/red for one render on change. */
+function TraitGauge({ t, idx, track }: { t: Trait; idx: number; track: TraitTrackDef }) {
+  const prev = useRef(idx);
+  const [flash, setFlash] = useState<"" | "flash-up" | "flash-down">("");
+  useEffect(() => {
+    if (prev.current !== idx) {
+      setFlash(idx > prev.current ? "flash-up" : "flash-down");
+      prev.current = idx;
+      const h = setTimeout(() => setFlash(""), 650);
+      return () => clearTimeout(h);
     }
-  }
-  return "•";
+  }, [idx]);
+
+  const peril = idx <= 1; // one step from the skull — matches the heartbeat
+  const label = t.charAt(0).toUpperCase() + t.slice(1);
+  return (
+    <div
+      className={`tp-trait${peril ? " peril" : ""}${flash ? ` ${flash}` : ""}`}
+      style={{ "--tc": TRAIT_COLOR[t] } as CSSProperties}
+      title={`${label} ${track.values[idx]}`}
+    >
+      <TraitIcon t={t} />
+      <span className="g-val">{track.values[idx]}</span>
+      <div className="g-track">
+        {track.values.map((v, i): ReactNode =>
+          i === 0 ? (
+            <span
+              key={i}
+              className="notch skull"
+              title="death"
+              dangerouslySetInnerHTML={{ __html: SKULL_ICON }}
+            />
+          ) : (
+            <span
+              key={i}
+              className={`notch${i === idx ? " cur" : i < idx ? " on" : ""}`}
+              title={String(v)}
+            />
+          ),
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function TraitPanel() {
@@ -119,7 +134,7 @@ export function TraitPanel() {
       )}
       <div className={`trait-panel ${!me.alive ? "dead" : ""}`}>
       <div className="tp-head" style={{ borderColor: char.color }}>
-        <div className="tp-avatar" style={{ background: char.color }}>
+        <div className="tp-avatar" style={{ "--pc": char.color } as CSSProperties}>
           {char.name.charAt(0)}
         </div>
         <div>
@@ -136,30 +151,9 @@ export function TraitPanel() {
       {!me.alive && <div className="tp-dead">You have been lost to the house.</div>}
 
       <div className="tp-traits">
-        {TRAITS.map((t) => {
-          const track = char.traits[t];
-          const idx = me.traitIndex[t];
-          return (
-            <div className="tp-trait" key={t}>
-              <div className="tp-trait-head">
-                <span style={{ color: TRAIT_COLOR[t] }}>{t}</span>
-                <strong>{track.values[idx]}</strong>
-              </div>
-              <div className="tp-track">
-                {track.values.map((v, i) => (
-                  <span
-                    key={i}
-                    className={`pip ${i === 0 ? "skull" : ""} ${i === idx ? "cur" : ""}`}
-                    style={i === idx ? { background: TRAIT_COLOR[t] } : undefined}
-                    title={i === 0 ? "death" : String(v)}
-                  >
-                    {i === 0 ? "☠" : v}
-                  </span>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        {TRAITS.map((t) => (
+          <TraitGauge key={me.id + t} t={t} idx={me.traitIndex[t]} track={char.traits[t]} />
+        ))}
       </div>
 
       <div className="tp-inv">

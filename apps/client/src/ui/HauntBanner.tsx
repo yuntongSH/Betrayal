@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 
 /** A one-time dramatic reveal when the haunt begins, dismissible per scenario. */
 export function HauntBanner() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
+  const beatsBusy = useBeats((s) => !!s.active || s.queue.length > 0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const stungFor = useRef<string | null>(null);
 
@@ -20,6 +22,8 @@ export function HauntBanner() {
     }
   }, [haunt, dismissed, game.phase]);
 
+  // Let the beat that triggered the haunt (usually an omen card) finish first.
+  if (beatsBusy) return null;
   if (!haunt || game.phase !== "haunt") return null;
   if (dismissed === haunt.id) return null;
 

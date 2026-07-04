@@ -1,9 +1,10 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { buildMonsterFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
+import { registerToken, unregisterToken } from "./followCam";
 
 function lerpAngle(a: number, b: number, t: number): number {
   const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -11,6 +12,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 }
 
 export function MonsterToken({
+  tokenId,
   position,
   name,
   hp,
@@ -18,6 +20,7 @@ export function MonsterToken({
   mental,
   onClick,
 }: {
+  tokenId: string;
   position: [number, number, number];
   name: string;
   hp: number;
@@ -34,6 +37,13 @@ export function MonsterToken({
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
 
+  // Monsters only mount while hp > 0 — track them for the x-ray raycast.
+  useEffect(() => {
+    if (!group.current) return;
+    registerToken(tokenId, group.current, 1.0);
+    return () => unregisterToken(tokenId);
+  }, [tokenId]);
+
   useFrame((state, dt) => {
     const g = group.current;
     if (!g) return;
@@ -43,7 +53,7 @@ export function MonsterToken({
       placed.current = true;
     }
     prev.current.copy(g.position);
-    g.position.lerp(target.current, 1 - Math.exp(-4.5 * dt)); // slower glide so a monster's advance reads as movement
+    g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt)); // same peak world-speed as players at TILE = 7
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;
     if (dx * dx + dz * dz > 1e-6) {
@@ -69,8 +79,8 @@ export function MonsterToken({
           document.body.style.cursor = "default";
         }}
       />
-      <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={4} decay={2} />
-      <Html position={[0, 1.9, 0]} center distanceFactor={12} occlude={false}>
+      <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={5} decay={2} />
+      <Html position={[0, 1.9, 0]} center distanceFactor={21} occlude={false}>
         <div className="token-label monster">
           {name}
           {mental ? " ✦" : ""} · {hp}♥{attackable ? " — strike" : ""}

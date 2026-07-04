@@ -15,7 +15,7 @@ import { ClientMessageSchema, type ServerMessage } from "./protocol.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 /** Delay between a bot's individual actions, so humans can watch it move. */
-const BOT_STEP_MS = 700;
+const BOT_STEP_MS = 1100;
 const manager = new RoomManager();
 
 /** Rooms with a pending bot step, so we never schedule two at once. */

@@ -9,11 +9,26 @@ const DH = window.DH;
 const $ = (id) => document.getElementById(id);
 
 // ---- world layout (mirrors the React client) -----------------------------
-const TILE = 4;
-const WALL_H = 2.7;
-const FLOOR_GAP = 7;
+const TILE = 7;
+const WALL_H = 3.2;
+const FLOOR_GAP = 11;
+const S = TILE / 4; // room-scale factor for effects that were tuned at TILE=4
 const FLOOR_Y = { basement: -FLOOR_GAP, ground: 0, upper: FLOOR_GAP };
 const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", knowledge: "#7a6db0" };
+
+// ---- HUD v2 iconography (byte-identical strings in the React client) ------
+const LOG_ICON = { info: "✧", move: "⇢", card: "❖", roll: "⚄", haunt: "⌂",
+                   combat: "⚔", death: "☠", win: "❦", voice: "❝" }; // keys = LogKind
+const TRAIT_ICON = {
+  speed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h5v7.5l1.5 1.5h4a3 3 0 0 1 3 3v2H8z"/><path d="M8 5.5C5.8 5.5 4 4.7 2.5 3"/><path d="M8 8.5C6.2 8.5 4.8 7.9 3.5 6.5"/></svg>`,
+  might: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 11V9.6a1.5 1.5 0 0 1 3 0V11"/><path d="M10.7 11V8.8a1.5 1.5 0 0 1 3 0V11"/><path d="M13.9 11V9.6a1.5 1.5 0 0 1 3 0V11"/><path d="M6.5 11h10.9a.6.6 0 0 1 .6.6V15c0 3.3-2.4 5.5-5.8 5.5h-1.4C7.6 20.5 6 18.6 6 15.7v-4.1a.6.6 0 0 1 .5-.6z"/><path d="M6 13.2c-1.5.3-2.3 1.2-2.3 2.4 0 1.3.8 2.2 2.3 2.6"/></svg>`,
+  sanity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5C5.1 8.6 8.3 6.7 12 6.7s6.9 1.9 9.5 5.8c-2.6 3.9-5.8 5.8-9.5 5.8S5.1 16.4 2.5 12.5z"/><path d="M12 9.2c1.5 1.4 2.3 2.6 2.3 3.7a2.3 2.3 0 0 1-4.6 0c0-1.1.8-2.3 2.3-3.7z"/><path d="M12 8.8V7.2"/></svg>`,
+  knowledge: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.2C10.2 4.9 8 4.2 5.5 4.2c-1 0-1.9.1-2.7.4v13.8c.8-.3 1.7-.4 2.7-.4 2.5 0 4.7.7 6.5 2 1.8-1.3 4-2 6.5-2 1 0 1.9.1 2.7.4V4.6c-.8-.3-1.7-.4-2.7-.4C16 4.2 13.8 4.9 12 6.2z"/><path d="M12 6.2v13.8"/></svg>`,
+};
+const prevTraitIdx = {}; // "playerId:trait" -> last-rendered index (drives flash-up/down)
+const logSeen = new Map(); // log entry id -> first-rendered ms (feed fade survives rebuilds)
+let logOpen = false; // Chronicle: compact toast feed (false) vs full scrolling panel
+window.__logToggle = () => { logOpen = !logOpen; render(); };
 
 // ---- Path A: real rigged human models (glTF) -----------------------------
 // Maps a character archetype -> a model URL. When present, the wardrobe preview
@@ -266,6 +281,46 @@ const Sound = (() => {
       g2.gain.linearRampToValueAtTime(0.09, t + 0.2); g2.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
       s.connect(hp).connect(g2).connect(master); s.start(t); s.stop(t + 2.2);
     },
+    /** Short reveal sting per card type — item plucks, event chimes, omen dread. */
+    cardSting(type) {
+      if (!started || muted) return;
+      const t = ctx.currentTime;
+      const note = (freq, at, wave, vol, dur) => {
+        const o = ctx.createOscillator(); o.type = wave; o.frequency.value = freq;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, at);
+        g.gain.linearRampToValueAtTime(vol, at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+        o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+      };
+      if (type === "item") { note(660, t, "triangle", 0.18, 0.5); note(880, t + 0.09, "triangle", 0.18, 0.5); }
+      else if (type === "event") { [523, 415, 311].forEach((f, i) => note(f, t + i * 0.12, "sine", 0.14, 0.4)); }
+      else {
+        for (const fr of [65, 69]) {
+          const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fr;
+          const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 400;
+          const g = ctx.createGain(); g.gain.setValueAtTime(0.2, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+          o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 1.3);
+        }
+        const s = ctx.createBufferSource(); s.buffer = noise(0.8);
+        const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2400;
+        const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.06, t);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+        s.connect(hp).connect(g2).connect(master); s.start(t); s.stop(t + 0.85);
+      }
+    },
+    /** A bell struck twice for a fallen explorer. */
+    deathKnell() {
+      if (!started || muted) return;
+      const t0 = ctx.currentTime;
+      for (const at of [t0, t0 + 0.7]) {
+        const o = ctx.createOscillator(); o.type = "sine";
+        o.frequency.setValueAtTime(98, at); o.frequency.exponentialRampToValueAtTime(82, at + 0.5);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.3, at);
+        g.gain.exponentialRampToValueAtTime(0.001, at + 2.2);
+        o.connect(g).connect(master); o.start(at); o.stop(at + 2.3);
+      }
+    },
     setMuted(m) {
       muted = m;
       if (ctx && master) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.linearRampToValueAtTime(m ? 0 : VOL, ctx.currentTime + 0.5); }
@@ -284,6 +339,291 @@ function syncSoundBtn() {
   const on = Sound.started && !Sound.muted;
   b.textContent = on ? "🔊" : "🔇";
   b.classList.toggle("off", !on);
+}
+
+// =========================================================================
+// BEATS — cinematic presentation of draws, deaths, discoveries and the haunt.
+// Beats are derived by diffing a pre-action snapshot against the post-action
+// state (the engine stays untouched); card/death beats are modal card-flip
+// overlays, discoveries and special rooms are non-blocking toasts, and the
+// existing haunt banner is gated until the modal queue drains.
+// =========================================================================
+const BEAT_SVG = {
+  item: `<svg viewBox="0 0 24 24"><path d="M15.5 2a6.5 6.5 0 0 0-6.2 8.5l-7 7V22h4.5v-2.5H9.3V17h2.5l1.4-1.4A6.5 6.5 0 1 0 15.5 2zm2 3.6a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z"/></svg>`,
+  event: `<svg viewBox="0 0 24 24"><path d="M12 5C6.5 5 2.3 9.4 1 12c1.3 2.6 5.5 7 11 7s9.7-4.4 11-7c-1.3-2.6-5.5-7-11-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>`,
+  omen: `<svg viewBox="0 0 24 24"><path d="M12 2a8 8 0 0 0-8 8c0 3 1.6 5.5 4 6.8V20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-3.2c2.4-1.3 4-3.8 4-6.8a8 8 0 0 0-8-8zM8.5 10a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6zm7 0a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6zM11 17.5h2V20h-2v-2.5z"/></svg>`,
+};
+const BEAT_KICKER = { item: "An Item found", event: "An Event unfolds", omen: "An Omen uncovered" };
+const BEAT_LIGHT = { item: 0xe2a85a, event: 0x8f6fd8, omen: 0xc2412f, death: 0x7a1010, haunt: 0xa01818, discovery: 0xd8c090 };
+const fxList = []; // live in-room beat FX (light pulses + ember bursts), stepped in animate()
+
+/** Spawn the in-3D accompaniment for a beat: a light pulse at the room's heart
+ *  and (for modal beats) a rising ember burst in the card's colour. */
+function spawnBeatFx(roomKey, type, embers = true) {
+  const room = state && roomKey ? state.house[roomKey] : null;
+  if (!room || !scene) return;
+  const [wx, wy, wz] = roomWorld(room);
+  const color = BEAT_LIGHT[type] ?? 0xe2a85a;
+  const light = new THREE.PointLight(color, 0, TILE * 2.4, 2);
+  light.position.set(wx, wy + 1.7, wz);
+  scene.add(light);
+  fxList.push({ kind: "pulse", light, t: 0 });
+  if (!embers) return;
+  const N = 90;
+  const pos = new Float32Array(N * 3);
+  const vel = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.random() * 0.5 * S;
+    pos[i * 3] = wx + Math.cos(a) * r;
+    pos[i * 3 + 1] = wy + 0.25 * S;
+    pos[i * 3 + 2] = wz + Math.sin(a) * r;
+    const ha = Math.random() * Math.PI * 2, hs = (0.15 + Math.random() * 0.55) * S;
+    vel[i * 3] = Math.cos(ha) * hs;
+    vel[i * 3 + 1] = (1.0 + Math.random() * 1.2) * S;
+    vel[i * 3 + 2] = Math.sin(ha) * hs;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.07 * S, color, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  scene.add(pts);
+  fxList.push({ kind: "embers", points: pts, vel, t: 0 });
+}
+
+const Beats = (() => {
+  let CARD_BY_NAME = null; // card name -> def, built lazily (all 35 names unique)
+  const queue = []; // pending modal beats (card / death)
+  let active = null; // the modal currently on screen
+  let gapTimer = null, autoTimer = null;
+  const consumed = new Set(); // log entry ids already surfaced as beats (skip bot toasts)
+  const director = { focusKey: null, until: 0 }; // camera push-in singleton
+
+  function cardByName(name) {
+    if (!CARD_BY_NAME) CARD_BY_NAME = new Map(DH.ALL_CARDS.map((c) => [c.name, c]));
+    return CARD_BY_NAME.get(name);
+  }
+  /** Whose experience we frame: the solo human, else the active hotseat human. */
+  function watched(s) {
+    const humans = s.players.filter((p) => !p.isBot);
+    if (humans.length === 1) return humans[0];
+    const a = s.players.find((p) => p.id === s.activePlayerId);
+    return a && !a.isBot ? a : null;
+  }
+  function focusPulse(roomKey, ms = 1600) {
+    if (!roomKey) return;
+    director.focusKey = roomKey;
+    director.until = performance.now() + ms;
+  }
+  function flashVignette(type) {
+    const v = document.querySelector("#beat-layer .beat-vignette");
+    if (!v) return;
+    v.className = "beat-vignette " + type;
+    void v.offsetWidth; // force reflow so the flash animation restarts
+    v.classList.add("flash");
+  }
+  function beatToast(glyph, text, bc) {
+    const wrap = document.querySelector("#beat-layer .beat-toasts");
+    if (!wrap) return;
+    while (wrap.children.length >= 2) wrap.removeChild(wrap.firstChild); // oldest drops
+    const el = document.createElement("div");
+    el.className = "beat-toast";
+    el.style.setProperty("--bc", bc);
+    el.innerHTML = `<span>${glyph}</span><span>${text}</span>`;
+    wrap.appendChild(el);
+    setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 550); }, 2400);
+  }
+
+  function cardHtml(b) {
+    return `<div class="card-flip"><div class="draw-card t-${b.cardType}">` +
+      `<div class="dc-icon">${BEAT_SVG[b.cardType]}</div>` +
+      `<div class="dc-kicker">${BEAT_KICKER[b.cardType]}</div>` +
+      `<div class="dc-name">${b.name}</div>` +
+      `<div class="dc-text">${b.text}</div>` +
+      `<div class="dc-holder">${b.playerName} draws</div>` +
+      (b.interactive ? `<button class="btn primary dc-continue">Continue</button>` : "") +
+      `</div></div>`;
+  }
+  function deathHtml(b) {
+    const c = DH.CHARACTERS_BY_ID[b.charId];
+    return `<div class="death-banner">` +
+      `<div class="db-disc" style="--pc:${c?.color ?? "#888"}">${c?.name.charAt(0) ?? "?"}</div>` +
+      `<div class="kick">LOST TO THE HOUSE</div>` +
+      `<h2>${c?.name ?? b.playerName}</h2>` +
+      `<div class="muted">${c?.title ?? ""}</div>` +
+      `<div class="db-words">“${c?.lines.death ?? "…"}”</div>` +
+      (b.interactive ? `<button class="btn primary dc-continue">Continue</button>` : "") +
+      `</div>`;
+  }
+  function showNext() {
+    if (active || !queue.length) return;
+    const b = (active = queue.shift());
+    const layer = $("beat-layer");
+    if (!layer) { active = null; return; }
+    const type = b.kind === "death" ? "death" : b.cardType;
+    const back = document.createElement("div");
+    back.className = "card-reveal";
+    back.innerHTML = b.kind === "death" ? deathHtml(b) : cardHtml(b);
+    // Interactive modals only dismiss from the backdrop/Continue/Enter; a bot's
+    // beat auto-dismisses and any click skips it early.
+    back.onclick = (e) => { if (!b.interactive || e.target === back) dismiss(); };
+    const cont = back.querySelector(".dc-continue");
+    if (cont) cont.onclick = dismiss;
+    layer.appendChild(back);
+    b.el = back;
+    flashVignette("t-" + type);
+    focusPulse(b.roomKey);
+    spawnBeatFx(b.roomKey, type);
+    if (b.kind === "death") Sound.deathKnell();
+    else Sound.cardSting(b.cardType);
+    // A backed-up queue drains briskly; a lone reveal gets its full moment.
+    if (!b.interactive) autoTimer = setTimeout(dismiss, queue.length ? 1500 : b.kind === "death" ? 3400 : 2600);
+  }
+  function dismiss() {
+    if (!active) return;
+    clearTimeout(autoTimer); autoTimer = null;
+    active.el?.remove();
+    active = null;
+    // A short breath between consecutive modals; when the queue drains the
+    // re-render lets a gated haunt banner finally appear.
+    gapTimer = setTimeout(() => {
+      gapTimer = null;
+      if (queue.length) showNext();
+      else render();
+    }, 250);
+  }
+
+  /** One toast per room entry — its standing aura wins over its special. */
+  function specialToast(def, discovered) {
+    if (!def) return;
+    if (def.aura > 0) return beatToast("✦", `Blessed ground — +${def.aura} die to every roll here`, "#e2c15a");
+    if (def.aura < 0) return beatToast("☓", `Cursed ground — ${def.aura} dice to every roll here`, "#c2412f");
+    const sp = def.special;
+    if (sp === "mystic-elevator") return beatToast("⇅", "The Mystic Elevator — it can carry you to another floor", "#8f6fd8");
+    if (sp === "grand-staircase" || sp === "stairs-up" || sp === "stairs-down") return beatToast("⇗", "Stairs — change floors here", "#e2a85a");
+    if (sp === "vault") return beatToast("🗝", "A sealed vault — it wants the Iron Key", "#e2a85a");
+    if (!discovered) return;
+    if (sp === "heal-might") return beatToast("✚", "+1 Might", "#7fae6a");
+    if (sp === "heal-sanity") return beatToast("✚", "+1 Sanity", "#7fae6a");
+    if (sp === "drain-speed") return beatToast("▼", "−1 Speed", "#c2412f");
+    if (sp === "pit") return beatToast("▼", "−1 Might", "#c2412f");
+  }
+
+  return {
+    director,
+    consumed,
+    focusPulse,
+    idle: () => !active && queue.length === 0,
+    skip: dismiss,
+    /** New game: drop queued beats and consumed ids (log ids restart at 1). */
+    reset() {
+      queue.length = 0;
+      clearTimeout(autoTimer); autoTimer = null;
+      clearTimeout(gapTimer); gapTimer = null;
+      if (active) { active.el?.remove(); active = null; }
+      consumed.clear();
+      director.focusKey = null; director.until = 0;
+    },
+    /** Pre-action snapshot — everything ingest() needs to diff afterwards. */
+    snap(s) {
+      return {
+        nextLogId: s.nextLogId,
+        hauntId: s.haunt?.id ?? null,
+        houseKeys: new Set(Object.keys(s.house)),
+        pos: Object.fromEntries(s.players.map((p) => [p.id, p.position])),
+        alive: Object.fromEntries(s.players.map((p) => [p.id, p.alive])),
+      };
+    },
+    /** Diff snapshot vs post-action state into beats (log order = causal order). */
+    ingest(snap, next) {
+      const w = watched(next);
+      const byName = (n) => next.players.find((p) => p.name === n) ?? next.players.find((p) => p.id === next.activePlayerId);
+      const pushCard = (e, cardType, name, who) => {
+        const p = byName(who);
+        const card = cardByName(name);
+        queue.push({
+          kind: "card", cardType, name,
+          text: card?.text ?? e.text,
+          playerId: p?.id ?? null, playerName: p?.name ?? who,
+          roomKey: p?.position ?? null,
+          interactive: !!w && p?.id === w.id,
+        });
+        consumed.add(e.id);
+      };
+      const fresh = next.log.filter((e) => e.id >= snap.nextLogId);
+      const deadSeen = new Set(); // several deaths in one action each get a banner
+      for (const e of fresh) {
+        let m;
+        if (e.kind === "move" && (m = e.text.match(/^(.+) discovers the (.+)\.$/))) {
+          const p = byName(m[1]);
+          // Belt and braces: only a genuinely new room key counts as a discovery.
+          if (p?.position && !snap.houseKeys.has(p.position)) {
+            consumed.add(e.id);
+            beatToast("◈", `Discovered — ${m[2]}`, "#d8c090");
+            focusPulse(p.position);
+            spawnBeatFx(p.position, "discovery", false);
+            Sound.door();
+          }
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event — (.+?): /))) {
+          pushCard(e, "event", m[2], m[1]);
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item — (.+)\.$/))) {
+          pushCard(e, "item", m[2], m[1]);
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen — (.+)\.$/))) {
+          pushCard(e, "omen", m[2], m[1]);
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) turns up (.+)!$/))) {
+          pushCard(e, "item", m[2], m[1]); // search success
+        } else if (e.kind === "card" && (m = e.text.match(/^The Iron Key turns\. (.+) loots the vault!$/))) {
+          // No standard string carries the card name — the prize is the item
+          // just appended to the looter's inventory.
+          const p = byName(m[1]);
+          const card = p?.inventory.length ? DH.getCard(p.inventory[p.inventory.length - 1]) : null;
+          queue.push({
+            kind: "card", cardType: "item",
+            name: card?.name ?? "The vault yields a prize",
+            text: card?.text ?? e.text,
+            playerId: p?.id ?? null, playerName: p?.name ?? m[1],
+            roomKey: p?.position ?? null,
+            interactive: !!w && p?.id === w.id,
+          });
+          consumed.add(e.id);
+        } else if (e.kind === "death" && (m = e.text.match(/^(.+) has been lost to the house\.$/))) {
+          // Confirm against the alive-flag diff — the named player really fell.
+          const p = next.players.find((q) => q.name === m[1] && snap.alive[q.id] && !q.alive && !deadSeen.has(q.id))
+            ?? next.players.find((q) => snap.alive[q.id] && !q.alive && !deadSeen.has(q.id));
+          if (p) {
+            deadSeen.add(p.id);
+            queue.push({
+              kind: "death", charId: p.characterId,
+              playerId: p.id, playerName: p.name,
+              roomKey: p.position,
+              interactive: !!w && p.id === w.id,
+            });
+            consumed.add(e.id);
+          }
+        }
+      }
+      // The haunt is a state diff, not a log line: fire the room FX now, and the
+      // existing full-screen banner appears once the modal queue drains.
+      if (snap.hauntId === null && next.haunt) {
+        const key = next.haunt.startRoomKey ?? next.players.find((p) => p.id === next.activePlayerId)?.position;
+        focusPulse(key, 2600);
+        spawnBeatFx(key, "haunt");
+        flashVignette("t-haunt");
+      }
+      // Special-room toast when the watched explorer walks somewhere notable.
+      if (w && w.position && w.position !== snap.pos[w.id]) {
+        const room = next.house[w.position];
+        const def = room ? DH.ROOMS_BY_ID[room.roomId] : null;
+        specialToast(def, !snap.houseKeys.has(w.position));
+      }
+      if (!active && !gapTimer) showNext();
+    },
+  };
+})();
+
+/** Every game action flows through here so beats can diff before/after. */
+function dispatch(action) {
+  const snap = Beats.snap(state);
+  DH.reduce(state, action);
+  Beats.ingest(snap, state);
 }
 
 // =========================================================================
@@ -362,6 +702,7 @@ function renderCampaignScreen() {
 function beginChapter() {
   if (!campaign) return;
   inCampaign = true; legacyShown = false;
+  Beats.reset(); logSeen.clear(); // fresh game, fresh (restarted) log ids
   state = DH.createGame("legacy", (Math.random() * 1e9) | 0);
   state.difficulty = chosenDifficulty;
   const human = campaign.humanCharId;
@@ -489,8 +830,8 @@ let botTimer = null; // pending local bot step
 let lastBotId = null; // which bot we're currently watching (for turn-handoff beats)
 // Bot pacing — slow enough for a human to follow what each player is doing: a
 // longer beat when a NEW bot takes over, steady steps within that bot's turn.
-const BOT_STEP_MS = 950;
-const BOT_TURN_START_MS = 1350;
+const BOT_STEP_MS = 1150;
+const BOT_TURN_START_MS = 1550;
 const party = []; // { pid, charId }
 
 // ---- three.js objects ----------------------------------------------------
@@ -501,9 +842,31 @@ const tokenCache = new Map(); // entity id -> persistent token group (lerped tow
 let lastFrameT = 0;
 const roomCache = new Map(); // key -> { group, floorMat, labelEl } built once per room
 const doorCache = new Map(); // boundary id -> { group, pivot, open, openTarget, closeAt }
-const camDesired = new THREE.Vector3(0, 0, 4); // soft camera-follow target
+const camDesired = new THREE.Vector3(0, 0, 7); // soft camera-follow target
 let userCamAt = 0; // performance.now() of the last manual orbit/zoom — pauses auto-follow
 const camOffset = new THREE.Vector3(); // scratch for the cinematic dolly math
+// Follow-cam state machine: TACTICAL ⇄ CHASE as one scalar (+ debounce clocks),
+// swooping low behind the active explorer while they walk. Values mirror the
+// React client's CameraDirector exactly.
+const CHASE_DIST = 7.0;
+const CHASE_PHI = 1.12; // rad polar — ≈26° above horizon, just over the walls
+let chase = 0, chaseWant = 0, movingFor = 0, stillFor = 9;
+let polarSaved = 0.94; // the user's remembered tactical tilt (matches initial cam)
+const camSph = new THREE.Spherical();
+const camLook = new THREE.Vector3();
+// Single source of truth for "is the active explorer walking" — written each
+// frame by the active token in the animate loop, consumed by the camera.
+const followTarget = { pos: new THREE.Vector3(), yaw: 0, moving: false, valid: false };
+// X-ray walls: every room-perimeter wall mesh PLUS each doorway's stubs and
+// header, tagged so any of them between the camera and a living character can
+// ghost to 0.12 opacity. Door leaves, jambs and decor never fade.
+const xrayWalls = []; // flat registry, rebuilt whenever the room/door count changes
+let xrayUnitCount = 0; // rooms + doors last time the registry was rebuilt
+const XRAY_OPACITY = 0.12;
+const XRAY_HOLD_MS = 250; // absorbs single-frame raycast flicker
+const xrayRay = new THREE.Ray();
+const xrayDir = new THREE.Vector3();
+const xrayHit = new THREE.Vector3();
 
 // =========================================================================
 // LOBBY
@@ -533,6 +896,7 @@ function buildLobby() {
 function beginGame(solo) {
   stopWardrobe();
   inCampaign = false; // a one-off game is not part of a legacy
+  Beats.reset(); logSeen.clear(); // fresh game, fresh (restarted) log ids
   state = DH.createGame("local", (Math.random() * 1e9) | 0);
   state.difficulty = chosenDifficulty; // applied when the house turns
   let roster = solo ? party.slice(0, 1) : party.slice();
@@ -569,10 +933,10 @@ function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x040407);
   // Tighter fog: rooms far from any explorer's light fall away into the dark.
-  scene.fog = new THREE.Fog(0x05050a, 9, 34);
+  scene.fog = new THREE.Fog(0x05050a, 16, 60);
 
   camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300);
-  camera.position.set(12, 14, 18);
+  camera.position.set(21, 24, 32);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.shadowMap.enabled = true;
@@ -592,10 +956,10 @@ function initScene() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.target.set(0, 0, 4);
+  controls.target.set(0, 0, 7);
   controls.maxPolarAngle = 1.45;
-  controls.minDistance = 6;
-  controls.maxDistance = 60;
+  controls.minDistance = 5; // must stay ≤ CHASE_DIST so the swoop can land
+  controls.maxDistance = 100;
   // When the user grabs the camera, pause the auto cinematic follow for a beat
   // so the dolly never fights their orbit/zoom; it resumes once they let go.
   controls.addEventListener("start", () => { userCamAt = performance.now(); });
@@ -607,7 +971,7 @@ function initScene() {
   const hemi = new THREE.HemisphereLight(0x1a2238, 0x060503, 0.14);
   scene.add(hemi);
   const moon = new THREE.DirectionalLight(0x8fa2cc, 0.26);
-  moon.position.set(14, 28, 6);
+  moon.position.set(24.5, 49, 10.5);
   // The moon is the one shadow-casting key — without this the artifact rendered
   // ZERO shadows despite shadowMap.enabled, so nothing was grounded.
   moon.castShadow = true;
@@ -615,20 +979,20 @@ function initScene() {
   moon.shadow.bias = -0.0004;
   moon.shadow.normalBias = 0.03;
   moon.shadow.camera.near = 1;
-  moon.shadow.camera.far = 110;
-  moon.shadow.camera.left = -45;
-  moon.shadow.camera.right = 45;
-  moon.shadow.camera.top = 45;
-  moon.shadow.camera.bottom = -45;
+  moon.shadow.camera.far = 190;
+  moon.shadow.camera.left = -80;
+  moon.shadow.camera.right = 80;
+  moon.shadow.camera.top = 80;
+  moon.shadow.camera.bottom = -80;
   scene.add(moon);
 
   // dust
-  const N = 300;
+  const N = 500;
   const pos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
-    pos[i * 3] = (Math.random() - 0.5) * 44;
-    pos[i * 3 + 1] = (Math.random() - 0.5) * 26;
-    pos[i * 3 + 2] = (Math.random() - 0.5) * 44 + 4;
+    pos[i * 3] = (Math.random() - 0.5) * 77;
+    pos[i * 3 + 1] = (Math.random() - 0.5) * 40;
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 77 + 7;
   }
   const dg = new THREE.BufferGeometry();
   dg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -636,8 +1000,8 @@ function initScene() {
   scene.add(dust);
 
   // wandering candle-wisps
-  for (const base of [[0, 1.4, 0], [-2, 1.2, 6], [3, 1.6, 3]]) {
-    const l = new THREE.PointLight(0xe8975a, 18, 10, 2);
+  for (const base of [[0, 1.4, 0], [-3.5, 1.2, 10.5], [5.25, 1.6, 5.25]]) {
+    const l = new THREE.PointLight(0xe8975a, 18, 17, 2);
     l.position.set(base[0], base[1], base[2]);
     l.userData.base = base;
     scene.add(l);
@@ -647,7 +1011,7 @@ function initScene() {
   // void
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 1 }));
   plane.rotation.x = -Math.PI / 2;
-  plane.position.set(0, -FLOOR_GAP - 2, 4);
+  plane.position.set(0, -FLOOR_GAP - 2, 7);
   scene.add(plane);
 
   houseGroup = new THREE.Group();
@@ -666,7 +1030,15 @@ function initScene() {
 
 /** Arrow keys / WASD move the active human player (camera-relative); E ends the turn. */
 function onKeyMove(e) {
-  if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return;
+  if (!state) return;
+  // A cinematic beat (card flip / death banner) is modal: Enter/Space advances
+  // it, everything else is swallowed so the board can't be acted on behind it.
+  if (!Beats.idle()) {
+    if (e.key === "Enter" || e.key === " ") Beats.skip();
+    e.preventDefault();
+    return;
+  }
+  if (state.phase !== "explore" && state.phase !== "haunt") return;
   // A pending haunt reveal is a blocking modal: swallow movement/end-turn keys
   // until it's dismissed, so the board can't be acted on behind the overlay.
   if (state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
@@ -750,7 +1122,10 @@ function buildRoomGroup(room) {
   floor.userData = { kind: "room", key: room.key, lit: false };
   g.add(floor);
 
-  const wallMat = surf.wall === "wallpaper"
+  // Each wall gets its OWN material instance (textures are cached, so this is
+  // four cheap objects) — the x-ray fade writes per-mesh opacity and must never
+  // leak to a sibling wall or another room sharing the material.
+  const wallMatFor = () => surf.wall === "wallpaper"
     ? materials.peelingWallpaper({ tint: theme.wall })
     : surf.wall === "stone"
       ? materials.crackedStone({ tint: theme.wall })
@@ -758,21 +1133,34 @@ function buildRoomGroup(room) {
 
   const doors = DH.placedDoorways(room);
   const H = TILE / 2;
+  const walls = [];
   for (const d of DIRS) {
     if (doors.has(d)) continue;
     const wall = new THREE.Mesh(
       (d === "north" || d === "south") ? new THREE.BoxGeometry(TILE, WALL_H, 0.2) : new THREE.BoxGeometry(0.2, WALL_H, TILE),
-      wallMat,
+      wallMatFor(),
     );
     wall.position.set(d === "east" ? H : d === "west" ? -H : 0, WALL_H / 2, d === "south" ? H : d === "north" ? -H : 0);
     wall.castShadow = true;
     wall.receiveShadow = true;
+    // Tag for the per-frame x-ray pass: outward normal + precomputed world box
+    // (walls are static axis-aligned boxes — nothing to recompute per frame).
+    wall.userData.xray = {
+      until: 0,
+      roomKey: room.key,
+      normal: new THREE.Vector3(d === "east" ? 1 : d === "west" ? -1 : 0, 0, d === "south" ? 1 : d === "north" ? -1 : 0),
+      box: null,
+    };
+    walls.push(wall);
     g.add(wall);
   }
 
-  g.add(buildRoomDecor(room.roomId, TILE));
+  const decorG = buildRoomDecor(room.roomId, TILE, { doors });
+  g.add(decorG);
 
-  const accentBase = theme.accentIntensity * 7;
+  // Decay-2.2 falloff: corner distance grew ×1.75, so ~×2.9 intensity keeps the
+  // candle-pool brightness at the walls.
+  const accentBase = theme.accentIntensity * 20;
   const accent = new THREE.PointLight(theme.accent, accentBase, TILE * 1.9, 2.2);
   accent.position.set(0, WALL_H * 0.55, 0);
   g.add(accent);
@@ -785,7 +1173,34 @@ function buildRoomGroup(room) {
   g.add(lbl);
 
   houseGroup.add(g);
-  return { group: g, floor, floorMat, labelEl: el, accent, accentBase };
+  // World boxes need the parent chain's matrices — houseGroup sits at identity,
+  // so one update after attach settles every wall's box for good.
+  g.updateMatrixWorld(true);
+  for (const w of walls) w.userData.xray.box = new THREE.Box3().setFromObject(w);
+
+  // Wall-height decor trim (cornice/beams/pilasters, tagged `xrayTrim` by the
+  // decor package) must ghost with the room's walls, or faded walls leave
+  // floating opaque bars over the characters. One proxy per material joins
+  // `walls` with the union box; the zero normal makes it raycast-fade in pass
+  // A AND ghost with the whole followed room in pass B, and its material dims
+  // with fog-of-war in buildHouse via `userData.baseColor`.
+  const trimMats = [];
+  {
+    const byMat = new Map();
+    decorG.traverse((o) => {
+      if (!o.isMesh || !o.userData.xrayTrim) return;
+      const box = new THREE.Box3().setFromObject(o);
+      const proxy = byMat.get(o.material);
+      if (proxy) proxy.userData.xray.box.union(box);
+      else {
+        o.userData.xray = { until: 0, roomKey: room.key, normal: new THREE.Vector3(), box };
+        byMat.set(o.material, o);
+        trimMats.push(o.material);
+      }
+    });
+    walls.push(...byMat.values());
+  }
+  return { group: g, floor, floorMat, labelEl: el, accent, accentBase, walls, trimMats };
 }
 
 /**
@@ -844,9 +1259,22 @@ function buildHouse(legal) {
     entry.floorMat.color.copy(lit ? new THREE.Color(0xffffff).multiplyScalar(0.4 + 0.6 * f) : base);
     entry.floorMat.emissive.set(lit ? 0x5a8f5a : 0x000000);
     entry.floorMat.emissiveIntensity = lit ? 0.5 : 0;
+    // The wall-height trim dims with the room (decor contract: baseColor * lit
+    // curve) so unlit rooms don't show near-black bars over bright floors.
+    for (const tm of entry.trimMats) tm.color.set(tm.userData.baseColor).multiplyScalar(0.35 + 0.65 * f);
     entry.labelEl.className = "lbl3d" + (lit ? " lit" : "") + (f < 0.2 ? " faint" : "");
   }
+  // Doors first: a door is born in the same pass its far room lands, and its
+  // stubs/header must join THIS rebuild of the registry, not the next one.
   syncDoors();
+  // Keep the flat x-ray registry in step with both caches (self-heals across
+  // rebuilds and new games — a size change is the only way rooms/doors appear).
+  if (roomCache.size + doorCache.size !== xrayUnitCount) {
+    xrayUnitCount = roomCache.size + doorCache.size;
+    xrayWalls.length = 0;
+    for (const e of roomCache.values()) if (e.walls) xrayWalls.push(...e.walls);
+    for (const e of doorCache.values()) if (e.walls) xrayWalls.push(...e.walls);
+  }
 }
 
 // ---- doors ----------------------------------------------------------------
@@ -862,26 +1290,33 @@ function buildDoorEntry(pos, rotated) {
   if (rotated) g.rotation.y = Math.PI / 2; // east/west boundary: opening runs along z
 
   const H = TILE / 2;
-  const DW = TILE * 0.44; // door opening width (the rest of the wall is stub)
-  const DHt = WALL_H * 0.92; // door height
+  const DW = 2.4; // door opening width — human-scale absolute (the rest of the wall is stub)
+  const DHt = 2.6; // door height — grand but human, leaving a real header under the wall top
   const WT = 0.22; // wall/door-wall thickness
   const LT = 0.12; // leaf thickness
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x241b14, roughness: 1 });
+  // One material PER stub/header mesh — they join the x-ray pass, whose fade
+  // writes per-mesh opacity and must never leak to a sibling segment.
+  const wallMatFor = () => new THREE.MeshStandardMaterial({ color: 0x241b14, roughness: 1 });
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x2c2016, roughness: 0.95 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a3422, roughness: 0.82, metalness: 0.04 });
 
   // Stubs of dividing wall either side of the opening, and a header above it, so
-  // the boundary reads as a solid wall with a doorway cut into it.
+  // the boundary reads as a solid wall with a doorway cut into it. The chase cam
+  // puts this boundary square between camera and hero at every room crossing,
+  // so all three ghost like room walls do (the leaf and jambs never fade).
+  const xwalls = [];
   const stubW = H - DW / 2;
   for (const sx of [-1, 1]) {
-    const stub = new THREE.Mesh(new THREE.BoxGeometry(stubW, WALL_H, WT), wallMat);
+    const stub = new THREE.Mesh(new THREE.BoxGeometry(stubW, WALL_H, WT), wallMatFor());
     stub.position.set(sx * (DW / 2 + stubW / 2), WALL_H / 2, 0);
     stub.castShadow = true; stub.receiveShadow = true;
+    xwalls.push(stub);
     g.add(stub);
   }
-  const header = new THREE.Mesh(new THREE.BoxGeometry(DW, WALL_H - DHt, WT), wallMat);
+  const header = new THREE.Mesh(new THREE.BoxGeometry(DW, WALL_H - DHt, WT), wallMatFor());
   header.position.set(0, (DHt + WALL_H) / 2, 0);
   header.castShadow = true; header.receiveShadow = true;
+  xwalls.push(header);
   g.add(header);
 
   // jambs frame the opening
@@ -919,7 +1354,13 @@ function buildDoorEntry(pos, rotated) {
 
   g.add(pivot);
   doorGroup.add(g);
-  return { group: g, pivot, open: 0, openTarget: 0, closeAt: 0 };
+  // World boxes need the group's final placement — same pattern as
+  // buildRoomGroup: one matrix update after attach settles them for good.
+  g.updateMatrixWorld(true);
+  for (const w of xwalls) {
+    w.userData.xray = { until: 0, roomKey: "", normal: new THREE.Vector3(), box: new THREE.Box3().setFromObject(w) };
+  }
+  return { group: g, pivot, open: 0, openTarget: 0, closeAt: 0, walls: xwalls };
 }
 
 /** Create any missing doors at boundaries that have become real passages. */
@@ -957,18 +1398,18 @@ function makePlayerToken(p) {
   }
   g.add(fig);
 
-  const beamLight = new THREE.PointLight(0xe8a85a, 5, 4, 2);
+  const beamLight = new THREE.PointLight(0xe8a85a, 5, 6, 2);
   beamLight.position.y = 1.6;
   beamLight.visible = false;
   g.add(beamLight);
   const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.5, 3.2, 12, 1, true),
+    new THREE.CylinderGeometry(0.05, 0.55, 3.8, 12, 1, true),
     new THREE.MeshBasicMaterial({ color: 0xe8a85a, transparent: true, opacity: 0.12, depthWrite: false }),
   );
-  beam.position.y = 1.6;
+  beam.position.y = 1.9;
   beam.visible = false;
   g.add(beam);
-  const traitorLight = new THREE.PointLight(0xc2412f, 4, 3, 2);
+  const traitorLight = new THREE.PointLight(0xc2412f, 4, 4, 2);
   traitorLight.position.y = 1;
   traitorLight.visible = false;
   g.add(traitorLight);
@@ -987,7 +1428,7 @@ function makeMonsterToken(m) {
   const g = new THREE.Group();
   const fig = buildMonsterFigure(m.name);
   g.add(fig);
-  const light = new THREE.PointLight(0xc2412f, 2.5, 4, 2);
+  const light = new THREE.PointLight(0xc2412f, 2.5, 5, 2);
   g.add(light);
   const el = document.createElement("div");
   el.className = "tok-lbl monster";
@@ -1025,7 +1466,7 @@ function syncTokens(legal) {
     if (!room) continue;
     const [wx, wy, wz] = roomWorld(room);
     occ.forEach((o, i) => {
-      const [ox, oz] = ring(i, occ.length, 1.1);
+      const [ox, oz] = ring(i, occ.length, 1.6);
       seen.add(o.id);
       let tok = tokenCache.get(o.id);
       if (o.kind === "p") {
@@ -1074,10 +1515,10 @@ function buildArrows(legal) {
   for (const dir of legal.doors) {
     const { dx, dy } = DH.DIR_DELTA[dir];
     const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(0.3, 0.7, 4),
+      new THREE.ConeGeometry(0.4, 0.95, 4),
       new THREE.MeshStandardMaterial({ color: 0xe8a85a, emissive: 0xe8a85a, emissiveIntensity: 1.2 }),
     );
-    cone.position.set(wx + dx * (H + 0.4), wy + 0.9, wz + dy * (H + 0.4));
+    cone.position.set(wx + dx * (H + 0.4), wy + 1.0, wz + dy * (H + 0.4));
     cone.rotation.set(
       dir === "north" ? -Math.PI / 2 : dir === "south" ? Math.PI / 2 : 0,
       0,
@@ -1085,7 +1526,7 @@ function buildArrows(legal) {
     );
     cone.userData = { kind: "door", dir };
     arrowGroup.add(cone);
-    const pl = new THREE.PointLight(0xe8a85a, 3, 2.5, 2);
+    const pl = new THREE.PointLight(0xe8a85a, 4, 3.5, 2);
     pl.position.copy(cone.position);
     arrowGroup.add(pl);
   }
@@ -1096,6 +1537,7 @@ function buildArrows(legal) {
 // =========================================================================
 function onClick(e) {
   if (!state || state.phase === "ended") return;
+  if (!Beats.idle()) return; // a modal beat owns the screen (clicks land on it)
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1103,6 +1545,8 @@ function onClick(e) {
   const hits = raycaster.intersectObjects([houseGroup, tokenGroup, arrowGroup], true);
   const me = state.activePlayerId;
   for (const h of hits) {
+    // A ghosted wall can't swallow a floor click the player plainly sees through.
+    if (h.object.userData.xray && h.object.material.opacity < 0.5) continue;
     let o = h.object;
     while (o && !o.userData?.kind) o = o.parent;
     if (!o) continue;
@@ -1116,15 +1560,16 @@ function onClick(e) {
 function act(action) {
   const active = state.players.find((p) => p.id === state.activePlayerId);
   if (active && active.isBot) return; // bots are driven automatically
-  DH.reduce(state, action);
+  dispatch(action);
   render();
   driveBots();
 }
 
 /** Surface the latest thing the active bot did as an on-screen cue, so a human
- *  can follow the other players' turns by watching rather than reading the log. */
+ *  can follow the other players' turns by watching rather than reading the log.
+ *  Entries already staged as cinematic beats don't need the subtitle too. */
 function announceBot(fromLogLen) {
-  const fresh = state.log.slice(fromLogLen);
+  const fresh = state.log.slice(fromLogLen).filter((e) => !Beats.consumed.has(e.id));
   if (fresh.length) toast(fresh[0].text);
 }
 
@@ -1137,8 +1582,12 @@ function driveBots() {
   if (!active || !active.isBot) { lastBotId = null; return; }
   const newTurn = active.id !== lastBotId;
   lastBotId = active.id;
-  botTimer = setTimeout(() => {
+  botTimer = setTimeout(function step() {
     botTimer = null;
+    // A cinematic beat (card flip / death banner) owns the screen: hold this
+    // bot's step until it dismisses, so the presentation never falls behind
+    // the live game — the reveal must describe the move happening NOW.
+    if (!Beats.idle()) { botTimer = setTimeout(step, 300); return; }
     const a = state.players.find((p) => p.id === state.activePlayerId);
     if (!a || !a.isBot || (state.phase !== "explore" && state.phase !== "haunt")) {
       render();
@@ -1146,15 +1595,17 @@ function driveBots() {
     }
     const before = { pos: a.position, move: state.movementLeft };
     const logLen = state.log.length;
-    const step = DH.botStep(state, a.id);
-    DH.reduce(state, step.action);
+    // NOT named `step`: that would shadow the function expression above and
+    // put the beat-hold retry's `setTimeout(step, …)` in its temporal dead zone.
+    const bot = DH.botStep(state, a.id);
+    dispatch(bot.action);
     const stalled =
-      !step.endTurnAfter &&
-      step.action.type !== "end-turn" &&
+      !bot.endTurnAfter &&
+      bot.action.type !== "end-turn" &&
       a.position === before.pos &&
       state.movementLeft === before.move;
-    if ((step.endTurnAfter && step.action.type !== "end-turn") || stalled) {
-      if (state.activePlayerId === a.id) DH.reduce(state, { type: "end-turn", playerId: a.id });
+    if ((bot.endTurnAfter && bot.action.type !== "end-turn") || stalled) {
+      if (state.activePlayerId === a.id) dispatch({ type: "end-turn", playerId: a.id });
     }
     announceBot(logLen);
     render();
@@ -1229,34 +1680,57 @@ function updateHUD(legal) {
     DH.TRAITS.some((t) => (me.traitIndex[t] ?? 9) <= 1);
   Sound.setHeart(!!peril);
 
-  const activeColor = active?.characterId ? DH.CHARACTERS_BY_ID[active.characterId]?.color : null;
-  const activeName = activeColor
-    ? `<span class="turn-name" style="color:${activeColor}">${active.name}</span>`
-    : (active?.name ?? "…");
+  const activeChar = active?.characterId ? DH.CHARACTERS_BY_ID[active.characterId] : null;
+  const turnChip = activeChar
+    ? `<span class="turn-chip"><span class="roster-avatar" style="--pc:${activeChar.color}">${activeChar.name.charAt(0)}</span> ${active.name}</span>`
+    : `<span class="turn-chip">${active?.name ?? "…"}</span>`;
+  // Movement as lit boot pips instead of a raw number (first 8; overflow as +N).
+  const spd = activeChar ? activeChar.traits.speed.values[active.traitIndex.speed] : 0;
+  const pipTotal = Math.min(8, Math.max(spd, state.movementLeft));
+  const pipLit = Math.min(state.movementLeft, 8);
+  let pips = "";
+  for (let i = 0; i < pipTotal; i++) pips += `<span class="mp${i < pipLit ? "" : " spent"}">${TRAIT_ICON.speed}</span>`;
+  if (state.movementLeft > 8) pips += `<span class="mp-more">+${state.movementLeft - 8}</span>`;
   $("hud-top").innerHTML =
     `<div class="hud-turn">${state.phase === "haunt" ? '<span class="haunt-tag">THE HAUNT · </span>' : ""}` +
-    `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}Round ${state.turn} — ${activeName}` +
-    `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag">(your move)</span>') : ""}</div>` +
-    `${!ended ? `<div class="hud-move">Movement: ${state.movementLeft}</div>` : ""}`;
+    `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}` +
+    `<span class="round-chip">Round ${state.turn}</span>${turnChip}` +
+    `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag"> — your move</span>') : ""}</div>` +
+    `${!ended ? `<div class="hud-move" title="Movement left: ${state.movementLeft}">${pips}</div>` : ""}`;
 
-  // party + log
-  let roster = state.players.map((p) => {
+  // party chips — position lives in the 3D view now, not as text
+  const roster = state.players.map((p) => {
     const c = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
-    const room = p.position ? state.house[p.position] : null;
-    const rn = room ? DH.ROOMS_BY_ID[room.roomId]?.name : "—";
-    return `<div class="roster-row ${state.activePlayerId === p.id ? "active" : ""} ${!p.alive ? "dead" : ""}">` +
-      `<span class="roster-dot" style="background:${c?.color ?? "#888"}"></span>` +
-      `<span class="roster-name">${p.name}</span>${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}` +
-      `<span class="roster-room">${p.alive ? rn : "lost"}</span></div>`;
+    const isMe = humans.length === 1 && p.id === humans[0].id;
+    const ticks = p.alive && c
+      ? `<span class="roster-ticks">` + DH.TRAITS.map((t) => {
+          const tr = c.traits[t]; const idx = p.traitIndex[t] ?? 0;
+          return `<i title="${t} ${tr.values[idx]}" style="--tc:${TRAIT_COLOR[t]};--h:${(idx / (tr.values.length - 1)).toFixed(3)}"></i>`;
+        }).join("") + `</span>`
+      : "";
+    return `<div class="roster-row${state.activePlayerId === p.id ? " active" : ""}${!p.alive ? " dead" : ""}">` +
+      `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") : "☠"}</span>` +
+      `<span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
+      ticks +
+      `${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}</div>`;
   }).join("");
-  const log = state.log.slice(-40).map((e) => {
+  // Chronicle: a compact icon-led toast feed by default (recent entries fade to
+  // 40% after 8s via the --age animation-delay trick, surviving innerHTML
+  // rebuilds), expandable to the full scrolling panel.
+  const nowT = Date.now();
+  const log = state.log.slice(logOpen ? -60 : -5).map((e) => {
+    if (!logSeen.has(e.id)) logSeen.set(e.id, nowT);
     const dice = e.dice?.length ? ` <span class="dice">${e.dice.map((v) => `<i class="die d${v}">${v}</i>`).join("")}</span>` : "";
-    return `<div class="log-entry k-${e.kind}">${e.text}${dice}</div>`;
+    return `<div class="log-entry k-${e.kind}" style="--age:-${nowT - logSeen.get(e.id)}ms">` +
+      `<span class="li">${LOG_ICON[e.kind] ?? "✧"}</span><span class="log-text">${e.text}</span>${dice}</div>`;
   }).join("");
   $("hud-left").innerHTML =
-    `<div class="panel roster">${roster}</div>` +
-    `<div class="panel log"><div class="log-title">Chronicle</div><div class="log-scroll" id="log-scroll">${log}</div></div>`;
-  const ls = $("log-scroll"); if (ls) ls.scrollTop = ls.scrollHeight;
+    `<div class="panel roster party-roster">${roster}</div>` +
+    `<div class="event-log${logOpen ? " open" : ""}">` +
+    `<div class="log-head">${logOpen ? '<span class="log-title">Chronicle</span>' : ""}` +
+    `<button class="log-toggle" title="Chronicle" onclick="window.__logToggle()">${logOpen ? "✕" : "📜"}</button></div>` +
+    `<div class="log-scroll" id="log-scroll">${log}</div></div>`;
+  if (logOpen) { const ls = $("log-scroll"); if (ls) ls.scrollTop = ls.scrollHeight; }
 
   // trait panel for the active player
   if (me && me.characterId) {
@@ -1278,14 +1752,25 @@ function updateHUD(legal) {
     $("hud-right").innerHTML =
       roomCard +
       `<div class="panel trait-panel ${!me.alive ? "dead" : ""}">` +
-      `<div class="tp-head" style="border-color:${c.color}"><div class="tp-av" style="background:${c.color}">${c.name.charAt(0)}</div>` +
+      `<div class="tp-head" style="border-color:${c.color}"><div class="tp-avatar" style="--pc:${c.color}">${c.name.charAt(0)}</div>` +
       `<div><strong>${c.name}</strong><div class="muted small">${c.title}</div></div>` +
       `${me.side ? `<span class="side-tag ${me.side}">${me.side === "traitor" ? "TRAITOR" : "HERO"}</span>` : ""}</div>` +
       (!me.alive ? `<div class="tp-dead">Lost to the house.</div>` : "") +
+      // Iconographic gauges: winged boot / fist / eye-candle / book, a value
+      // medallion, and a notched track ending at the skull. Fresh innerHTML
+      // nodes restart the flash animation exactly once per change.
       `<div class="tp-traits">` + DH.TRAITS.map((t) => {
         const tr = c.traits[t]; const idx = me.traitIndex[t];
-        return `<div class="tp-trait"><div class="tp-th"><span style="color:${TRAIT_COLOR[t]}">${t}</span><strong>${tr.values[idx]}</strong></div>` +
-          `<div class="tp-track">` + tr.values.map((v, i) => `<span class="pip ${i === 0 ? "skull" : ""} ${i === idx ? "cur" : ""}" style="${i === idx ? `background:${TRAIT_COLOR[t]}` : ""}">${i === 0 ? "☠" : v}</span>`).join("") + `</div></div>`;
+        const k = me.id + ":" + t, was = prevTraitIdx[k]; prevTraitIdx[k] = idx;
+        const flash = was === undefined || was === idx ? "" : idx > was ? " flash-up" : " flash-down";
+        const notches = tr.values.map((v, i) =>
+          i === 0 ? `<span class="notch skull" title="death">☠</span>`
+            : `<span class="notch${i < idx ? " on" : i === idx ? " cur" : ""}" title="${v}"></span>`,
+        ).join("");
+        return `<div class="tp-trait${idx <= 1 ? " peril" : ""}${flash}" style="--tc:${TRAIT_COLOR[t]}" title="${t} ${tr.values[idx]}">` +
+          `<span class="g-ico">${TRAIT_ICON[t]}</span>` +
+          `<span class="g-val">${tr.values[idx]}</span>` +
+          `<div class="g-track">${notches}</div></div>`;
       }).join("") + `</div>` +
       `<div class="tp-inv"><div class="muted small">Carrying</div>` +
       (me.inventory.length ? `<ul>${me.inventory.map((id) => {
@@ -1309,25 +1794,25 @@ function updateHUD(legal) {
     $("hud-right").innerHTML = "";
   }
 
-  // bottom controls — only on a human's turn
+  // bottom controls — icon-led, only on a human's turn
   let bottom = "";
   if (!ended && active && !active.isBot) {
     for (const cardId of legal.pickupItems ?? []) {
-      bottom += `<button class="btn" onclick="window.__act({type:'pickup-item',playerId:'${active.id}',cardId:'${cardId}'})">Take ${DH.getCard(cardId)?.name ?? "item"}</button>`;
+      bottom += `<button class="btn" onclick="window.__act({type:'pickup-item',playerId:'${active.id}',cardId:'${cardId}'})"><span class="bi">${tagIcon(cardId)}</span><span>Take ${DH.getCard(cardId)?.name ?? "item"}</span></button>`;
     }
     for (const id of legal.attackPlayers) {
       const name = state.players.find((p) => p.id === id)?.name ?? "foe";
-      bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})">Attack ${name}</button>`;
+      bottom += `<button class="btn danger" onclick="window.__act({type:'attack',playerId:'${active.id}',targetPlayerId:'${id}'})"><span class="bi">⚔</span><span>Attack ${name}</span></button>`;
     }
     // Deliberate actions — each spends a step, so they trade off against moving.
     if (legal.canSearch) {
-      bottom += `<button class="btn act" title="Rummage this room for an item — but you might disturb something (costs 1 step)" onclick="window.__act({type:'search',playerId:'${active.id}'})">🔍 Search the room</button>`;
+      bottom += `<button class="btn act" title="Rummage this room for an item — but you might disturb something (costs 1 step)" onclick="window.__act({type:'search',playerId:'${active.id}'})"><span class="bi">🔍</span><span>Search</span></button>`;
     }
     if (legal.canInvestigate) {
-      bottom += `<button class="btn act" title="A Knowledge check to read the danger ahead (costs 1 step)" onclick="window.__act({type:'investigate',playerId:'${active.id}'})">👁 Investigate</button>`;
+      bottom += `<button class="btn act" title="A Knowledge check to read the danger ahead (costs 1 step)" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
     }
     if (legal.canRest) {
-      bottom += `<button class="btn act" title="Catch your breath to recover your most-wounded trait — ends your movement" onclick="window.__act({type:'rest',playerId:'${active.id}'})">✚ Steady yourself</button>`;
+      bottom += `<button class="btn act" title="Catch your breath to recover your most-wounded trait — ends your movement" onclick="window.__act({type:'rest',playerId:'${active.id}'})"><span class="bi">✚</span><span>Steady</span></button>`;
     }
     const _broom = active.position ? state.house[active.position] : null;
     for (const dir of legal.barricadeDoors ?? []) {
@@ -1337,15 +1822,16 @@ function updateHUD(legal) {
         const nDef = state.house[nKey] ? DH.ROOMS_BY_ID[state.house[nKey].roomId] : null;
         if (nDef) label = nDef.name;
       }
-      bottom += `<button class="btn act" title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})">⛓ Barricade → ${label}</button>`;
+      bottom += `<button class="btn act" title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
     }
-    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${active.id}'})">End turn${humans.length > 1 ? " (pass device)" : ""}</button>`;
+    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${active.id}'})"><span class="bi">🕯</span><span>End turn</span>${humans.length > 1 ? ' <span class="small muted">pass device</span>' : ""}</button>`;
   }
   $("hud-bottom").innerHTML = bottom;
 
-  // overlays
+  // overlays — the haunt reveal waits behind any queued cinematic beats (the
+  // omen card that triggered it flips first, then the house turns).
   const ov = $("overlay");
-  if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) {
+  if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id && Beats.idle()) {
     if (lastStinger !== state.haunt.id) { Sound.stinger(); lastStinger = state.haunt.id; }
     const amT = me?.side === "traitor";
     const noTraitor = state.haunt.traitorIds.length === 0;
@@ -1365,12 +1851,12 @@ function updateHUD(legal) {
       `<p>${whoLine}</p>` +
       goalsBlock +
       `<button class="btn primary" onclick="window.__dismiss()">${amT ? "Begin the betrayal" : "Survive"}</button></div>`;
-  } else if (ended && inCampaign) {
+  } else if (ended && inCampaign && Beats.idle()) {
     // A campaign chapter ends into the legacy screen, not the plain result card.
     ov.style.display = "none";
     ov.innerHTML = "";
     showLegacyEnd();
-  } else if (ended) {
+  } else if (ended && Beats.idle()) {
     ov.style.display = "grid";
     ov.innerHTML = `<div class="result"><div class="rtitle">${state.winner === "heroes" ? "The Heroes Survive" : (state.haunt && state.haunt.traitorIds.length === 0 ? "The House Prevails" : "The Traitor Triumphs")}</div>` +
       `<div class="muted">${state.haunt?.name ?? ""}</div><button class="btn" onclick="location.reload()">Play again</button></div>`;
@@ -1404,34 +1890,98 @@ function animate() {
   lastFrameT = t;
   for (const m of tokenAvatarMixers) m.update(dt); // drive rigged-avatar idle clips
 
-  // soft camera-follow: ease the orbit target toward the active player's room
-  // (only nudges `target`, so the user can still orbit/zoom freely)
+  // Cinematic follow camera: a TACTICAL ⇄ CHASE machine on one scalar. While
+  // the active explorer walks the camera swoops low and close behind them;
+  // when they stop it relaxes back out to the orbit view. A beat's focusPulse
+  // briefly pushes in on the room where something just happened, and manual
+  // orbit/zoom always wins for a 2.5s hold.
   if (state) {
+    const nowMs = performance.now();
     const active = state.players.find((p) => p.id === state.activePlayerId);
     const room = active && active.position ? state.house[active.position] : null;
-    if (room) {
-      const [cx, cy, cz] = roomWorld(room);
-      camDesired.set(cx, cy + 0.7, cz);
+
+    // 1. moving signal with debounce + hysteresis -> chase in [0,1]. A human's
+    // keyboard/click move is an unambiguous signal: engage almost at once, and
+    // linger long enough that chained arrow presses hold one sustained chase.
+    // Bot moves keep the longer debounce that absorbs their stutter.
+    const humanTurn = !!active && !active.isBot;
+    if (followTarget.valid && followTarget.moving) { movingFor += dt; stillFor = 0; }
+    else { stillFor += dt; movingFor = 0; }
+    if (movingFor > (humanTurn ? 0.05 : 0.12)) chaseWant = 1;
+    else if (stillFor > (humanTurn ? 0.7 : 0.45)) chaseWant = 0; // steps chain into one chase
+    chase += (chaseWant - chase) * (1 - Math.exp(-(chaseWant > chase ? 5.0 : 1.2) * dt));
+
+    // 2. look point: room center (tactical) -> character chest (chase); a
+    // focusPulse retargets the drama's room instead while it lasts.
+    const pulse = nowMs < Beats.director.until && Beats.director.focusKey ? state.house[Beats.director.focusKey] : null;
+    const lookRoom = pulse || room;
+    if (lookRoom) {
+      const [cx, cy, cz] = roomWorld(lookRoom);
+      camDesired.set(cx, cy + 1.0, cz);
     }
-    controls.target.lerp(camDesired, 0.06);
-    // Cinematic close-follow: when the user isn't actively orbiting, dolly the
-    // camera IN along its current angle so whoever's up is framed close — leaning
-    // a little tighter on a bot's turn so you actually watch the action. The
-    // user's angle is preserved; grabbing the camera pauses this for ~2.5s.
-    if (performance.now() - userCamAt > 2500) {
-      camOffset.copy(camera.position).sub(controls.target);
-      const dist = camOffset.length();
-      const want = Math.max(controls.minDistance, Math.min(controls.maxDistance, active && active.isBot ? 9.5 : 11.5));
-      camOffset.multiplyScalar(Math.max(0.0001, (dist + (want - dist) * 0.035)) / Math.max(0.0001, dist));
-      camera.position.copy(controls.target).add(camOffset);
+    camLook.copy(camDesired);
+    if (!pulse && followTarget.valid) {
+      camLook.lerp(camOffset.set(followTarget.pos.x, followTarget.pos.y + 1.2, followTarget.pos.z), chase);
     }
+    const err = controls.target.distanceTo(camLook);
+    controls.target.lerp(camLook, 1 - Math.exp(-((pulse || err > 10) ? 5.0 : 3.5) * dt));
+
+    // 3+4. spherical framing (radius / polar / azimuth) around the target —
+    // paused while the user holds the camera, except a pulse's push-in.
+    if (pulse || nowMs - userCamAt > 2500) {
+      camSph.setFromVector3(camOffset.copy(camera.position).sub(controls.target));
+      camSph.radius = Math.max(0.001, camSph.radius);
+      if (chase < 0.02 && chaseWant === 0) polarSaved = Math.min(1.45, Math.max(0.2, camSph.phi));
+      const tact = active && active.isBot ? 17 : 20;
+      const wantDist = pulse
+        ? Math.max(controls.minDistance, 0.55 * tact)
+        : tact + (CHASE_DIST - tact) * chase;
+      const clamped = Math.min(controls.maxDistance, Math.max(controls.minDistance, wantDist));
+      // Asymmetric ease: dive fast enough that the close frame lands mid-hop
+      // even on a single one-room move; relax back out more gently.
+      camSph.radius += (clamped - camSph.radius) * (1 - Math.exp(-(clamped < camSph.radius ? 3.5 : 2.2) * dt));
+      camSph.phi += ((polarSaved + (CHASE_PHI - polarSaved) * chase) - camSph.phi) * (1 - Math.exp(-2.5 * dt));
+      if (chase > 0.05 && followTarget.valid) {
+        // swing BEHIND the walker, shortest arc (token yaw = direction of travel)
+        const thetaBehind = followTarget.yaw + Math.PI;
+        const darc = ((thetaBehind - camSph.theta + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        camSph.theta += darc * (1 - Math.exp(-2.0 * chase * dt));
+      }
+      camera.position.setFromSpherical(camSph).add(controls.target);
+    }
+    followTarget.valid = false; // re-armed below by the active living token
   }
   controls.update();
+
+  // Beat FX: light pulses bloom-and-decay, ember bursts rise and gutter out.
+  for (let i = fxList.length - 1; i >= 0; i--) {
+    const fx = fxList[i];
+    fx.t += dt;
+    if (fx.kind === "pulse") {
+      fx.light.intensity = fx.t < 0.12 ? (fx.t / 0.12) * 26 : 26 * Math.exp(-4 * (fx.t - 0.12));
+      if (fx.t > 1.3) { scene.remove(fx.light); fxList.splice(i, 1); }
+    } else {
+      const attr = fx.points.geometry.getAttribute("position");
+      const arr = attr.array, vel = fx.vel;
+      for (let j = 0; j < arr.length; j += 3) {
+        vel[j + 1] -= 0.6 * S * dt; // gravity
+        arr[j] += vel[j] * dt; arr[j + 1] += vel[j + 1] * dt; arr[j + 2] += vel[j + 2] * dt;
+      }
+      attr.needsUpdate = true;
+      fx.points.material.opacity = Math.max(0, 0.9 * (1 - fx.t / 1.6));
+      if (fx.t > 1.7) {
+        scene.remove(fx.points);
+        fx.points.geometry.dispose();
+        fx.points.material.dispose();
+        fxList.splice(i, 1);
+      }
+    }
+  }
 
   if (dust) {
     const a = dust.geometry.getAttribute("position");
     const arr = a.array;
-    for (let i = 0; i < arr.length; i += 3) { arr[i + 1] += 0.012; if (arr[i + 1] > 14) arr[i + 1] = -12; }
+    for (let i = 0; i < arr.length; i += 3) { arr[i + 1] += 0.012; if (arr[i + 1] > 20) arr[i + 1] = -18; }
     a.needsUpdate = true;
     dust.rotation.y += 0.0006;
   }
@@ -1441,7 +1991,7 @@ function animate() {
     let f = 1 + Math.sin(t * 23 + seed) * 0.1 + Math.sin(t * 7.3 + seed * 2.1) * 0.16 + Math.sin(t * 1.7 + seed * 0.7) * 0.06;
     if (Math.random() < 0.015) f *= 0.55;
     l.intensity = Math.max(8, 18 * f);
-    l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.0, b[1] + Math.sin(t * 0.7) * 0.4, b[2] + Math.cos(t * 0.4 + b[0]) * 1.0);
+    l.position.set(b[0] + Math.sin(t * 0.5 + b[2]) * 1.75, b[1] + Math.sin(t * 0.7) * 0.4, b[2] + Math.cos(t * 0.4 + b[0]) * 1.75);
   }
   // Ease each token toward its target room/offset and turn it to face the way
   // it's travelling, so a move reads as walking rather than a teleport.
@@ -1449,9 +1999,10 @@ function animate() {
     const g = tok.group;
     if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; }
     const px = g.position.x, pz = g.position.z;
-    // Slower glide (~0.22s vs ~0.11s) so a bot's room-to-room move is legible as
-    // walking rather than a near-instant pop against its ~950ms turn step.
-    g.position.lerp(tok.target, 1 - Math.exp(-4.5 * dt));
+    // k = 4.5 × (4/7) ≈ 2.6 keeps peak world-speed at ~18 u/s over the longer
+    // 7-unit hop, so the walk clip still matches the ground covered (a hop now
+    // settles in ~1.15s — the bot pacing above allows for it).
+    g.position.lerp(tok.target, 1 - Math.exp(-2.6 * dt));
     const dx = g.position.x - px, dz = g.position.z - pz;
     if (dx * dx + dz * dz > 1e-6) {
       const desired = Math.atan2(dx, dz);
@@ -1464,8 +2015,16 @@ function animate() {
     if (tok.kind === "p" && !tok.dead) {
       const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
       // Hysteresis so the clip can't flap right at the threshold.
-      tok.walking = speed > (tok.walking ? 0.22 : 0.5);
+      tok.walking = speed > (tok.walking ? 0.4 : 0.8);
       setAvatarClip(g, tok.walking ? "walk" : "idle");
+      // The active explorer feeds the follow camera — same walking signal as
+      // the stride clip, so the swoop and the animation can never disagree.
+      if (tok.active) {
+        followTarget.pos.copy(g.position);
+        followTarget.yaw = tok.yaw;
+        followTarget.moving = tok.walking;
+        followTarget.valid = true;
+      }
     }
     if (!tok.dead) animateFigure(tok.fig, t, { active: tok.active, phase: tok.phase, baseY: tok.baseY });
   }
@@ -1476,6 +2035,52 @@ function animate() {
     if (e.openTarget === 1 && nowMs > e.closeAt) e.openTarget = 0;
     e.open += (e.openTarget - e.open) * (1 - Math.exp(-7 * dt));
     e.pivot.rotation.y = -e.open * DOOR_MAX_SWING;
+  }
+
+  // X-ray walls: any wall — including a doorway's stubs and header — between
+  // the camera and a living character ghosts to 0.12, and the followed room's
+  // camera-facing walls always do; smoothly, per-mesh. Wall-height decor trim
+  // (cornice/beams/pilasters) ghosts with its room the same way — a zero
+  // normal in aEntry.walls marks trim. Door leaves, jambs and furniture never
+  // fade (the opening reads through on its own).
+  if (state && xrayWalls.length) {
+    // A. raycast camera -> every living character's chest
+    for (const tok of tokenCache.values()) {
+      if (tok.kind === "p" && tok.dead) continue;
+      xrayDir.copy(tok.group.position);
+      xrayDir.y += tok.kind === "p" ? 1.2 : 1.0; // chest height
+      xrayDir.sub(camera.position);
+      const len = xrayDir.length();
+      xrayRay.origin.copy(camera.position);
+      xrayRay.direction.copy(xrayDir).normalize();
+      for (const w of xrayWalls) {
+        if (xrayRay.intersectBox(w.userData.xray.box, xrayHit) && xrayHit.distanceTo(camera.position) < len - 0.25) {
+          w.userData.xray.until = nowMs + XRAY_HOLD_MS;
+        }
+      }
+    }
+    // B. the active player's room: its near-side walls ghost from any angle
+    const activeP = state.players.find((p) => p.id === state.activePlayerId);
+    const aRoom = activeP && activeP.position ? state.house[activeP.position] : null;
+    const aEntry = aRoom ? roomCache.get(aRoom.key) : null;
+    if (aEntry && aEntry.walls) {
+      const [rx, , rz] = roomWorld(aRoom);
+      xrayDir.set(camera.position.x - rx, 0, camera.position.z - rz).normalize();
+      for (const w of aEntry.walls) {
+        const x = w.userData.xray;
+        if (x.normal.lengthSq() === 0 || x.normal.dot(xrayDir) > 0.15) x.until = nowMs + XRAY_HOLD_MS;
+      }
+    }
+    // C. fade application — the ONLY code allowed to touch wall opacity.
+    for (const w of xrayWalls) {
+      const m = w.material;
+      const target = nowMs < w.userData.xray.until ? XRAY_OPACITY : 1;
+      m.opacity += (target - m.opacity) * (1 - Math.exp(-(target < m.opacity ? 10 : 4) * dt));
+      const solid = m.opacity > 0.985;
+      m.transparent = !solid;
+      m.depthWrite = solid; // opaque pass when fully solid: no sorting artifacts
+      if (solid) m.opacity = 1;
+    }
   }
 
   renderer.render(scene, camera);

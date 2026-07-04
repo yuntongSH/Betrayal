@@ -8,7 +8,7 @@ import * as THREE from "three";
  * broken furniture, etc.
  *
  * Conventions (mirrors index.ts):
- *  - Floor TOP surface is at y = 0; ceiling/wall top is WALL_H = 2.7.
+ *  - Floor TOP surface is at y = 0; ceiling/wall top is WALL_H = 3.2.
  *  - Props are built from THREE primitives only. No external assets.
  *  - FRESH materials/geometries per call — callers dispose per room, so NO
  *    module-level shared material/geometry instances.
@@ -20,7 +20,7 @@ import * as THREE from "three";
  *    caller) via the `instanced()` helper.
  */
 
-export const WALL_H = 2.7;
+export const WALL_H = 3.2;
 
 // ---------------------------------------------------------------------------
 // Local material / primitive helpers (fresh per call)
@@ -115,6 +115,8 @@ export function instanced(
     pos: [number, number, number];
     rot?: [number, number, number];
     scale?: number | [number, number, number];
+    /** Optional per-instance tint (multiplied with the material color). */
+    color?: number;
   }>
 ): THREE.InstancedMesh {
   const im = new THREE.InstancedMesh(geometry, material, transforms.length);
@@ -123,6 +125,7 @@ export function instanced(
   const e = new THREE.Euler();
   const p = new THREE.Vector3();
   const s = new THREE.Vector3();
+  const c = new THREE.Color();
   transforms.forEach((t, i) => {
     p.set(t.pos[0], t.pos[1], t.pos[2]);
     const r = t.rot ?? [0, 0, 0];
@@ -133,8 +136,10 @@ export function instanced(
     else s.set(1, 1, 1);
     m.compose(p, q, s);
     im.setMatrixAt(i, m);
+    if (t.color !== undefined) im.setColorAt(i, c.set(t.color));
   });
   im.instanceMatrix.needsUpdate = true;
+  if (im.instanceColor) im.instanceColor.needsUpdate = true;
   return im;
 }
 
@@ -252,21 +257,22 @@ export function cobwebFunnel(size = 0.6): THREE.Group {
   // backing sheet
   const sheet = new THREE.Mesh(new THREE.CircleGeometry(size * 0.5, 12), webMat());
   g.add(sheet);
-  // concentric rings
-  for (let i = 1; i <= 3; i++) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(size * 0.16 * i, 0.004, 4, 16), webMat());
-    ring.position.z = 0.002 * i;
-    g.add(ring);
-  }
-  // radial spokes
-  for (let i = 0; i < 8; i++) {
+  // concentric rings — ONE instanced unit torus, scaled per ring (rooms hang
+  // four or more funnels, so each must stay a 3-object prop)
+  const ringT = [1, 2, 3].map((i) => ({
+    pos: [0, 0, 0.002 * i] as [number, number, number],
+    scale: [i, i, 1] as [number, number, number],
+  }));
+  g.add(instanced(new THREE.TorusGeometry(size * 0.16, 0.004, 4, 16), webMat(), ringT));
+  // radial spokes — ONE instanced thin box
+  const spokeT = Array.from({ length: 8 }, (_, i) => {
     const a = (i / 8) * Math.PI * 2;
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(size * 0.5, 0.004, 0.002), webMat());
-    spoke.position.z = 0.001;
-    spoke.rotation.z = a;
-    spoke.position.set((Math.cos(a) * size * 0.25), (Math.sin(a) * size * 0.25), 0.001);
-    g.add(spoke);
-  }
+    return {
+      pos: [Math.cos(a) * size * 0.25, Math.sin(a) * size * 0.25, 0.001] as [number, number, number],
+      rot: [0, 0, a] as [number, number, number],
+    };
+  });
+  g.add(instanced(new THREE.BoxGeometry(size * 0.5, 0.004, 0.002), webMat(), spokeT));
   return g;
 }
 
@@ -427,16 +433,15 @@ export function bottlesAndJars(n = 7, spread = 0.5, seed = 1): THREE.Group {
   return g;
 }
 
-/** A hanging chain of `len` torus links. */
+/** A hanging chain of `len` torus links (ONE InstancedMesh — chains get long). */
 export function chain(len = 0.6, color = 0x33302c): THREE.Group {
   const g = new THREE.Group();
   const links = Math.max(2, Math.round(len / 0.06));
-  for (let i = 0; i < links; i++) {
-    const link = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.008, 6, 10), mat(color, { metal: 0.7, rough: 0.5 }));
-    link.position.y = -i * 0.05;
-    link.rotation.y = (i % 2) * (Math.PI / 2);
-    g.add(link);
-  }
+  const t = Array.from({ length: links }, (_, i) => ({
+    pos: [0, -i * 0.05, 0] as [number, number, number],
+    rot: [0, (i % 2) * (Math.PI / 2), 0] as [number, number, number],
+  }));
+  g.add(instanced(new THREE.TorusGeometry(0.025, 0.008, 6, 10), mat(color, { metal: 0.7, rough: 0.5 }), t));
   return g;
 }
 
@@ -488,12 +493,11 @@ export function framedPortrait(w = 0.5, h = 0.65, frame = 0x4a3826, canvas = 0x2
   const head = new THREE.Mesh(new THREE.CircleGeometry(w * 0.12, 12), decalMat(0x7a7078, 0.5));
   head.position.set(0, h * 0.22, 0.046);
   g.add(head);
-  // a soot/water stain creeping up a corner
-  g.add((() => {
-    const s = stainDecal("water", w * 0.5, w * 1000);
-    s.position.set(-w * 0.25, -h * 0.2, 0.05);
-    return s;
-  })());
+  // a soot/water blotch creeping up a corner (a single decal — the big rooms
+  // hang half a dozen portraits, so each must stay cheap)
+  const blot = new THREE.Mesh(new THREE.CircleGeometry(w * 0.22, 10), decalMat(0x3a4248, 0.4));
+  blot.position.set(-w * 0.25, -h * 0.2, 0.05);
+  g.add(blot);
   return g;
 }
 

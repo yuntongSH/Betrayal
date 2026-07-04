@@ -225,6 +225,83 @@ export class Ambient {
     }
   }
 
+  /** A short reveal sting per drawn-card type — pluck, falling chime, or growl. */
+  cardSting(type: "item" | "event" | "omen"): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || !this.master) return;
+    const t = ctx.currentTime;
+    const note = (freq: number, at: number, shape: OscillatorType, vol: number, decay: number) => {
+      const o = ctx.createOscillator();
+      o.type = shape;
+      o.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(vol, at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, at + decay);
+      o.connect(g).connect(this.master!);
+      o.start(at);
+      o.stop(at + decay + 0.05);
+    };
+    if (type === "item") {
+      note(660, t, "triangle", 0.18, 0.5);
+      note(880, t + 0.09, "triangle", 0.18, 0.5);
+    } else if (type === "event") {
+      note(523, t, "sine", 0.14, 0.4);
+      note(415, t + 0.12, "sine", 0.14, 0.4);
+      note(311, t + 0.24, "sine", 0.14, 0.4);
+    } else {
+      // Omen: two detuned saws through a low filter, plus a hiss of static.
+      for (const fr of [65, 69]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = fr;
+        const f = ctx.createBiquadFilter();
+        f.type = "lowpass";
+        f.frequency.value = 400;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.2, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+        o.connect(f).connect(g).connect(this.master);
+        o.start(t);
+        o.stop(t + 1.3);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer(0.8);
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 2400;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.06, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+      src.connect(hp).connect(g).connect(this.master);
+      src.start(t);
+      src.stop(t + 0.8);
+    }
+  }
+
+  /** A bell tolled twice for a fallen explorer, sagging in pitch as it rings. */
+  deathKnell(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || !this.master) return;
+    const strike = (at: number) => {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.setValueAtTime(98, at);
+      o.frequency.exponentialRampToValueAtTime(82, at + 0.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(0.3, at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 2.2);
+      o.connect(g).connect(this.master!);
+      o.start(at);
+      o.stop(at + 2.3);
+    };
+    const t = ctx.currentTime;
+    strike(t);
+    strike(t + 0.7);
+  }
+
   dispose(): void {
     if (this.creakTimer) window.clearTimeout(this.creakTimer);
     if (this.heartTimer) window.clearInterval(this.heartTimer);
