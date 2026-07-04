@@ -7,6 +7,9 @@ import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
 import { followTarget, registerToken, unregisterToken } from "./followCam";
+import { followPath, type WalkPoint } from "./walk";
+import { useBeats } from "../state/beats";
+import { TRAIT_COLOR } from "../ui/icons";
 
 /** Shortest-arc angle lerp so a turn never spins the long way round. */
 function lerpAngle(a: number, b: number, t: number): number {
@@ -17,6 +20,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 export function PlayerToken({
   tokenId,
   position,
+  path,
   color,
   archetype,
   name,
@@ -27,6 +31,8 @@ export function PlayerToken({
 }: {
   tokenId: string;
   position: [number, number, number];
+  /** Waypoints to walk through toward `position` (null = plain glide). */
+  path?: readonly WalkPoint[] | null;
   color: string;
   archetype?: string;
   name: string;
@@ -51,6 +57,16 @@ export function PlayerToken({
   const target = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
+  // A fresh path prop restarts waypoint walking from wherever the body stands.
+  const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
+  const cursor = useRef({ i: 0 });
+  if (activePath.current !== path) {
+    activePath.current = path;
+    cursor.current.i = 0;
+  }
+  // Trait changes float up off the character ("−1 Knowledge") — see beats.ts.
+  const traitDeltas = useBeats((s) => s.traitDeltas);
+  const myDeltas = traitDeltas.filter((d) => d.playerId === tokenId);
   // Feet match the glide: `moving` flips only on transitions (with hysteresis),
   // so the rigged body strides while covering ground and idles on arrival.
   const movingRef = useRef(false);
@@ -79,16 +95,20 @@ export function PlayerToken({
     if (!g) return;
     const t = state.clock.elapsedTime;
 
-    // Snap into place on the first frame; glide thereafter, so a move between
-    // rooms reads as travel rather than a teleport.
+    // Snap into place on the first frame (never walk in from a stale path);
+    // travel thereafter, so a move between rooms reads as walking.
     if (!placed.current) {
       g.position.copy(target.current);
+      if (activePath.current) cursor.current.i = activePath.current.length;
       placed.current = true;
     }
     prev.current.copy(g.position);
-    // Glide rate tuned so peak world-speed stays ~18 u/s at TILE = 7 — the Walk
-    // clip's pace still matches the ground covered (no ice-skating).
-    g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
+    // Waypoint walking around the furniture when a path is set; otherwise the
+    // exponential glide (floor changes, elevator jumps, clear straight lines).
+    const walking = alive && activePath.current
+      ? followPath(g.position, activePath.current, cursor.current, dt)
+      : false;
+    if (!walking) g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
 
     // Turn to face the direction of travel while actually moving.
     const dx = g.position.x - prev.current.x;
@@ -154,6 +174,17 @@ export function PlayerToken({
           {alive && side === "traitor" ? " ☠" : ""}
         </div>
       </Html>
+
+      {/* transient trait-change floats — each rises and fades, then beats.ts
+          expires the delta and the node unmounts */}
+      {myDeltas.map((d, i) => (
+        <Html key={d.id} position={[0, 2.5 + i * 0.35, 0]} center distanceFactor={21} occlude={false}>
+          <div className="stat-float" style={{ color: TRAIT_COLOR[d.trait] }}>
+            {d.delta > 0 ? `+${d.delta}` : `−${-d.delta}`}{" "}
+            {d.trait.charAt(0).toUpperCase() + d.trait.slice(1)}
+          </div>
+        </Html>
+      ))}
     </group>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Html } from "@react-three/drei";
 import {
   CHARACTERS_BY_ID,
@@ -15,8 +15,40 @@ import { Doors } from "./Doors";
 import { PlayerToken } from "./PlayerToken";
 import { MonsterToken } from "./MonsterToken";
 import { TILE, occupantsAt, ringOffset, roomWorld } from "./layout";
+import { buildWalkPath, type WalkPoint } from "./walk";
 
 const HALF = TILE / 2;
+
+/** A token's last assigned slot and the walking path that led to it. */
+interface WalkEntry {
+  key: string;
+  slot: WalkPoint;
+  path: WalkPoint[] | null;
+}
+
+/** Cache a token's slot and (re)build its path only when the slot actually
+ *  moves — the path's identity must hold steady across unrelated re-renders,
+ *  or a walk in progress would be cancelled mid-stride. `walker` is false for
+ *  the dead (corpses keep the plain glide on re-shuffles). */
+function updateWalk(
+  cache: Map<string, WalkEntry>,
+  id: string,
+  roomKey: string,
+  slot: WalkPoint,
+  walker: boolean,
+): WalkPoint[] | null {
+  const prev = cache.get(id);
+  if (!prev) {
+    cache.set(id, { key: roomKey, slot, path: null });
+    return null;
+  }
+  if (prev.key === roomKey && prev.slot[0] === slot[0] && prev.slot[1] === slot[1] && prev.slot[2] === slot[2]) {
+    return prev.path;
+  }
+  const path = walker ? buildWalkPath(prev.key, prev.slot, roomKey, slot) : null;
+  cache.set(id, { key: roomKey, slot, path });
+  return path;
+}
 
 /** Fog-of-war: BFS depth from the nearest living explorer to each room. */
 function visibilityLevels(game: GameState): Map<string, number> {
@@ -126,6 +158,9 @@ export function HouseView() {
   const me = game.players.find((p) => p.id === myId);
   const myRoom = me?.position ? game.house[me.position] : undefined;
 
+  // Per-token slot/path memory across state updates (see updateWalk).
+  const walkCache = useRef(new Map<string, WalkEntry>());
+
   return (
     <group>
       {Object.values(game.house).map((room) => {
@@ -163,7 +198,8 @@ export function HouseView() {
         const room = game.house[key]!;
         const [wx, wy, wz] = roomWorld(room);
         return occ.map((o, i) => {
-          const [ox, oz] = ringOffset(i, occ.length, 1.6);
+          const [ox, oz] = ringOffset(i, occ.length);
+          const slot: WalkPoint = [wx + ox, wy, wz + oz];
           if (o.kind === "player") {
             const p = game.players.find((pp) => pp.id === o.id)!;
             const char = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
@@ -171,7 +207,8 @@ export function HouseView() {
               <PlayerToken
                 key={o.id}
                 tokenId={o.id}
-                position={[wx + ox, wy, wz + oz]}
+                position={slot}
+                path={updateWalk(walkCache.current, o.id, key, slot, p.alive)}
                 color={char?.color ?? "#aaaaaa"}
                 archetype={p.characterId ?? undefined}
                 name={p.name}
@@ -188,7 +225,8 @@ export function HouseView() {
             <MonsterToken
               key={o.id}
               tokenId={`m:${o.id}`}
-              position={[wx + ox, wy, wz + oz]}
+              position={slot}
+              path={updateWalk(walkCache.current, `m:${o.id}`, key, slot, true)}
               name={m.name}
               hp={m.hp}
               attackable={attackable.has(m.id)}

@@ -5,6 +5,7 @@ import { buildMonsterFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
 import { registerToken, unregisterToken } from "./followCam";
+import { followPath, type WalkPoint } from "./walk";
 
 function lerpAngle(a: number, b: number, t: number): number {
   const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -14,6 +15,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 export function MonsterToken({
   tokenId,
   position,
+  path,
   name,
   hp,
   attackable,
@@ -22,6 +24,8 @@ export function MonsterToken({
 }: {
   tokenId: string;
   position: [number, number, number];
+  /** Waypoints to walk through toward `position` (null = plain glide). */
+  path?: readonly WalkPoint[] | null;
   name: string;
   hp: number;
   attackable: boolean;
@@ -36,6 +40,13 @@ export function MonsterToken({
   const target = useRef(new THREE.Vector3(position[0], position[1], position[2]));
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
+  // A fresh path prop restarts waypoint walking from wherever the body stands.
+  const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
+  const cursor = useRef({ i: 0 });
+  if (activePath.current !== path) {
+    activePath.current = path;
+    cursor.current.i = 0;
+  }
 
   // Monsters only mount while hp > 0 — track them for the x-ray raycast.
   useEffect(() => {
@@ -50,10 +61,13 @@ export function MonsterToken({
     const t = state.clock.elapsedTime;
     if (!placed.current) {
       g.position.copy(target.current);
+      if (activePath.current) cursor.current.i = activePath.current.length; // never walk in from a stale path
       placed.current = true;
     }
     prev.current.copy(g.position);
-    g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt)); // same peak world-speed as players at TILE = 7
+    // Same waypoint walk as players; the glide remains for floor jumps.
+    const walking = activePath.current ? followPath(g.position, activePath.current, cursor.current, dt) : false;
+    if (!walking) g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;
     if (dx * dx + dz * dz > 1e-6) {

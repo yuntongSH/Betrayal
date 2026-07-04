@@ -1,3 +1,4 @@
+import { RING } from "@dread-hollow/decor";
 import type { Floor, GameState, PlacedRoom } from "@dread-hollow/shared";
 
 /** World-space sizing of the manor. Grid (x, y) maps to world (x, z); each
@@ -16,9 +17,15 @@ export function roomWorld(r: PlacedRoom): [number, number, number] {
   return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE];
 }
 
-/** Spread N tokens sharing a room around a small ring so none overlap. */
-export function ringOffset(i: number, count: number, radius = 1.6): [number, number] {
-  if (count <= 1) return [0, 0];
+/** Tokens stand and travel on the mid-line of the walkable annulus that decor
+ *  keeps clear between the centerpiece island and the wall furniture. */
+export const WALK_RING_R = (RING[0] + RING[1]) / 2; // 1.6
+
+/** Spread N tokens sharing a room around a small ring so none overlap.
+ *  A lone occupant stands ON the ring too — due +z (south), in front of the
+ *  centerpiece from the default camera — never on the furniture at center. */
+export function ringOffset(i: number, count: number, radius = WALK_RING_R): [number, number] {
+  if (count <= 1) return [0, radius];
   const a = (i / count) * Math.PI * 2;
   return [Math.cos(a) * radius, Math.sin(a) * radius];
 }

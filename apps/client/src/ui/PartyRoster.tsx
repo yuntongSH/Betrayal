@@ -1,13 +1,26 @@
 import { CHARACTERS_BY_ID, TRAITS } from "@dread-hollow/shared";
+import type { Trait } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
 import { useStore } from "../state/store";
-import { TRAIT_COLOR } from "./icons";
+import { useBeats, type TraitDelta } from "../state/beats";
+import { TRAIT_COLOR, TRAIT_ICON } from "./icons";
 
-/** Compact party chips: portrait medallion, name, four trait ticks — the
- *  player's position is visible in the 3D house, so no room text here. */
+/** Newest live delta for one chip cell (multiple hits on a trait are rare). */
+function latestDelta(deltas: readonly TraitDelta[], playerId: string, trait: Trait): TraitDelta | undefined {
+  for (let i = deltas.length - 1; i >= 0; i--) {
+    const d = deltas[i]!;
+    if (d.playerId === playerId && d.trait === trait) return d;
+  }
+  return undefined;
+}
+
+/** Compact party chips: portrait medallion, name, and every player's four
+ *  trait values always on show (icon + number). A change pulses the value and
+ *  floats a signed badge — the whole party's swings stay legible at a glance. */
 export function PartyRoster() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
+  const deltas = useBeats((s) => s.traitDeltas);
 
   return (
     <div className="party-roster">
@@ -29,20 +42,35 @@ export function PartyRoster() {
               {p.name}
               {p.id === myId ? " (you)" : ""}
             </span>
-            {p.alive && char && (
-              <span className="roster-ticks">
-                {TRAITS.map((t) => (
-                  <i
-                    key={t}
-                    title={`${t} ${char.traits[t].values[p.traitIndex[t]]}`}
-                    style={
-                      {
-                        "--tc": TRAIT_COLOR[t],
-                        "--h": p.traitIndex[t] / (char.traits[t].values.length - 1),
-                      } as CSSProperties
-                    }
-                  />
-                ))}
+            {char && (
+              <span className="roster-traits">
+                {TRAITS.map((t) => {
+                  const val = char.traits[t].values[p.traitIndex[t]];
+                  const d = latestDelta(deltas, p.id, t);
+                  return (
+                    <span
+                      key={t}
+                      className="roster-trait"
+                      style={{ "--tc": TRAIT_COLOR[t] } as CSSProperties}
+                      title={`${t} ${val}`}
+                    >
+                      <span className="g-ico" dangerouslySetInnerHTML={{ __html: TRAIT_ICON[t] }} />
+                      {/* keyed by delta id so a repeat hit restarts the pulse */}
+                      <span
+                        key={d ? `v${d.id}` : "v"}
+                        className={`rt-val${d ? (d.delta > 0 ? " trait-pulse-up" : " trait-pulse-down") : ""}`}
+                      >
+                        {val}
+                      </span>
+                      {d && (
+                        <span key={`d${d.id}`} className={`trait-delta ${d.delta > 0 ? "up" : "down"}`}>
+                          <span className="g-ico" dangerouslySetInnerHTML={{ __html: TRAIT_ICON[t] }} />
+                          {d.delta > 0 ? `+${d.delta}` : `−${-d.delta}`}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </span>
             )}
             {p.side === "traitor" && <span className="roster-traitor">☠</span>}

@@ -11,8 +11,8 @@
  * (engine.ts:173/:213/:270/:274/:277/:424, state.ts:119) — safe to match.
  */
 import { create } from "zustand";
-import { ALL_CARDS, ROOMS_BY_ID, getCard } from "@dread-hollow/shared";
-import type { CardDef, CardType, GameState, RoomDef } from "@dread-hollow/shared";
+import { ALL_CARDS, ROOMS_BY_ID, TRAITS, getCard } from "@dread-hollow/shared";
+import type { CardDef, CardType, GameState, RoomDef, Trait } from "@dread-hollow/shared";
 import { ambient } from "../audio/ambient";
 import { focusPulse } from "../three/director";
 
@@ -55,22 +55,36 @@ export interface FxRequest {
 }
 export const pendingFx: FxRequest[] = [];
 
+/** A recent trait change — drives the roster pulse and the 3D float. */
+export interface TraitDelta {
+  id: number;
+  playerId: string;
+  trait: Trait;
+  delta: number;
+}
+
 interface BeatsState {
   queue: Beat[];
   active: Beat | null;
   /** Whether the active modal waits for the watched player (vs auto-dismiss). */
   activeInteractive: boolean;
+  /** Auto-dismiss hold for the active modal (null while interactive). */
+  activeHoldMs: number | null;
   toasts: BeatToast[];
   /** Bumped per beat so the vignette animation restarts (t-item/t-omen/…). */
   vignette: { type: string; seq: number };
+  /** Trait changes from the last couple of seconds (expired by timer). */
+  traitDeltas: TraitDelta[];
 }
 
 export const useBeats = create<BeatsState>(() => ({
   queue: [],
   active: null,
   activeInteractive: false,
+  activeHoldMs: null,
   toasts: [],
   vignette: { type: "", seq: 0 },
+  traitDeltas: [],
 }));
 
 /** True while a modal beat is up or pending — game input should be swallowed. */
@@ -83,6 +97,11 @@ export function beatsBusy(): boolean {
 // Modal queue (250ms gap between modals; auto-dismiss for bots/remote players)
 // ---------------------------------------------------------------------------
 
+/** Non-interactive holds — long enough to actually read the card. Early
+ *  continue (click / Continue / Enter) still dismisses immediately. */
+export const CARD_HOLD_MS = 5000;
+const DEATH_HOLD_MS = 5000;
+
 let watched: string | null = null;
 let modalTimer: ReturnType<typeof setTimeout> | null = null;
 let gapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,11 +113,12 @@ function enqueue(beat: Beat): void {
   maybeActivate();
 }
 
-/** Bot play outruns the stage (the server steps ~1.1s; a modal holds ~2.6s+gap),
- *  so a deep queue means reveals firing on rooms the actor already left. When
- *  more than two beats wait, the oldest non-watched card beats collapse into
- *  toasts — their focus pulse and room FX are skipped — keeping presentation
- *  within about one action of live state. Deaths always stay modal. */
+/** Bot play outruns the stage (the server steps ~1.1s; a modal holds 5s+gap —
+ *  though bots pause while a beat is showing), so a deep queue means reveals
+ *  firing on rooms the actor already left. When more than two beats wait, the
+ *  oldest non-watched card beats collapse into toasts — their focus pulse and
+ *  room FX are skipped — keeping presentation within about one action of live
+ *  state. Deaths always stay modal. */
 function compressBacklog(): void {
   let queue = useBeats.getState().queue;
   const before = queue.length;
@@ -122,14 +142,15 @@ function maybeActivate(): void {
   }
   const [beat, ...rest] = s.queue;
   const interactive = beat.playerId != null && beat.playerId === watched;
-  useBeats.setState({ active: beat, activeInteractive: interactive, queue: rest });
+  const hold = beat.kind === "death" ? DEATH_HOLD_MS : CARD_HOLD_MS;
+  useBeats.setState({
+    active: beat,
+    activeInteractive: interactive,
+    activeHoldMs: interactive ? null : hold,
+    queue: rest,
+  });
   showEffects(beat);
-  if (!interactive) {
-    // A remaining backlog shortens the hold so the stage catches back up.
-    const hold =
-      beat.kind === "death" ? (rest.length > 0 ? 2400 : 3400) : rest.length > 0 ? 1500 : 2600;
-    modalTimer = setTimeout(dismissActive, hold);
-  }
+  if (!interactive) modalTimer = setTimeout(dismissActive, hold);
 }
 
 export function dismissActive(): void {
@@ -163,7 +184,30 @@ export function resetBeats(): void {
   gapTimer = null;
   pendingFx.length = 0;
   heldToasts = [];
-  useBeats.setState({ queue: [], active: null, activeInteractive: false, toasts: [] });
+  useBeats.setState({
+    queue: [],
+    active: null,
+    activeInteractive: false,
+    activeHoldMs: null,
+    toasts: [],
+    traitDeltas: [],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Trait deltas (roster pulse + rising badge + 3D float over the token)
+// ---------------------------------------------------------------------------
+
+let deltaSeq = 0;
+/** Outlives both animations (roster badge 1.6s, 3D float 1.8s). */
+const TRAIT_DELTA_TTL = 2000;
+
+function pushTraitDelta(playerId: string, trait: Trait, delta: number): void {
+  const id = ++deltaSeq;
+  useBeats.setState((s) => ({ traitDeltas: [...s.traitDeltas, { id, playerId, trait, delta }] }));
+  setTimeout(() => {
+    useBeats.setState((s) => ({ traitDeltas: s.traitDeltas.filter((d) => d.id !== id) }));
+  }, TRAIT_DELTA_TTL);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +321,19 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
     posByPlayer: new Map(prev.players.map((p) => [p.id, p.position])),
     aliveByPlayer: new Map(prev.players.map((p) => [p.id, p.alive])),
     invLenByPlayer: new Map(prev.players.map((p) => [p.id, p.inventory.length])),
+    traitsByPlayer: new Map(prev.players.map((p) => [p.id, p.traitIndex])),
   };
+
+  // ANY player's trait change animates their roster chip and floats a delta
+  // over their 3D token — dice-roll penalties on bots stay legible.
+  for (const p of next.players) {
+    const before = snap.traitsByPlayer.get(p.id);
+    if (!before) continue;
+    for (const t of TRAITS) {
+      const d = (p.traitIndex[t] ?? 0) - (before[t] ?? 0);
+      if (d !== 0) pushTraitDelta(p.id, t, d);
+    }
+  }
 
   const fresh = next.log.filter((e) => e.id >= snap.nextLogId); // log ids are monotonic (state.ts:96)
   for (const e of fresh) {

@@ -925,8 +925,24 @@ kbd {
 .roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
 .roster-row.dead{opacity:.45;filter:grayscale(.8)}
 .roster-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.roster-ticks{display:flex;align-items:flex-end;gap:2.5px;height:14px;flex:0 0 auto}
-.roster-ticks i{width:3.5px;border-radius:1px;background:var(--tc);height:calc(3px + 11px*var(--h));opacity:.9}
+.roster-traits{display:flex;gap:.5rem;align-items:center;flex:0 0 auto}
+.roster-trait{position:relative;display:inline-flex;align-items:center;gap:2.5px}
+.roster-trait .g-ico{width:12px;height:12px}
+.rt-val{font-size:12px;font-weight:bold;color:#e8dcc9;min-width:1em;text-align:center}
+.trait-pulse-up{animation:trait-pulse-up .9s ease}
+.trait-pulse-down{animation:trait-pulse-down .9s ease}
+@keyframes trait-pulse-up{35%{transform:scale(1.5);color:#5a8f5a}}
+@keyframes trait-pulse-down{35%{transform:scale(1.5);color:#c2412f}}
+/* signed badge rising off the changed value ("−1" + trait icon) */
+.trait-delta{position:absolute;left:50%;bottom:100%;display:inline-flex;align-items:center;gap:1px;
+  font-size:11px;font-weight:bold;pointer-events:none;animation:trait-delta-rise 1.6s ease-out both}
+.trait-delta .g-ico{width:10px;height:10px}
+.trait-delta.up{color:#5a8f5a} .trait-delta.down{color:#c2412f}
+@keyframes trait-delta-rise{from{opacity:1;transform:translate(-50%,0)}to{opacity:0;transform:translate(-50%,-14px)}}
+/* the same delta floating up off the 3D character */
+.stat-float{font-weight:bold;font-size:15px;white-space:nowrap;pointer-events:none;
+  text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.9);animation:stat-float-rise 1.8s ease-out both}
+@keyframes stat-float-rise{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-26px)}}
 .roster-traitor{color:var(--blood-bright)}
 .event-log{margin-top:auto;background:none;border:none;backdrop-filter:none;display:flex;flex-direction:column;gap:.3rem;min-height:0}
 .log-head{display:flex;justify-content:flex-end;align-items:center;gap:.5rem}
@@ -980,6 +996,11 @@ kbd {
 .dc-text{font-size:.98rem;line-height:1.45;color:#cfc4b8;flex:1}
 .dc-holder{font-size:.78rem;color:#8d8177}
 .dc-continue{margin-bottom:.4rem} /* style like existing .btn.primary */
+/* auto-advance timer: drains over the non-interactive hold (duration inline) */
+.draw-card,.death-banner{position:relative;overflow:hidden}
+.card-timer{position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--bc,#c2412f);opacity:.85;
+  transform-origin:left;animation:card-timer-drain linear both}
+@keyframes card-timer-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 .beat-vignette{position:absolute;inset:0;pointer-events:none;z-index:8;opacity:0}
 .beat-vignette.flash{animation:vignette-flash .9s ease-out}
 .beat-vignette.t-item {box-shadow:inset 0 0 18vmax rgba(226,168,90,.5)}

@@ -236,8 +236,23 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 .roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
 .roster-row.dead{opacity:.45;filter:grayscale(.8)}
 .roster-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.roster-ticks{display:flex;align-items:flex-end;gap:2.5px;height:14px;flex:0 0 auto}
-.roster-ticks i{width:3.5px;border-radius:1px;background:var(--tc);height:calc(3px + 11px*var(--h));opacity:.9}
+/* Every player's four traits, always visible: trait-colored icon + value.
+   Changes pulse the value and float a ±N badge; both resume mid-animation
+   after a HUD rebuild via the negative animation-delay in --dly. */
+.roster-traits{display:flex;gap:.42rem;flex:0 0 auto;align-items:center}
+.roster-trait{position:relative;display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--ink)}
+.rt-ico{width:12px;height:12px;color:var(--tc);display:inline-flex}.rt-ico svg{width:100%;height:100%}
+.rt-val{min-width:1ch;text-align:center;font-weight:600;font-variant-numeric:tabular-nums}
+.roster-trait.trait-pulse-up .rt-val{animation:trait-pulse-up 900ms ease both;animation-delay:var(--dly,0ms)}
+.roster-trait.trait-pulse-down .rt-val{animation:trait-pulse-down 900ms ease both;animation-delay:var(--dly,0ms)}
+@keyframes trait-pulse-up{30%{transform:scale(1.5);color:#5a8f5a;text-shadow:0 0 8px rgba(90,143,90,.9)}}
+@keyframes trait-pulse-down{30%{transform:scale(1.5);color:#c2412f;text-shadow:0 0 8px rgba(194,65,47,.9)}}
+.trait-delta{position:absolute;left:50%;bottom:100%;display:inline-flex;align-items:center;gap:2px;
+  font-size:11px;font-weight:700;white-space:nowrap;pointer-events:none;
+  animation:trait-delta-rise 1.6s ease-out both;animation-delay:var(--dly,0ms)}
+.trait-delta.up{color:#5a8f5a}.trait-delta.down{color:#c2412f}
+.trait-delta .td-ico{width:10px;height:10px;color:var(--tc);display:inline-flex}.trait-delta .td-ico svg{width:100%;height:100%}
+@keyframes trait-delta-rise{from{opacity:0;transform:translate(-50%,3px)}15%{opacity:1;transform:translate(-50%,0)}to{opacity:0;transform:translate(-50%,-14px)}}
 .roster-traitor{color:var(--blood2)}
 .event-log{margin-top:auto;background:none;border:none;backdrop-filter:none;display:flex;flex-direction:column;gap:.3rem;min-height:0}
 .log-head{display:flex;justify-content:flex-end;align-items:center;gap:.5rem}
@@ -311,6 +326,18 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
   box-shadow:0 0 0 2.5px var(--pc),0 0 12px color-mix(in srgb,var(--pc) 45%,transparent)}
 .db-words{margin:.6rem 0 .8rem;font-style:italic;color:#d8c9a8;line-height:1.5}
+/* Auto-dismiss countdown: a thin bar draining along the modal's bottom edge
+   (duration set inline from CARD_HOLD_MS; only on non-interactive reveals). */
+.draw-card,.death-banner{position:relative;overflow:hidden}
+.card-timer{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--bc,#c2517a);
+  opacity:.85;transform-origin:left center;animation:card-timer-drain linear both}
+@keyframes card-timer-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+/* Floating trait delta over a 3D character ("−1 Knowledge"). The outer element
+   belongs to CSS2DRenderer (it owns its transform); the inner span animates. */
+.stat-float{pointer-events:none;font-weight:bold;font-size:14px;white-space:nowrap;
+  text-shadow:0 0 6px #000,0 0 10px #000}
+.stat-float>span{display:inline-block;animation:stat-float-rise 1.8s ease-out both}
+@keyframes stat-float-rise{from{opacity:0;transform:translateY(6px)}15%{opacity:1;transform:translateY(2px)}to{opacity:0;transform:translateY(-18px)}}
 @keyframes card-flip-in{from{transform:rotateY(100deg) scale(.9);opacity:0}to{transform:none;opacity:1}}
 @keyframes reveal-dim{from{opacity:0}to{opacity:1}}
 @keyframes vignette-flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}

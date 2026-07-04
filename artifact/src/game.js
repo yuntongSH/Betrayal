@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, ISLAND_R, RING } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -15,6 +15,13 @@ const FLOOR_GAP = 11;
 const S = TILE / 4; // room-scale factor for effects that were tuned at TILE=4
 const FLOOR_Y = { basement: -FLOOR_GAP, ground: 0, upper: FLOOR_GAP };
 const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", knowledge: "#7a6db0" };
+// Tokens stand and walk on the decor annulus, never on the island centerpiece:
+// slots + travel lane sit mid-annulus, outside ISLAND_R (=1.2) where the props live.
+const WALK_R = (RING[0] + RING[1]) / 2; // 1.6
+const WALK_SPEED = 2.7; // u/s — constant waypoint-walk pace (stride clip reads right at ~2.4–3.0)
+const CARD_HOLD_MS = 5000; // every non-interactive card/death reveal holds this long
+const TRAIT_PULSE_MS = 900; // roster value pulse on a trait change
+const TRAIT_DELTA_MS = 1600; // floating ±N badge life on the roster chip
 
 // ---- HUD v2 iconography (byte-identical strings in the React client) ------
 const LOG_ICON = { info: "✧", move: "⇢", card: "❖", roll: "⚄", haunt: "⌂",
@@ -26,6 +33,18 @@ const TRAIT_ICON = {
   knowledge: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.2C10.2 4.9 8 4.2 5.5 4.2c-1 0-1.9.1-2.7.4v13.8c.8-.3 1.7-.4 2.7-.4 2.5 0 4.7.7 6.5 2 1.8-1.3 4-2 6.5-2 1 0 1.9.1 2.7.4V4.6c-.8-.3-1.7-.4-2.7-.4C16 4.2 13.8 4.9 12 6.2z"/><path d="M12 6.2v13.8"/></svg>`,
 };
 const prevTraitIdx = {}; // "playerId:trait" -> last-rendered index (drives flash-up/down)
+// Trait changes recorded with timestamps: the roster re-renders wholesale after
+// every dispatch, so pulses/badges replay mid-flight (negative animation-delay)
+// instead of relying on DOM persistence. d is in track STEPS (±1 per notch).
+const recentDeltas = []; // { playerId, trait, d, at }
+/** Most recent trait change for (player, trait) still inside the badge window. */
+function latestDelta(pid, t, now) {
+  for (let i = recentDeltas.length - 1; i >= 0; i--) {
+    const r = recentDeltas[i];
+    if (r.playerId === pid && r.trait === t && now - r.at < TRAIT_DELTA_MS) return r;
+  }
+  return null;
+}
 const logSeen = new Map(); // log entry id -> first-rendered ms (feed fade survives rebuilds)
 let logOpen = false; // Chronicle: compact toast feed (false) vs full scrolling panel
 window.__logToggle = () => { logOpen = !logOpen; render(); };
@@ -199,7 +218,9 @@ function toast(msg) {
 }
 
 function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
-function ring(i, n, rad) { if (n <= 1) return [0, 0]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
+// A lone occupant stands ON the walk ring (due +z), never dead-center on the
+// island prop — [0,0] parked characters on top of the room's centerpiece.
+function ring(i, n, rad) { if (n <= 1) return [0, rad]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
 
 // ---- procedural audio (Web Audio, zero assets) ---------------------------
 // A low drone + filtered wind bed, with reactive cues: a creak when a door
@@ -432,6 +453,9 @@ const Beats = (() => {
     setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 550); }, 2400);
   }
 
+  // Every modal offers "Continue ▸" — a bot's draw auto-dismisses after
+  // CARD_HOLD_MS (the .card-timer bar drains along the bottom edge to show it)
+  // but a click / Continue / Enter / Space always advances immediately.
   function cardHtml(b) {
     return `<div class="card-flip"><div class="draw-card t-${b.cardType}">` +
       `<div class="dc-icon">${BEAT_SVG[b.cardType]}</div>` +
@@ -439,7 +463,8 @@ const Beats = (() => {
       `<div class="dc-name">${b.name}</div>` +
       `<div class="dc-text">${b.text}</div>` +
       `<div class="dc-holder">${b.playerName} draws</div>` +
-      (b.interactive ? `<button class="btn primary dc-continue">Continue</button>` : "") +
+      `<button class="btn primary dc-continue">Continue ▸</button>` +
+      (b.interactive ? "" : `<div class="card-timer" style="animation-duration:${CARD_HOLD_MS}ms"></div>`) +
       `</div></div>`;
   }
   function deathHtml(b) {
@@ -450,7 +475,8 @@ const Beats = (() => {
       `<h2>${c?.name ?? b.playerName}</h2>` +
       `<div class="muted">${c?.title ?? ""}</div>` +
       `<div class="db-words">“${c?.lines.death ?? "…"}”</div>` +
-      (b.interactive ? `<button class="btn primary dc-continue">Continue</button>` : "") +
+      `<button class="btn primary dc-continue">Continue ▸</button>` +
+      (b.interactive ? "" : `<div class="card-timer" style="animation-duration:${CARD_HOLD_MS}ms"></div>`) +
       `</div>`;
   }
   function showNext() {
@@ -474,8 +500,9 @@ const Beats = (() => {
     spawnBeatFx(b.roomKey, type);
     if (b.kind === "death") Sound.deathKnell();
     else Sound.cardSting(b.cardType);
-    // A backed-up queue drains briskly; a lone reveal gets its full moment.
-    if (!b.interactive) autoTimer = setTimeout(dismiss, queue.length ? 1500 : b.kind === "death" ? 3400 : 2600);
+    // Every reveal gets its full reading time — no backlog fast-drain (driveBots
+    // pauses while a beat is up, so the queue stays bounded regardless).
+    if (!b.interactive) autoTimer = setTimeout(dismiss, CARD_HOLD_MS);
   }
   function dismiss() {
     if (!active) return;
@@ -520,6 +547,7 @@ const Beats = (() => {
       clearTimeout(gapTimer); gapTimer = null;
       if (active) { active.el?.remove(); active = null; }
       consumed.clear();
+      recentDeltas.length = 0;
       director.focusKey = null; director.until = 0;
     },
     /** Pre-action snapshot — everything ingest() needs to diff afterwards. */
@@ -530,6 +558,7 @@ const Beats = (() => {
         houseKeys: new Set(Object.keys(s.house)),
         pos: Object.fromEntries(s.players.map((p) => [p.id, p.position])),
         alive: Object.fromEntries(s.players.map((p) => [p.id, p.alive])),
+        traitIdx: Object.fromEntries(s.players.map((p) => [p.id, { ...p.traitIndex }])),
       };
     },
     /** Diff snapshot vs post-action state into beats (log order = causal order). */
@@ -614,6 +643,21 @@ const Beats = (() => {
         const def = room ? DH.ROOMS_BY_ID[room.roomId] : null;
         specialToast(def, !snap.houseKeys.has(w.position));
       }
+      // ANY player's trait change → roster pulse + delta badge + a floating
+      // "−1 Knowledge" over the 3D character. Deltas are in track steps.
+      const tNow = performance.now();
+      for (const p of next.players) {
+        const was = snap.traitIdx[p.id];
+        if (!was) continue;
+        for (const t of DH.TRAITS) {
+          const d = (p.traitIndex[t] ?? 0) - (was[t] ?? 0);
+          if (d) {
+            recentDeltas.push({ playerId: p.id, trait: t, d, at: tNow });
+            spawnStatFloat(p.id, t, d);
+          }
+        }
+      }
+      while (recentDeltas.length && tNow - recentDeltas[0].at > TRAIT_DELTA_MS * 4) recentDeltas.shift();
       if (!active && !gapTimer) showNext();
     },
   };
@@ -1448,6 +1492,108 @@ function disposeToken(tok) {
   tokenGroup.remove(tok.group);
 }
 
+/** Float "−1 Knowledge" above a character's head — a transient CSS2D label that
+ *  rises and fades (~1.8s), then leaves the scene. The inner span carries the
+ *  animation because CSS2DRenderer owns the outer element's transform. */
+function spawnStatFloat(playerId, trait, d) {
+  const tok = tokenCache.get(playerId);
+  if (!tok) return;
+  const el = document.createElement("div");
+  el.className = "stat-float";
+  el.style.color = TRAIT_COLOR[trait];
+  const span = document.createElement("span");
+  span.textContent = `${d > 0 ? "+" : "−"}${Math.abs(d)} ${trait.charAt(0).toUpperCase()}${trait.slice(1)}`;
+  el.appendChild(span);
+  const lbl = new CSS2DObject(el);
+  // Simultaneous hits (−1 Might and −1 Speed in one action) stack upward.
+  tok.statFloats = (tok.statFloats ?? 0) + 1;
+  lbl.position.set(0, 2.25 + 0.35 * (tok.statFloats - 1), 0);
+  tok.group.add(lbl);
+  setTimeout(() => { tok.group.remove(lbl); el.remove(); tok.statFloats--; }, 1900);
+}
+
+// ---- waypoint walking (Feature 1) -----------------------------------------
+// Characters walk the room's annulus and pass through doors instead of gliding
+// straight through the island centerpiece. Paths are planned once per move
+// (allocations here are fine); the frame loop only consumes them.
+const _walkV = new THREE.Vector3(); // scratch for the per-frame walker
+
+/** Does the ground segment a→b pass within `r` of the point (cx,cz)? */
+function segNearCenter(ax, az, bx, bz, cx, cz, r) {
+  const dx = bx - ax, dz = bz - az;
+  const L2 = dx * dx + dz * dz;
+  const t = L2 ? Math.min(1, Math.max(0, ((cx - ax) * dx + (cz - az) * dz) / L2)) : 0;
+  const px = ax + dx * t - cx, pz = az + dz * t - cz;
+  return px * px + pz * pz < r * r;
+}
+
+/** Append intermediate ring waypoints from angle a0 to a1 around (cx,cz), the
+ *  SHORT way, one point per 60° of arc — a 60° chord of r=1.6 stays 1.39 from
+ *  the centre, safely outside the ISLAND_R=1.2 centerpiece. The endpoint at a1
+ *  is NOT pushed (callers land on their exact destination themselves). */
+function pushArc(path, cx, cy, cz, a0, a1) {
+  let d = a1 - a0;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const steps = Math.ceil(Math.abs(d) / (Math.PI / 3));
+  for (let i = 1; i < steps; i++) {
+    const a = a0 + (d * i) / steps;
+    path.push(new THREE.Vector3(cx + Math.cos(a) * WALK_R, cy, cz + Math.sin(a) * WALK_R));
+  }
+}
+
+/** Plan how `tok` walks to its (just-changed) `tok.target` in room `toKey`.
+ *  Adjacent same-floor hops walk the old room's ring to the shared door, cross
+ *  at the door midpoint, and take the new ring the short way to the slot; an
+ *  in-room re-shuffle goes straight unless the line would clip the island,
+ *  then it arcs. Floor changes and non-adjacent jumps keep the direct glide
+ *  (path = null). A token still mid-walk gets the new legs appended so the
+ *  journey stays continuous — unless the backlog outgrows ~3 rooms of walking,
+ *  when it snaps back to the glide to catch up. */
+function planTokenPath(tok, toKey) {
+  const from = tok.lastKey ? state.house[tok.lastKey] : null;
+  const to = state.house[toKey];
+  const hop = from && to && from.floor === to.floor ? Math.abs(to.x - from.x) + Math.abs(to.y - from.y) : 99;
+  if (!from || !to || hop > 1) { tok.path = null; return; }
+  const cont = !!(tok.path && tok.path.length); // mid-walk: extend, don't restart
+  const path = cont ? tok.path : [];
+  const start = cont ? path[path.length - 1] : tok.group.position;
+  if (hop === 1) {
+    const [ax, ay, az] = roomWorld(from);
+    const [bx, by, bz] = roomWorld(to);
+    const doorA = Math.atan2(bz - az, bx - ax); // old-room ring angle facing the shared door
+    const ex = ax + Math.cos(doorA) * WALK_R, ez = az + Math.sin(doorA) * WALK_R;
+    // Reaching the exit point is itself an in-room leg: arc around if the
+    // straight line from the current slot would cut across the old island.
+    if (segNearCenter(start.x, start.z, ex, ez, ax, az, ISLAND_R)) {
+      pushArc(path, ax, ay, az, Math.atan2(start.z - az, start.x - ax), doorA);
+    }
+    path.push(new THREE.Vector3(ex, ay, ez));
+    path.push(new THREE.Vector3((ax + bx) / 2, by, (az + bz) / 2)); // door midpoint
+    const doorB = Math.atan2(az - bz, ax - bx); // new-room ring angle facing back at the door
+    path.push(new THREE.Vector3(bx + Math.cos(doorB) * WALK_R, by, bz + Math.sin(doorB) * WALK_R));
+    pushArc(path, bx, by, bz, doorB, Math.atan2(tok.target.z - bz, tok.target.x - bx));
+  } else {
+    // Same room, new slot: straight, unless that would cut across the island.
+    const [cx, cy, cz] = roomWorld(to);
+    if (segNearCenter(start.x, start.z, tok.target.x, tok.target.z, cx, cz, ISLAND_R)) {
+      pushArc(path, cx, cy, cz, Math.atan2(start.z - cz, start.x - cx), Math.atan2(tok.target.z - cz, tok.target.x - cx));
+    }
+  }
+  path.push(tok.target.clone());
+  tok.path = path;
+  let rem = 0, px = tok.group.position.x, pz = tok.group.position.z;
+  for (const w of path) { rem += Math.hypot(w.x - px, w.z - pz); px = w.x; pz = w.z; }
+  if (rem > TILE * 3) tok.path = null;
+}
+
+/** Retarget a token; when the destination genuinely moved, plan the walk. */
+function setTokenDest(tok, x, y, z, key) {
+  const moved = tok.placed && (tok.target.x !== x || tok.target.y !== y || tok.target.z !== z);
+  tok.target.set(x, y, z);
+  if (moved) planTokenPath(tok, key);
+}
+
 // Reconcile the persistent token set against the current state: create new
 // tokens, retire vanished ones, and update each token's TARGET (the animate
 // loop eases the actual position toward it, so movement reads as travel).
@@ -1466,12 +1612,12 @@ function syncTokens(legal) {
     if (!room) continue;
     const [wx, wy, wz] = roomWorld(room);
     occ.forEach((o, i) => {
-      const [ox, oz] = ring(i, occ.length, 1.6);
+      const [ox, oz] = ring(i, occ.length, WALK_R);
       seen.add(o.id);
       let tok = tokenCache.get(o.id);
       if (o.kind === "p") {
         if (!tok) { tok = makePlayerToken(o.p); tokenCache.set(o.id, tok); }
-        tok.target.set(wx + ox, wy, wz + oz);
+        setTokenDest(tok, wx + ox, wy, wz + oz, key);
         const dead = !o.p.alive;
         if (dead && !tok.dead) {
           // First frame of death: the body falls where it stood and stays.
@@ -1488,7 +1634,7 @@ function syncTokens(legal) {
         tok.el.textContent = dead ? "✝ " + o.p.name : o.p.name + (traitor ? " ☠" : "");
       } else {
         if (!tok) { tok = makeMonsterToken(o.m); tokenCache.set(o.id, tok); }
-        tok.target.set(wx + ox, wy, wz + oz);
+        setTokenDest(tok, wx + ox, wy, wz + oz, key);
         const atk = attackable.has(o.m.id);
         tok.light.intensity = atk ? 5 : 2.5;
         tok.el.className = "tok-lbl monster";
@@ -1698,20 +1844,31 @@ function updateHUD(legal) {
     `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag"> — your move</span>') : ""}</div>` +
     `${!ended ? `<div class="hud-move" title="Movement left: ${state.movementLeft}">${pips}</div>` : ""}`;
 
-  // party chips — position lives in the 3D view now, not as text
+  // party chips — position lives in the 3D view now, not as text. Every
+  // player's four traits stay visible (icon + value); a fresh change pulses
+  // the value and floats a ±N badge. Both animate off recentDeltas timestamps
+  // (negative animation-delay) so they survive the post-dispatch rebuild.
+  const nowP = performance.now();
   const roster = state.players.map((p) => {
     const c = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
     const isMe = humans.length === 1 && p.id === humans[0].id;
-    const ticks = p.alive && c
-      ? `<span class="roster-ticks">` + DH.TRAITS.map((t) => {
-          const tr = c.traits[t]; const idx = p.traitIndex[t] ?? 0;
-          return `<i title="${t} ${tr.values[idx]}" style="--tc:${TRAIT_COLOR[t]};--h:${(idx / (tr.values.length - 1)).toFixed(3)}"></i>`;
+    const traits = c
+      ? `<span class="roster-traits">` + DH.TRAITS.map((t) => {
+          const val = c.traits[t].values[p.traitIndex[t] ?? 0];
+          const rd = latestDelta(p.id, t, nowP);
+          const age = rd ? nowP - rd.at : 0;
+          const pulse = rd && age < TRAIT_PULSE_MS ? (rd.d > 0 ? " trait-pulse-up" : " trait-pulse-down") : "";
+          const badge = rd
+            ? `<span class="trait-delta ${rd.d > 0 ? "up" : "down"}">${rd.d > 0 ? "+" : "−"}${Math.abs(rd.d)}<span class="td-ico">${TRAIT_ICON[t]}</span></span>`
+            : "";
+          return `<span class="roster-trait${pulse}" style="--tc:${TRAIT_COLOR[t]};--dly:-${age.toFixed(0)}ms" title="${t} ${val}">` +
+            `<span class="rt-ico">${TRAIT_ICON[t]}</span><span class="rt-val">${val}</span>${badge}</span>`;
         }).join("") + `</span>`
       : "";
     return `<div class="roster-row${state.activePlayerId === p.id ? " active" : ""}${!p.alive ? " dead" : ""}">` +
       `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") : "☠"}</span>` +
       `<span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
-      ticks +
+      traits +
       `${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}</div>`;
   }).join("");
   // Chronicle: a compact icon-led toast feed by default (recent entries fade to
@@ -1997,12 +2154,28 @@ function animate() {
   // it's travelling, so a move reads as walking rather than a teleport.
   for (const tok of tokenCache.values()) {
     const g = tok.group;
-    if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; }
+    if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; tok.path = null; }
     const px = g.position.x, pz = g.position.z;
-    // k = 4.5 × (4/7) ≈ 2.6 keeps peak world-speed at ~18 u/s over the longer
-    // 7-unit hop, so the walk clip still matches the ground covered (a hop now
-    // settles in ~1.15s — the bot pacing above allows for it).
-    g.position.lerp(tok.target, 1 - Math.exp(-2.6 * dt));
+    if (tok.path) {
+      // Waypoint walk: consume the planned ring/door points at constant
+      // WALK_SPEED, easing out over the last stretch into the final slot.
+      let budget = WALK_SPEED * dt;
+      while (budget > 1e-5 && tok.path.length) {
+        const w = tok.path[0];
+        _walkV.subVectors(w, g.position);
+        const dist = _walkV.length();
+        const k = tok.path.length === 1 ? Math.max(0.35, Math.min(1, dist / 1.2)) : 1; // ease-out
+        const step = budget * k;
+        if (dist <= step) { g.position.copy(w); tok.path.shift(); budget -= dist / k; }
+        else { g.position.addScaledVector(_walkV.multiplyScalar(1 / dist), step); budget = 0; }
+      }
+      if (!tok.path.length) tok.path = null;
+    } else {
+      // Direct glide — floor changes and non-adjacent jumps (stairs, elevator,
+      // falls). k = 4.5 × (4/7) ≈ 2.6 keeps peak world-speed matched to the
+      // walk clip over a 7-unit hop (settles in ~1.15s).
+      g.position.lerp(tok.target, 1 - Math.exp(-2.6 * dt));
+    }
     const dx = g.position.x - px, dz = g.position.z - pz;
     if (dx * dx + dz * dz > 1e-6) {
       const desired = Math.atan2(dx, dz);

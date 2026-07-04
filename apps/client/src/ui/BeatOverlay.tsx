@@ -21,6 +21,7 @@ const CARD_KICKER: Record<string, string> = {
 export function BeatOverlay() {
   const active = useBeats((s) => s.active);
   const interactive = useBeats((s) => s.activeInteractive);
+  const holdMs = useBeats((s) => s.activeHoldMs);
   const toasts = useBeats((s) => s.toasts);
   const vignette = useBeats((s) => s.vignette);
 
@@ -61,10 +62,12 @@ export function BeatOverlay() {
               <div className="dc-name">{active.card?.name ?? active.name}</div>
               <div className="dc-text">{active.card?.text ?? active.rawText}</div>
               <div className="dc-holder">{active.playerName ?? "The house"} draws</div>
-              {interactive && (
-                <button className="btn primary dc-continue" onClick={dismissActive}>
-                  Continue
-                </button>
+              <button className="btn primary dc-continue" onClick={dismissActive}>
+                Continue ▸
+              </button>
+              {/* auto-advance made legible: drains over the hold duration */}
+              {!interactive && holdMs != null && (
+                <div className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
               )}
             </div>
           </div>
@@ -84,10 +87,11 @@ export function BeatOverlay() {
             <h2>{char?.name ?? active.playerName}</h2>
             {char && <div className="muted">{char.title}</div>}
             {char && <p className="db-last">“{char.lines.death}”</p>}
-            {interactive && (
-              <button className="btn primary dc-continue" onClick={dismissActive}>
-                Continue
-              </button>
+            <button className="btn primary dc-continue" onClick={dismissActive}>
+              Continue ▸
+            </button>
+            {!interactive && holdMs != null && (
+              <div className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
             )}
           </div>
         </div>
