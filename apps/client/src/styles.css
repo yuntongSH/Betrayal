@@ -597,7 +597,8 @@ kbd {
   position: absolute;
   top: 3.4rem;
   left: 0.9rem;
-  bottom: 4.2rem;
+  /* bottom clears the control hint (~4 lines at 320px) so toasts never overlap it */
+  bottom: 6rem;
   width: 300px;
   max-width: 38vw;
   display: flex;
@@ -1093,8 +1094,9 @@ kbd {
 
 /* ===== Minimap — clickable bird's-eye map, bottom-right (artifact mirrors) ===== */
 .minimap{position:absolute;right:.9rem;bottom:4.4rem;width:230px;z-index:5;
-  background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;
-  padding:.4rem;backdrop-filter:blur(6px);
+  /* opaque: 3D room/token labels must never bleed through the panel */
+  background:#14111c;border:1px solid var(--panel-edge);border-radius:10px;
+  padding:.4rem;
   display:flex;flex-direction:column;gap:.3rem}
 .minimap-canvas{display:block;width:100%;border-radius:6px;background:rgba(5,5,9,.62)}
 .minimap-floors{display:flex;gap:.3rem;justify-content:center}

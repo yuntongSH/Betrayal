@@ -130,7 +130,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
    .card-reveal 9, .beat-vignette 8). */
 #hud-top,#hud-left,#hud-right,#hud-bottom,#hud-hint{z-index:2}
 .haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)}
-#hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:4rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
+#hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:6rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
 /* bottom clears the minimap panel parked in the corner below it */
 #hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:17.5rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
 /* current-room info card */
@@ -182,8 +182,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 @media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}.minimap{width:170px}}
 
 /* ===== Minimap — clickable 2D floor plan, bottom-right ===== */
-.minimap{position:absolute;right:.8rem;bottom:1.1rem;z-index:3;width:230px;
-  display:flex;flex-direction:column;gap:4px;background:var(--panel);border:1px solid var(--edge);
+.minimap{position:absolute;right:.8rem;bottom:1.1rem;z-index:3;width:230px;  display:flex;flex-direction:column;gap:4px;background:#14111c;border:1px solid var(--edge);
   border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.45)}
 .minimap-floors{display:flex;gap:4px;justify-content:flex-end}
 .mm-tab{font:inherit;font-size:.68rem;width:22px;height:20px;padding:0;line-height:1;border-radius:5px;
