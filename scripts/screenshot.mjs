@@ -58,7 +58,9 @@ page.on("pageerror", (e) => errors.push(String(e)));
 
 await page.goto(artifactUrl, { waitUntil: "load" });
 await page.waitForSelector("#solo-btn", { timeout: 20000 });
-await page.screenshot({ path: resolve(outDir, "01-lobby.png") });
+// Generous capture timeouts: a saturated 2-core SwiftShader runner can take
+// well past Playwright's default 30s to produce the stable frame a capture needs.
+await page.screenshot({ path: resolve(outDir, "01-lobby.png"), timeout: 120000 });
 console.log("captured 01-lobby.png");
 
 await page.click("#solo-btn", { timeout: 60000 });
@@ -77,7 +79,7 @@ await page.waitForFunction(
 );
 // give three.js time to render and a couple of bot turns to play
 await page.waitForTimeout(7000);
-await page.screenshot({ path: resolve(outDir, "02-game.png") });
+await page.screenshot({ path: resolve(outDir, "02-game.png"), timeout: 120000 });
 console.log("captured 02-game.png");
 
 await browser.close();
