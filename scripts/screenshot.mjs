@@ -61,9 +61,21 @@ await page.waitForSelector("#solo-btn", { timeout: 20000 });
 await page.screenshot({ path: resolve(outDir, "01-lobby.png") });
 console.log("captured 01-lobby.png");
 
-await page.click("#solo-btn");
-await page.waitForSelector("#canvas-wrap canvas", { timeout: 30000 });
-// give three.js (loaded from CDN) time to render and a couple of bot turns to play
+await page.click("#solo-btn", { timeout: 60000 });
+await page.waitForSelector("#canvas-wrap canvas", { timeout: 120000 });
+// Software WebGL (SwiftShader) compiles the avatar shaders on the main thread —
+// on a slow CI runner that can wedge the page for a while. Wait until frames
+// are actually being produced again before the settle.
+await page.waitForFunction(
+  () =>
+    new Promise((done) => {
+      let n = 0;
+      const tick = () => (++n >= 3 ? done(true) : requestAnimationFrame(tick));
+      requestAnimationFrame(tick);
+    }),
+  { timeout: 120000 },
+);
+// give three.js time to render and a couple of bot turns to play
 await page.waitForTimeout(7000);
 await page.screenshot({ path: resolve(outDir, "02-game.png") });
 console.log("captured 02-game.png");

@@ -218,32 +218,45 @@ function addMicroDetail(
   freq: number,
   hairSpan?: [number, number],
 ): void {
-  const a = amp.toFixed(3);
-  const f = freq.toFixed(1);
-  const hair = hairSpan
-    ? `diffuseColor.rgb *= mix(0.78, 1.07, smoothstep(${hairSpan[0].toFixed(3)}, ${hairSpan[1].toFixed(3)}, vDhPos.y));`
-    : "";
+  // Every knob is a UNIFORM and the cache key a single constant: under
+  // software WebGL each distinct program is a multi-second main-thread
+  // compile, and the old per-mesh baked constants (hair even baked its
+  // bounding box) compiled dozens of programs and wedged slow machines.
+  const u = {
+    dhAmp: { value: amp },
+    dhFreq: { value: freq },
+    dhGrad: { value: hairSpan ? 1 : 0 }, // root->tip gradient gate
+    dhSpan: { value: new THREE.Vector2(hairSpan?.[0] ?? 0, hairSpan?.[1] ?? 1) },
+  };
   mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vDhPos;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvDhPos = position.xyz;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vDhPos;")
-      .replace("#include <color_fragment>", `#include <color_fragment>\n${hair}`)
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vDhPos;\nuniform float dhAmp, dhFreq, dhGrad;\nuniform vec2 dhSpan;",
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        diffuseColor.rgb *= mix(1.0, mix(0.78, 1.07, smoothstep(dhSpan.x, dhSpan.y, vDhPos.y)), dhGrad);`,
+      )
       .replace(
         "#include <normal_fragment_maps>",
         `#include <normal_fragment_maps>
         {
-          vec3 dhp = vDhPos * ${f};
+          vec3 dhp = vDhPos * dhFreq;
           vec3 dhg = vec3(
             sin(dhp.y + dhp.z * 0.71) * sin(dhp.z * 1.37),
             sin(dhp.z + dhp.x * 0.71) * sin(dhp.x * 1.37),
             sin(dhp.x + dhp.y * 0.71) * sin(dhp.y * 1.37));
-          normal = normalize(normal + ${a} * dhg);
+          normal = normalize(normal + dhAmp * dhg);
         }`,
       );
   };
-  mat.customProgramCacheKey = () => `dh-micro:${a}:${f}:${hairSpan ? hairSpan.join(",") : ""}`;
+  mat.customProgramCacheKey = () => "dh-micro";
 }
 
 // ---------------------------------------------------------------------------
@@ -343,23 +356,27 @@ function styleEye(src: THREE.Material): THREE.MeshPhysicalMaterial {
   return m;
 }
 
-function styleCloth(src: THREE.Material, rule: ClothRule): THREE.MeshPhysicalMaterial {
-  const m = physicalFrom(src);
+function styleCloth(src: THREE.Material, rule: ClothRule): THREE.MeshStandardMaterial {
+  // Cloth is MOST of every avatar's materials, so it stays MeshStandardMaterial:
+  // Physical's sheen/clearcoat variants each cost a distinct shader program,
+  // and under software WebGL (CI, weak devices) every extra program is a
+  // multi-second main-thread compile. Sheen/clearcoat rules are approximated
+  // with roughness — at game distance the difference doesn't read.
+  const s = src as THREE.MeshStandardMaterial;
+  const m = new THREE.MeshStandardMaterial({
+    color: s.color ? s.color.clone() : new THREE.Color(0xffffff),
+    roughness: s.roughness ?? 0.5,
+    metalness: s.metalness ?? 0,
+  });
+  m.name = src.name;
+  m.envMapIntensity = 0.55;
   if (rule.metal != null) {
     m.metalness = rule.metal;
     m.roughness = rule.rough ?? 0.4;
   } else {
     m.roughness = rule.rough ?? 0.85;
-    if (rule.sheen) {
-      m.sheen = rule.sheen;
-      m.sheenRoughness = 0.6;
-      if (rule.sheenColor != null) m.sheenColor.set(rule.sheenColor);
-      else m.sheenColor.copy(m.color).multiplyScalar(1.25);
-    }
-    if (rule.clearcoat) {
-      m.clearcoat = rule.clearcoat;
-      m.clearcoatRoughness = 0.35;
-    }
+    if (rule.sheen) m.roughness = Math.max(0.35, m.roughness - rule.sheen * 0.55);
+    if (rule.clearcoat) m.roughness = Math.max(0.25, m.roughness - rule.clearcoat * 0.3);
   }
   if (rule.grain) addMicroDetail(m, rule.grain[0], rule.grain[1]);
   return m;
