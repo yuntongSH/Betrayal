@@ -23,6 +23,7 @@ interface DoorDesc {
   id: string;
   position: [number, number, number];
   rotated: boolean; // east/west boundary: opening runs along z
+  rooms: [string, string]; // both adjacent room keys — the door bounds each
 }
 
 interface DoorState {
@@ -53,6 +54,7 @@ function doorDescriptors(house: GameState["house"]): DoorDesc[] {
         id,
         position: [room.x * TILE + dx * HALF, FLOOR_Y[room.floor], room.y * TILE + dy * HALF],
         rotated: d === "east" || d === "west",
+        rooms: [room.key, nKey],
       });
     }
   }
@@ -68,11 +70,13 @@ function Door({ desc, state }: { desc: DoorDesc; state: DoorState }) {
   const leafW = DW - 0.05;
   const leafH = DHt - 0.05;
 
-  // The stubs + header register with the x-ray system: when the chase camera
-  // swings behind a walker mid-doorway, these boundary pieces are exactly what
-  // hides them. Empty roomKey + zero normal make the facing pass a no-op; the
-  // world boxes are computed once (doors are static). Jambs and the swinging
-  // leaf stay solid — the leaf already opens on crossing.
+  // EVERY piece of the doorway assembly registers with the x-ray system —
+  // stubs, header, jambs and the swinging leaf. Carrying both adjacent room
+  // keys (zero normal, so the facing test is skipped) means pass B ghosts the
+  // whole door with the followed room's walls, and pass A raycast-fades it for
+  // everyone else: a closed leaf used to be the one opaque slab left standing
+  // between the camera and a character. World boxes are computed once at the
+  // closed pose (the swing is brief; a slightly stale box only over-fades).
   const xrayMeshes = useRef(new Set<THREE.Mesh>());
   useEffect(() => {
     const meshes = xrayMeshes.current;
@@ -92,7 +96,7 @@ function Door({ desc, state }: { desc: DoorDesc; state: DoorState }) {
         // rotation.y = π/2 maps local (x, z) → world (z, -x); the 90° AABB is exact
         m.userData.xray = {
           until: 0,
-          roomKey: "",
+          roomKeys: [...desc.rooms],
           normal: new THREE.Vector3(0, 0, 0),
           box: new THREE.Box3().setFromCenterAndSize(
             new THREE.Vector3(
@@ -134,9 +138,17 @@ function Door({ desc, state }: { desc: DoorDesc; state: DoorState }) {
         <boxGeometry args={[DW, WALL_H - DHt, WT]} />
         <meshStandardMaterial color="#241b14" roughness={1} />
       </mesh>
-      {/* jambs frame the opening */}
+      {/* jambs frame the opening — they and every leaf piece share ONE
+          "portal" box spanning the whole opening, so a ray (or pass B) that
+          touches the doorway ghosts the entire assembly together instead of
+          leaving floating panels or a solid brass knob mid-air */}
       {[-1, 1].map((sx) => (
-        <mesh key={`jamb${sx}`} position={[sx * (DW / 2), DHt / 2, 0]} castShadow>
+        <mesh
+          key={`jamb${sx}`}
+          position={[sx * (DW / 2), DHt / 2, 0]}
+          castShadow
+          ref={xrayRef([0, DHt / 2, 0], [DW + 0.2, DHt + 0.06, WT + 0.2])}
+        >
           <boxGeometry args={[0.1, DHt + 0.06, WT + 0.06]} />
           <meshStandardMaterial color="#2c2016" roughness={0.95} />
         </mesh>
@@ -148,17 +160,29 @@ function Door({ desc, state }: { desc: DoorDesc; state: DoorState }) {
         }}
         position={[-(DW / 2) + 0.02, 0, 0]}
       >
-        <mesh position={[leafW / 2, leafH / 2, 0]} castShadow receiveShadow>
+        <mesh
+          position={[leafW / 2, leafH / 2, 0]}
+          castShadow
+          receiveShadow
+          ref={xrayRef([0, DHt / 2, 0], [DW + 0.2, DHt + 0.06, WT + 0.2])}
+        >
           <boxGeometry args={[leafW, leafH, LT]} />
           <meshStandardMaterial color="#4a3422" roughness={0.82} metalness={0.04} />
         </mesh>
         {[0.28, 0.68].map((py) => (
-          <mesh key={py} position={[leafW / 2, leafH * py, LT / 2]}>
+          <mesh
+            key={py}
+            position={[leafW / 2, leafH * py, LT / 2]}
+            ref={xrayRef([0, DHt / 2, 0], [DW + 0.2, DHt + 0.06, WT + 0.2])}
+          >
             <boxGeometry args={[leafW * 0.6, leafH * 0.26, 0.03]} />
             <meshStandardMaterial color="#3a2818" roughness={0.9} />
           </mesh>
         ))}
-        <mesh position={[leafW - 0.18, leafH * 0.5, LT / 2 + 0.03]}>
+        <mesh
+          position={[leafW - 0.18, leafH * 0.5, LT / 2 + 0.03]}
+          ref={xrayRef([0, DHt / 2, 0], [DW + 0.2, DHt + 0.06, WT + 0.2])}
+        >
           <sphereGeometry args={[0.06, 10, 10]} />
           <meshStandardMaterial color="#c8a23a" metalness={0.75} roughness={0.3} />
         </mesh>

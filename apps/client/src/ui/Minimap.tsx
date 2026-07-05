@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   CHARACTERS_BY_ID,
   DIRECTIONS,
@@ -16,19 +17,30 @@ import { roomTheme } from "@dread-hollow/decor";
 import { useStore } from "../state/store";
 
 /** Logical canvas size (CSS px); the backing store is scaled by devicePixelRatio. */
-const MAP_W = 216;
-const MAP_H = 176;
+const MAP_W = 264;
+const MAP_H = 216;
 const MAP_PAD = 12;
 const MAX_CELL = 34;
 
 const FLOOR_TAB: Record<Floor, string> = { basement: "B", ground: "G", upper: "U" };
 const FLOOR_TITLE: Record<Floor, string> = { basement: "Basement", ground: "Ground floor", upper: "Upper floor" };
 
+const ROOM_INK = 0x1d1826; // discovered-room fill (theme tint stays a whisper)
+
 /** Grid → canvas mapping of the last draw (for click/hover hit-testing). */
 interface MapView {
   cell: number;
   ox: number;
   oy: number;
+}
+
+/** Locate-flash pub/sub: the roster calls `flashOnMap`, the mounted map jumps
+ *  to that player's floor and pulses a ring over their dot. Module-scoped like
+ *  three/director.ts so no store churn is needed. */
+const flashListeners = new Set<(playerId: string) => void>();
+
+export function flashOnMap(playerId: string): void {
+  for (const fn of flashListeners) fn(playerId);
 }
 
 function hexColor(n: number): string {
@@ -62,6 +74,25 @@ function dotOffset(i: number, count: number, r: number): [number, number] {
   return [Math.cos(a) * r, Math.sin(a) * r];
 }
 
+/** Compass in the canvas's top-left: ↑ key = north = map-up. */
+function drawCompass(ctx: CanvasRenderingContext2D): void {
+  ctx.strokeStyle = "rgba(216,207,196,.4)";
+  ctx.fillStyle = "rgba(216,207,196,.5)";
+  ctx.lineWidth = 1;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(10, 15);
+  ctx.lineTo(10, 6);
+  ctx.moveTo(7, 9);
+  ctx.lineTo(10, 6);
+  ctx.lineTo(13, 9);
+  ctx.stroke();
+  ctx.font = "bold 9px Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("N", 10, 22);
+}
+
 function drawMap(
   ctx: CanvasRenderingContext2D,
   game: GameState,
@@ -69,8 +100,10 @@ function drawMap(
   myId: string | null,
   reach: ReadonlySet<string>,
   view: MapView,
+  dotAt: Map<string, { x: number; y: number }>,
 ): void {
   ctx.clearRect(0, 0, MAP_W, MAP_H);
+  drawCompass(ctx);
 
   const rooms = Object.values(game.house).filter((r) => r.floor === floor);
   if (rooms.length === 0) {
@@ -100,8 +133,9 @@ function drawMap(
   view.ox = ox;
   view.oy = oy;
 
+  const myKey = game.players.find((p) => p.id === myId)?.position ?? null;
   const inset = cell * 0.1;
-  const gap = cell * 0.34; // doorway opening in an edge
+  const gap = cell * 0.4; // doorway opening in an edge
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -113,23 +147,29 @@ function drawMap(
     const y0 = oy + room.y * cell + inset;
     const s = cell - inset * 2;
 
-    // Fill: the room's theme color lifted toward parchment; reachable rooms
-    // glow brighter (they mirror the lit 3D tiles you can click).
-    ctx.fillStyle = reachable
-      ? mixHex(theme.floor, 0xe8a85a, 0.5)
-      : mixHex(theme.floor, 0xd8cfc4, 0.22);
+    // Fill: near-black room ink with at most a whisper of the room's theme
+    // (legibility beats variety); reachable rooms alone get the amber wash
+    // that mirrors the lit 3D tiles you can click.
+    ctx.fillStyle = mixHex(ROOM_INK, theme.floor, 0.08);
     roundedRect(ctx, x0, y0, s, s, Math.max(2, cell * 0.12));
     ctx.fill();
     if (reachable) {
-      ctx.strokeStyle = "#e8a85a";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.fillStyle = "rgba(232,168,90,.28)";
+      ctx.fill();
     }
 
-    // Edges: solid where walls are, notched open where the tile has a doorway.
+    // Edges: bone walls, notched open where the tile has a doorway. Reachable
+    // rooms stroke amber under a soft glow — shadow is reset right after so
+    // nothing else blurs.
     const doors = placedDoorways(room);
-    ctx.strokeStyle = reachable ? "#f0cf9a" : hexColor(theme.wall);
-    ctx.lineWidth = Math.max(1, cell * 0.06);
+    if (reachable) {
+      ctx.strokeStyle = "#e8a85a";
+      ctx.shadowColor = "#e8a85a";
+      ctx.shadowBlur = 6;
+    } else {
+      ctx.strokeStyle = "rgba(216,207,196,.85)";
+    }
+    ctx.lineWidth = 2;
     ctx.lineCap = "round";
     for (const dir of DIRECTIONS) {
       const { dx, dy } = DIR_DELTA[dir];
@@ -161,15 +201,25 @@ function drawMap(
       }
       ctx.stroke();
     }
+    ctx.shadowBlur = 0;
+
+    // The watched player's current room gets an extra bone ring so "where am
+    // I" has a room-level answer before you even spot your pin.
+    if (room.key === myKey) {
+      ctx.strokeStyle = "rgba(233,223,204,.95)";
+      ctx.lineWidth = 2.5;
+      roundedRect(ctx, x0 - 1.5, y0 - 1.5, s + 3, s + 3, Math.max(3, cell * 0.14));
+      ctx.stroke();
+    }
 
     // Markers: aura in the top-left, stairs/elevator glyph in the bottom-right.
     const glyphPx = Math.max(8, cell * 0.34);
     ctx.font = `${glyphPx}px Georgia, serif`;
     if (def?.aura && def.aura > 0) {
-      ctx.fillStyle = "#e2c15a";
+      ctx.fillStyle = "#ecc768";
       ctx.fillText("✦", x0 + glyphPx * 0.45, y0 + glyphPx * 0.5);
     } else if (def?.aura && def.aura < 0) {
-      ctx.fillStyle = "#c2412f";
+      ctx.fillStyle = "#d4553f";
       ctx.fillText("☓", x0 + glyphPx * 0.45, y0 + glyphPx * 0.5);
     }
     const special = def?.special;
@@ -180,22 +230,23 @@ function drawMap(
           ? "⇗"
           : null;
     if (stairsGlyph) {
-      ctx.fillStyle = "#cdbfa8";
+      ctx.fillStyle = "#d8cfc4";
       ctx.fillText(stairsGlyph, x0 + s - glyphPx * 0.45, y0 + s - glyphPx * 0.5);
     }
   }
 
-  // Occupants: identity-colored player dots (the watched player ringed) and
-  // red monster dots, spread on a small ring when a room is crowded.
-  const dotR = Math.max(2.4, cell * 0.11);
-  const byRoom = new Map<string, Array<{ color: string; ring: boolean }>>();
+  // Occupants: identity-colored player dots (initial lettered when the cell
+  // is roomy) and red monster dots, spread on a small ring when crowded.
+  // Player dot positions are reported back for the DOM you-pin/flash overlays.
+  const dotR = Math.max(4.5, cell * 0.16);
+  const byRoom = new Map<string, Array<{ id?: string; color: string; initial?: string }>>();
   for (const p of game.players) {
     if (!p.alive || !p.position) continue;
     const placed = game.house[p.position];
     if (!placed || placed.floor !== floor) continue;
     const char = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
     const list = byRoom.get(p.position) ?? [];
-    list.push({ color: char?.color ?? "#aaaaaa", ring: p.id === myId });
+    list.push({ id: p.id, color: char?.color ?? "#aaaaaa", initial: char?.name.charAt(0) });
     byRoom.set(p.position, list);
   }
   for (const m of game.haunt?.monsters ?? []) {
@@ -203,7 +254,7 @@ function drawMap(
     const placed = game.house[m.position];
     if (!placed || placed.floor !== floor) continue;
     const list = byRoom.get(m.position) ?? [];
-    list.push({ color: "#c2412f", ring: false });
+    list.push({ color: "#c2412f" });
     byRoom.set(m.position, list);
   }
   for (const [key, dots] of byRoom) {
@@ -219,32 +270,37 @@ function drawMap(
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(0,0,0,.7)";
       ctx.stroke();
-      if (d.ring) {
-        ctx.beginPath();
-        ctx.arc(cx + dxp, cy + dyp, dotR + 2, 0, Math.PI * 2);
-        ctx.lineWidth = 1.4;
-        ctx.strokeStyle = "#f4e7dd";
-        ctx.stroke();
+      if (d.initial && cell >= 22) {
+        ctx.fillStyle = "#14111c";
+        ctx.font = "bold 9px Georgia, serif";
+        ctx.fillText(d.initial, cx + dxp, cy + dyp + 0.5);
       }
+      if (d.id) dotAt.set(d.id, { x: cx + dxp, y: cy + dyp });
     });
   }
 }
 
 /**
- * Bird's-eye minimap of the discovered house, bottom-right. Shows the watched
- * player's floor (tabs switch manually; a floor change follows automatically),
- * walls/doorways per tile, aura and stairs markers, and every occupant. On
- * your turn, clicking a reachable (brightened) room dispatches the exact same
- * `moveTo` the lit 3D tile does. Redraws only when the game state changes.
+ * Bird's-eye minimap of the discovered house, bottom-right. The header names
+ * the watched player's room and whose move it is; the canvas shows walls/
+ * doorways per tile in the shared ink language, aura and stairs markers, and
+ * every occupant (your dot carries a DOM pulsing pin). Floor tabs switch
+ * manually (a floor change follows automatically) and carry per-floor
+ * occupancy dots. On your turn, clicking a reachable (amber) room dispatches
+ * the exact same `moveTo` the lit 3D tile does. Redraws only on state change.
  */
 export function Minimap() {
   const game = useStore((s) => s.game);
   const myId = useStore((s) => s.playerId);
   const moveTo = useStore((s) => s.moveTo);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pinRef = useRef<HTMLSpanElement>(null);
+  const flashRef = useRef<HTMLSpanElement>(null);
   const view = useRef<MapView>({ cell: 0, ox: 0, oy: 0 });
   const [floor, setFloor] = useState<Floor>("ground");
   const [hover, setHover] = useState<{ name: string; reachable: boolean } | null>(null);
+  const [flash, setFlash] = useState<{ playerId: string; seq: number } | null>(null);
+  const flashSeq = useRef(0);
 
   // Auto-follow the watched player across floors (manual tab choice holds
   // until they climb or descend again).
@@ -254,12 +310,45 @@ export function Minimap() {
     if (myFloor) setFloor(myFloor);
   }, [myFloor]);
 
+  // Locate-flash: jump to the clicked player's floor, pulse a ring over their
+  // dot for ~1.8s (keyed by seq so a repeat click restarts the animation).
+  useEffect(() => {
+    const onFlash = (playerId: string) => {
+      if (!game) return;
+      const p = game.players.find((pl) => pl.id === playerId);
+      const placed = p?.position ? game.house[p.position] : undefined;
+      if (placed) setFloor(placed.floor);
+      setFlash({ playerId, seq: ++flashSeq.current });
+    };
+    flashListeners.add(onFlash);
+    return () => void flashListeners.delete(onFlash);
+  }, [game]);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
+
   // Same source of truth as the lit 3D tiles: legalMoves' explored list
   // (empty when it isn't your turn, so off-turn clicks are naturally no-ops).
   const reach = useMemo(
     () => new Set(game && myId ? legalMoves(game, myId).explored : []),
     [game, myId],
   );
+
+  // Per-floor occupancy (≤4 identity-colored dots per tab): "who is on which
+  // floor" is answered without switching tabs.
+  const tabDots = useMemo(() => {
+    const dots: Record<Floor, string[]> = { basement: [], ground: [], upper: [] };
+    for (const p of game?.players ?? []) {
+      if (!p.alive || !p.position) continue;
+      const placed = game!.house[p.position];
+      if (!placed || dots[placed.floor].length >= 4) continue;
+      const char = p.characterId ? CHARACTERS_BY_ID[p.characterId] : undefined;
+      dots[placed.floor].push(char?.color ?? "#aaaaaa");
+    }
+    return dots;
+  }, [game]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -269,8 +358,31 @@ export function Minimap() {
     canvas.width = Math.round(MAP_W * dpr);
     canvas.height = Math.round(MAP_H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawMap(ctx, game, floor, myId, reach, view.current);
-  }, [game, floor, myId, reach]);
+    const dotAt = new Map<string, { x: number; y: number }>();
+    drawMap(ctx, game, floor, myId, reach, view.current, dotAt);
+
+    // DOM overlays (you-pin + locate-flash) reuse the draw's grid→px mapping;
+    // offsets are relative to .minimap (position:absolute → offsetParent).
+    // Absent dots (other floor, dead) hide the element.
+    const scale = canvas.clientWidth / MAP_W || 1;
+    const dotR = Math.max(4.5, view.current.cell * 0.16);
+    const place = (el: HTMLElement | null, id: string | null | undefined, pad: number) => {
+      if (!el) return;
+      const at = id ? dotAt.get(id) : undefined;
+      if (!at) {
+        el.style.display = "none";
+        return;
+      }
+      const r = (dotR + pad) * scale;
+      el.style.display = "";
+      el.style.left = `${canvas.offsetLeft + at.x * scale - r}px`;
+      el.style.top = `${canvas.offsetTop + at.y * scale - r}px`;
+      el.style.width = `${r * 2}px`;
+      el.style.height = `${r * 2}px`;
+    };
+    place(pinRef.current, myId, 3);
+    place(flashRef.current, flash?.playerId, 6);
+  }, [game, floor, myId, reach, flash]);
 
   if (!game) return null;
 
@@ -287,8 +399,23 @@ export function Minimap() {
     return game.house[key] ? key : null;
   };
 
+  // Header strip: where the watched player stands, and whose move it is.
+  const myRoom: PlacedRoom | undefined = me?.position ? game.house[me.position] : undefined;
+  const myRoomName = myRoom ? ROOMS_BY_ID[myRoom.roomId]?.name ?? "…" : "…";
+  const myChar = me?.characterId ? CHARACTERS_BY_ID[me.characterId] : undefined;
+  const myTurn = game.activePlayerId === myId;
+  const ended = game.phase === "ended";
+  const activeName = game.players.find((p) => p.id === game.activePlayerId)?.name ?? "…";
+
   return (
     <div className="minimap" title={FLOOR_TITLE[floor]}>
+      <div className="mm-here" title={myRoom ? `${myRoomName} · ${FLOOR_TITLE[myRoom.floor]}` : undefined}>
+        ⌖ {myRoomName}
+        {myRoom && <span className="mm-here-floor"> · {FLOOR_TITLE[myRoom.floor]}</span>}
+      </div>
+      <div className={`mm-turn${myTurn && !ended ? " yours" : ""}`}>
+        {ended ? "concluded" : myTurn ? "Your move" : `${activeName} is exploring…`}
+      </div>
       <canvas
         ref={canvasRef}
         className="minimap-canvas"
@@ -313,6 +440,15 @@ export function Minimap() {
           {hover.reachable ? " — click to walk" : ""}
         </div>
       )}
+      <span
+        ref={pinRef}
+        className="mm-you"
+        style={{ display: "none", "--pc": myChar?.color ?? "#e8a85a" } as CSSProperties}
+        aria-hidden="true"
+      />
+      {flash && (
+        <span key={flash.seq} ref={flashRef} className="mm-flash" style={{ display: "none" }} aria-hidden="true" />
+      )}
       <div className="minimap-floors">
         {FLOORS.map((f) => (
           <button
@@ -321,7 +457,16 @@ export function Minimap() {
             title={FLOOR_TITLE[f]}
             onClick={() => setFloor(f)}
           >
-            {FLOOR_TAB[f]}
+            <span className="mm-tab-top">
+              {FLOOR_TAB[f]}
+              {/* cross-floor cue: your floor keeps a ⌖ when it isn't shown */}
+              {myFloor === f && f !== floor && <span className="mm-tab-here">⌖</span>}
+            </span>
+            <span className="mm-tab-dots">
+              {tabDots[f].map((c, i) => (
+                <i key={i} style={{ background: c }} />
+              ))}
+            </span>
           </button>
         ))}
       </div>

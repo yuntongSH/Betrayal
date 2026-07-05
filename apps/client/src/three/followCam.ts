@@ -41,14 +41,15 @@ export function unregisterToken(id: string): void {
 /** Per-wall x-ray bookkeeping, attached to each fadeable mesh as userData.xray. */
 export interface XrayData {
   until: number; // ghost while performance.now() < until
-  roomKey: string; // "" for door pieces — never matches the followed room
-  normal: THREE.Vector3; // unit outward normal (zero for door pieces)
+  roomKeys: string[]; // rooms this piece bounds — walls/trim have one, doors both neighbors
+  normal: THREE.Vector3; // unit outward normal (zero for door pieces + trim)
   box: THREE.Box3; // world-space bounds, precomputed once (walls are static)
 }
 
-/** Flat registry of every fadeable mesh: room-perimeter walls plus door
- *  stubs/headers. Jambs, door leaves and decor are never registered, so rays
- *  pass through them without effect. */
+/** Flat registry of every fadeable mesh: room-perimeter walls, wall-height
+ *  trim proxies, and the ENTIRE doorway assembly (stubs, header, jambs, leaf).
+ *  Doors carry both adjacent room keys, so the followed room's boundary — door
+ *  included — always ghosts together; furniture is never registered. */
 export const xrayWalls = new Set<THREE.Mesh>();
 
 export function registerWall(mesh: THREE.Mesh): void {

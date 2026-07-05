@@ -122,7 +122,7 @@ export function RoomTile({
       if (!t.proxy.userData.xray) {
         t.proxy.userData.xray = {
           until: 0,
-          roomKey: room.key,
+          roomKeys: [room.key],
           normal: new THREE.Vector3(),
           box: t.box.clone().translate(new THREE.Vector3(wx, wy, wz)),
         };
@@ -204,7 +204,7 @@ export function RoomTile({
               if (!m.userData.xray) {
                 m.userData.xray = {
                   until: 0,
-                  roomKey: room.key,
+                  roomKeys: [room.key],
                   normal: WALL_NORMAL[d],
                   box: new THREE.Box3().setFromCenterAndSize(
                     new THREE.Vector3(wx + pos[0], wy + pos[1], wz + pos[2]),

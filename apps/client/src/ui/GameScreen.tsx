@@ -119,6 +119,10 @@ export function GameScreen() {
             {active?.name ?? "…"}
           </span>
           {myTurn && !ended && <span className="you-tag"> — your move</span>}
+          {/* bot-turn cue — same wording as the artifact's turn chip */}
+          {!myTurn && !ended && active?.isBot && (
+            <span className="muted"> is taking their turn…</span>
+          )}
         </div>
         <div className="hud-top-right">
           {!ended && (

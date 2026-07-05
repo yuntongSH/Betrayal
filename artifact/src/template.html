@@ -20,11 +20,17 @@
 html,body{height:100%;margin:0}
 body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60%),var(--bg);
   color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;overflow:hidden}
-.btn{font:inherit;cursor:pointer;color:var(--ink);background:rgba(40,34,30,.8);border:1px solid var(--edge);
-  border-radius:8px;padding:.6rem 1rem;transition:.15s}
+/* Ledger buttons: one shared geometry (radius 3, .65em 1.2em), a ghost bone
+   border for the secondary, an ember gradient for the primary. */
+.btn{font:inherit;cursor:pointer;color:var(--ink);background:rgba(24,20,28,.55);border:1px solid rgba(216,207,196,.3);
+  border-radius:3px;padding:.65em 1.2em;transition:.15s}
 .btn:hover:not(:disabled){border-color:var(--flame);transform:translateY(-1px)}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn.primary{background:linear-gradient(180deg,var(--blood2),var(--blood));border-color:#5a1d15;color:#f4e7dd}
+.btn:focus-visible{outline:2px solid var(--flame);outline-offset:2px}
+.btn.primary{background:linear-gradient(180deg,#8c2f23,#5e1f18);border-color:#5a1d15;color:#f4e7dd;
+  font-variant:small-caps;letter-spacing:.08em}
+.btn.primary:hover:not(:disabled),.btn.primary:focus-visible{border-color:var(--flame);
+  box-shadow:0 0 18px rgba(232,168,90,.25)}
 .btn.danger{background:linear-gradient(180deg,#7a2018,#561009);border-color:#3a0c06;color:#f4d7d0}
 .btn.act{background:rgba(34,40,46,.82);border-color:#2f4150;color:#dce8ef}
 .btn.act:hover:not(:disabled){border-color:#6fb3d6}
@@ -34,8 +40,9 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .icon-btn:hover{border-color:var(--flame);transform:translateY(-1px)}
 .icon-btn.off{opacity:.55}
 #help-btn{right:3.7rem}
-.difficulty{display:flex;align-items:center;gap:.4rem;justify-content:center;margin:.2rem 0 .1rem}
-.diff-label{color:var(--dim);font-size:.85rem;margin-right:.3rem;letter-spacing:.05em;text-transform:uppercase}
+.difficulty{display:flex;align-items:center;gap:.4rem;justify-content:center;margin:.2rem 0 .1rem;
+  background:var(--panel);padding:.55rem .9rem}
+.diff-label{color:var(--dim);font-size:.85rem;margin-right:.3rem;letter-spacing:.12em;font-variant:small-caps;text-transform:lowercase}
 .diff-opt{font:inherit;cursor:pointer;color:var(--dim);background:rgba(30,24,20,.7);border:1px solid var(--edge);
   border-radius:7px;padding:.34rem .8rem;font-size:.86rem;transition:.15s}
 .diff-opt:hover{color:var(--ink);border-color:var(--flame)}
@@ -75,21 +82,51 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
    actions) is never clipped on short viewports — center-justify + overflow hid
    the lower characters and the Begin/Solo buttons with no way to reach them. */
 #lobby{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:1.2rem 1.2rem 2rem;gap:1rem;text-align:center;overflow-y:auto}
-.title{font-size:2.6rem;margin:0;letter-spacing:.04em;text-shadow:0 0 24px rgba(232,168,90,.25)}
-.title .f{animation:flick 3s infinite;filter:drop-shadow(0 0 10px var(--flame))}
+/* Content stacks above the fixed floorplan layer (z 0). */
+#lobby>*{position:relative;z-index:1}
+/* The self-drawing floorplan — an invitation in ink. Each room's outline
+   draws on (dash trick), its fill breathes in after; the whole layer stays
+   at ≤.16 opacity so the text always wins. Draws once and settles. */
+/* Wider than the lobby's content column (780px), so the ink shows in the
+   margins either side of the wardrobe/grid instead of hiding behind them. */
+#lobby>.lobby-plan{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(96vw,1180px);
+  max-height:96vh;opacity:.16;pointer-events:none;z-index:0}
+.lobby-plan .rm path{fill:none;stroke:rgba(216,207,196,.5);stroke-width:1.5;stroke-linecap:square;
+  stroke-dasharray:100;stroke-dashoffset:100;animation:plan-draw 1.1s ease-out forwards;
+  animation-delay:calc(var(--i)*.8s)}
+.lobby-plan .rm rect{fill:#1d1826;opacity:0;animation:plan-fill 1s ease forwards;
+  animation-delay:calc(var(--i)*.8s + .9s)}
+.plan-dot{fill:var(--flame);opacity:0;transform-box:fill-box;transform-origin:center;
+  animation:plan-fill 1s ease 1.2s forwards,plan-dot-pulse 2.4s ease-in-out 2.2s infinite}
+@keyframes plan-draw{to{stroke-dashoffset:0}}
+@keyframes plan-fill{to{opacity:1}}
+@keyframes plan-dot-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.45)}}
+.eyebrow{color:var(--dim);font-variant:small-caps;letter-spacing:.34em;font-size:.78rem;margin:.4rem 0 -.55rem}
+.title{font-size:clamp(2.6rem,6vw,3.4rem);margin:0;letter-spacing:.04em;color:#e9dfcc;
+  text-shadow:0 0 28px rgba(232,168,90,.22)}
+.title .f{display:inline-block;animation:flick 3s infinite;filter:drop-shadow(0 0 10px var(--flame))}
+.title .f svg{width:.72em;height:.98em;vertical-align:-.08em;transform-origin:50% 100%;
+  animation:flame-dance 2.8s ease-in-out infinite}
+@keyframes flame-dance{0%,100%{transform:scaleY(1) skewX(0)}25%{transform:scaleY(1.06) skewX(-2.5deg)}
+  55%{transform:scaleY(.95) skewX(2deg)}80%{transform:scaleY(1.04) skewX(-1.2deg)}}
 .tagline{color:var(--dim);font-style:italic;max-width:520px;margin:0}
+/* Ledger panels: tight radius, bone hairline + inset hairline, amber top rule. */
+#wardrobe,.char-card,.difficulty,.lobby-actions,.panel{border-radius:3px;
+  border:1px solid rgba(216,207,196,.18);border-top-color:rgba(232,168,90,.35);
+  box-shadow:inset 0 0 0 1px rgba(216,207,196,.05)}
 .char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.7rem;max-width:780px;width:100%;
   padding:.3rem}
-.char-card{display:flex;gap:.7rem;text-align:left;padding:.7rem;border-radius:12px;background:var(--panel);
-  border:1px solid var(--edge);border-left-width:4px;cursor:pointer;color:var(--ink);font:inherit}
+.char-card{display:flex;gap:.7rem;text-align:left;padding:.7rem;background:var(--panel);
+  border-left-width:4px;cursor:pointer;color:var(--ink);font:inherit}
+.char-card:focus-visible{outline:2px solid var(--flame);outline-offset:2px}
 .char-card:hover{transform:translateY(-2px)}
 .char-card.mine{background:rgba(60,48,40,.95);box-shadow:0 0 0 2px var(--flame) inset}
 .char-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#1a1410;font-weight:bold;font-size:1.2rem;flex:0 0 auto}
-#wardrobe{display:flex;gap:1.1rem;align-items:center;max-width:780px;width:100%;background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:1rem}
+#wardrobe{display:flex;gap:1.1rem;align-items:center;max-width:780px;width:100%;background:var(--panel);padding:1rem}
 #wardrobe-stage{width:300px;height:340px;flex:0 0 auto;border-radius:12px;overflow:hidden;background:radial-gradient(circle at 50% 30%,#1c1622,#070509)}
 #wardrobe-stage canvas{display:block}
 #wardrobe-info{text-align:left;flex:1 1 auto;min-width:0}
-#wardrobe-info h2{margin:0 0 .1rem;font-family:'Cinzel',Georgia,serif;color:#efe2d3;font-size:1.3rem}
+#wardrobe-info h2{margin:0 0 .1rem;font-variant:small-caps;letter-spacing:.05em;color:#efe2d3;font-size:1.3rem}
 #wardrobe-info .char-traits{margin-top:.6rem}
 #w-pick{margin-top:.8rem}
 /* The dossier: what the house already knows about this guest. */
@@ -106,7 +143,8 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .char-info em{color:var(--dim);font-size:.8rem;display:block}
 .char-traits{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.35rem}
 .trait-chip{font-size:.68rem;padding:.1rem .4rem;border-radius:5px;background:rgba(0,0,0,.4);color:var(--dim)}
-.lobby-actions{display:flex;flex-direction:column;gap:.5rem;width:min(440px,100%)}
+.lobby-actions{display:flex;flex-direction:column;gap:.5rem;width:min(440px,100%);
+  background:var(--panel);padding:.9rem}
 
 /* game */
 #game{display:none;height:100%;position:relative}
@@ -131,8 +169,9 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 #hud-top,#hud-left,#hud-right,#hud-bottom,#hud-hint{z-index:2}
 .haunt-tag{color:var(--blood2);letter-spacing:.1em} .you-tag{color:var(--flame)}
 #hud-left{position:absolute;top:3.3rem;left:.8rem;bottom:6rem;width:290px;max-width:40vw;display:flex;flex-direction:column;gap:.55rem}
-/* bottom clears the minimap panel parked in the corner below it */
-#hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:17.5rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
+/* bottom clears the minimap panel parked in the corner below it
+   (280px canvas + header strip + tabs ≈ 23rem) */
+#hud-right{position:absolute;top:3.3rem;right:.8rem;bottom:24rem;width:270px;max-width:42vw;display:flex;flex-direction:column;gap:.55rem;overflow-y:auto}
 /* current-room info card */
 .room-info{padding:.6rem .7rem}
 .ri-head{display:flex;align-items:center;justify-content:space-between;gap:.4rem}
@@ -148,7 +187,7 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 .inv-name{flex:1}
 .inv-desc{line-height:1.3;padding-left:1.5em}
 #hud-bottom{position:absolute;bottom:1.1rem;left:50%;transform:translateX(-50%);display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;max-width:min(90vw,860px)}
-.panel{background:var(--panel);border:1px solid var(--edge);border-radius:10px;backdrop-filter:blur(6px)}
+.panel{background:var(--panel);backdrop-filter:blur(6px)}
 .roster{padding:.45rem .55rem;display:flex;flex-direction:column;gap:.18rem}
 .dice{display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle}
 .die{display:inline-grid;place-items:center;border-radius:3px;font-style:normal;
@@ -182,14 +221,36 @@ body{background:radial-gradient(1200px 700px at 50% -10%,#14121b 0%,var(--bg) 60
 @media(max-width:720px){#hud-right{display:none}#hud-left{width:60vw;max-width:60vw}.minimap{width:170px}}
 
 /* ===== Minimap — clickable 2D floor plan, bottom-right ===== */
-.minimap{position:absolute;right:.8rem;bottom:1.1rem;z-index:3;width:230px;  display:flex;flex-direction:column;gap:4px;background:#14111c;border:1px solid var(--edge);
+.minimap{position:absolute;right:.8rem;bottom:1.1rem;z-index:3;width:280px;  display:flex;flex-direction:column;gap:4px;background:#14111c;border:1px solid var(--edge);
   border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.45)}
+/* Header strip: where the watched explorer is, and whose move it is. */
+.mm-head{display:flex;flex-direction:column;gap:1px;padding:2px 4px 0;min-width:0}
+.mm-here{color:var(--ink);font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mm-turn{font-size:11px;line-height:1.3;color:var(--dim)}
+.mm-turn.yours{color:var(--flame);font-variant:small-caps;letter-spacing:.08em}
 .minimap-floors{display:flex;gap:4px;justify-content:flex-end}
-.mm-tab{font:inherit;font-size:.68rem;width:22px;height:20px;padding:0;line-height:1;border-radius:5px;
-  cursor:pointer;color:var(--dim);background:rgba(30,24,20,.7);border:1px solid var(--edge)}
+.mm-tab{font:inherit;font-size:.68rem;width:26px;padding:2px 0 3px;line-height:1;border-radius:5px 5px 0 0;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  cursor:pointer;color:var(--dim);background:rgba(30,24,20,.7);border:1px solid var(--edge);border-bottom:2px solid transparent}
 .mm-tab:hover{color:var(--ink);border-color:var(--flame)}
-.mm-tab.sel{color:#f4e7dd;background:linear-gradient(180deg,#3a2a1c,#241812);border-color:var(--flame)}
+.mm-tab:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
+.mm-tab.sel{color:var(--flame);background:rgba(232,168,90,.08);border-color:var(--edge);border-bottom:2px solid var(--flame)}
+.mm-tab-l{display:inline-flex;align-items:center;gap:2px}
+.mm-tab-mark{color:var(--flame);font-size:.62rem;line-height:1}
+.mm-tab-dots{display:flex;gap:2px;justify-content:center;height:4px}
+.mm-tab-dots i{width:4px;height:4px;border-radius:50%}
 .minimap-canvas{width:100%;aspect-ratio:1/1;display:block;border-radius:6px;background:rgba(8,7,12,.55)}
+/* YOU-pin: a ring in your character's colour with a pulsing amber halo,
+   positioned by drawMinimap over your dot (hidden on other floors). */
+.mm-you{position:absolute;z-index:4;display:none;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;
+  border:2px solid var(--yc,#e8a85a);pointer-events:none;
+  animation:mm-you-pulse 2.4s ease-in-out infinite}
+@keyframes mm-you-pulse{0%,100%{box-shadow:0 0 0 0 rgba(232,168,90,.75)}50%{box-shadow:0 0 0 7px rgba(232,168,90,0)}}
+/* Locate-flash: an expanding amber ring over a player's dot (~1.8s), dropped
+   by flashOnMap when a roster row is clicked. */
+.mm-flash{position:absolute;z-index:5;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
+  border:2px solid var(--flame);pointer-events:none;animation:mm-flash-ring 1.8s ease-out forwards}
+@keyframes mm-flash-ring{0%{transform:scale(.5);opacity:1}70%{opacity:.7}100%{transform:scale(4.5);opacity:0}}
 .minimap-tip{position:absolute;pointer-events:none;z-index:4;background:rgba(20,16,14,.94);
   border:1px solid var(--edge);color:#f0e2d2;font-size:.72rem;padding:.14rem .45rem;border-radius:6px;
   white-space:nowrap;opacity:0;transform:translate(-50%,-135%);transition:opacity .12s}
@@ -208,7 +269,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 @keyframes dread{0%,100%{opacity:.5}50%{opacity:.95}}
 
 /* ---- panel & type polish ---- */
-.panel{box-shadow:0 8px 28px rgba(0,0,0,.45), inset 0 1px 0 rgba(232,168,90,.07)}
+.panel{box-shadow:0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(216,207,196,.05)}
 .title{font-variant:small-caps;letter-spacing:.08em}
 .room-info{border-left:3px solid rgba(232,168,90,.5)}
 .ri-name{font-variant:small-caps;letter-spacing:.05em}
@@ -222,7 +283,6 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 
 /* ===== HUD v2 — icons over text ===== */
 .tp-avatar,.roster-avatar{border-radius:50%;display:grid;place-items:center;font-weight:bold;color:#141010;
-  font-family:"Cinzel",Georgia,serif;
   background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
   box-shadow:0 0 0 1px rgba(0,0,0,.55),0 0 0 2.5px var(--pc),0 0 10px color-mix(in srgb,var(--pc) 45%,transparent)}
 .tp-avatar{width:44px;height:44px;font-size:1.35rem}
@@ -247,10 +307,16 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 @keyframes trait-down{30%{transform:scale(1.22);box-shadow:0 0 14px 3px rgba(194,65,47,.9);border-color:#c2412f;color:#f0c9c2}}
 @keyframes row-up{0%{background:rgba(111,174,111,.22)}100%{background:transparent}}
 @keyframes row-down{0%{background:rgba(194,65,47,.25)}100%{background:transparent}}
-.roster-row{display:flex;align-items:center;gap:.5rem;font-size:.86rem;padding:.22rem .3rem;border-radius:7px}
+/* Roster rows are buttons: click one to flash that explorer on the minimap. */
+.roster-row{display:flex;align-items:center;gap:.5rem;font-size:.86rem;padding:.22rem .3rem;border-radius:7px;
+  font:inherit;color:var(--ink);background:none;border:none;text-align:left;width:100%;cursor:pointer;margin:0}
+.roster-row:hover{background:rgba(232,168,90,.08)}
+.roster-row:focus-visible{outline:2px solid var(--flame);outline-offset:1px}
 .roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
 .roster-row.dead{opacity:.45;filter:grayscale(.8)}
-.roster-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-id{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.roster-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-where{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Every player's four traits, always visible: trait-colored icon + value.
    Changes pulse the value and float a ±N badge; both resume mid-animation
    after a HUD rebuild via the negative animation-delay in --dly. */
@@ -297,7 +363,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 /* Spent boots stay a readable ember-brown against the black sky, so
    remaining-vs-spent reads at a glance. */
 .mp.spent{color:#6a5646;opacity:.8} .mp-more{font-size:.8rem;color:var(--flame)}
-.hud-bottom .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.15rem;font-size:1rem;border-radius:10px}
+.hud-bottom .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.15rem;font-size:1rem}
 .bi{font-size:1.3rem;line-height:1}
 .die{width:17px;height:17px;font-size:11px}
 
@@ -346,7 +412,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 .card-art-icon svg{width:100%;height:100%;fill:var(--bc)}
 .card-kicker{letter-spacing:.22em;text-transform:uppercase;font-size:.68rem;color:var(--bc);opacity:.9}
 /* the name in the display serif over a thin engraved rule */
-.card-name{position:relative;width:100%;font-family:"Cinzel",Georgia,serif;font-size:1.45rem;
+.card-name{position:relative;width:100%;font-variant:small-caps;letter-spacing:.03em;font-size:1.45rem;
   line-height:1.12;color:#f4e7dd;padding-bottom:.42rem}
 .card-name::after{content:"";position:absolute;left:16%;right:16%;bottom:0;height:1px;
   background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--bc) 80%,transparent),transparent)}
@@ -375,7 +441,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 .death-banner .kick{color:#c2517a}
 .death-banner h2{margin:.25rem 0;font-size:1.8rem;color:#f4e7dd}
 .db-disc{width:56px;height:56px;margin:0 auto .55rem;border-radius:50%;display:grid;place-items:center;
-  font-weight:bold;font-size:1.4rem;color:#141010;font-family:"Cinzel",Georgia,serif;
+  font-weight:bold;font-size:1.4rem;color:#141010;
   background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--pc) 62%,#f4e7dd 38%),var(--pc) 55%,color-mix(in srgb,var(--pc) 45%,#000 55%));
   box-shadow:0 0 0 2.5px var(--pc),0 0 12px color-mix(in srgb,var(--pc) 45%,transparent)}
 .db-words{margin:.6rem 0 .8rem;font-style:italic;color:#d8c9a8;line-height:1.5}
@@ -437,11 +503,38 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 @keyframes reveal-dim{from{opacity:0}to{opacity:1}}
 @keyframes vignette-flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
 @keyframes toast-in{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+
+/* Quality floor: the new flourishes bow out for reduced-motion users — the
+   floorplan shows fully drawn, the flame holds still, the pins stop pulsing. */
+@media (prefers-reduced-motion:reduce){
+  .lobby-plan .rm path{animation:none;stroke-dashoffset:0}
+  .lobby-plan .rm rect{animation:none;opacity:1}
+  .plan-dot{animation:none;opacity:1}
+  .title .f,.title .f svg{animation:none}
+  .mm-you{animation:none;box-shadow:0 0 0 3px rgba(232,168,90,.35)}
+  .mm-flash{animation:none;opacity:.9}
+}
 </style>
 </head>
 <body>
 <div id="lobby">
-  <h1 class="title"><span class="f">🕯️</span> Dread Hollow</h1>
+  <!-- Signature: the manor draws itself in ink — the same visual language the
+       in-game minimap uses. Fixed behind all lobby content; draws once, settles. -->
+  <svg class="lobby-plan" viewBox="0 0 560 400" aria-hidden="true" focusable="false">
+    <g class="rm" style="--i:0"><rect x="240" y="310" width="80" height="80"/><path pathLength="100" d="M292 310 H320 V390 H240 V310 H268"/></g>
+    <g class="rm" style="--i:1"><rect x="200" y="190" width="160" height="120"/><path pathLength="100" d="M292 190 H360 V235 M360 259 V310 H292 M268 310 H200 V259 M200 235 V190 H268"/></g>
+    <g class="rm" style="--i:2"><rect x="80" y="210" width="120" height="100"/><path pathLength="100" d="M152 210 H200 V235 M200 259 V310 H142 M118 310 H80 V210 H128"/></g>
+    <g class="rm" style="--i:3"><rect x="360" y="210" width="120" height="100"/><path pathLength="100" d="M437 210 H480 V258 M480 282 V310 H457 M433 310 H360 V259 M360 235 V210 H413"/></g>
+    <g class="rm" style="--i:4"><rect x="80" y="90" width="120" height="120"/><path pathLength="100" d="M80 90 H200 V128 M200 152 V210 H152 M128 210 H80 V90"/></g>
+    <g class="rm" style="--i:5"><rect x="200" y="90" width="160" height="100"/><path pathLength="100" d="M200 90 H360 V190 H292 M268 190 H200 V152 M200 128 V90"/></g>
+    <g class="rm" style="--i:6"><rect x="370" y="100" width="110" height="110"/><path pathLength="100" d="M370 100 H480 V210 H437 M413 210 H370 V100"/></g>
+    <g class="rm" style="--i:7"><rect x="480" y="230" width="70" height="80"/><path pathLength="100" d="M480 230 H550 V310 H480 V282 M480 258 V230"/></g>
+    <g class="rm" style="--i:8"><rect x="70" y="310" width="120" height="70"/><path pathLength="100" d="M142 310 H190 V380 H70 V310 H118"/></g>
+    <g class="rm" style="--i:9"><rect x="390" y="310" width="110" height="70"/><path pathLength="100" d="M457 310 H500 V380 H390 V310 H433"/></g>
+    <circle class="plan-dot" cx="280" cy="350" r="4"/>
+  </svg>
+  <div class="eyebrow">For 3–6 explorers · one of you will turn</div>
+  <h1 class="title"><span class="f"><svg viewBox="0 0 24 32" aria-hidden="true" focusable="false"><defs><linearGradient id="flameGrad" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#c2412f"/><stop offset=".45" stop-color="#e8a85a"/><stop offset="1" stop-color="#f6e3bd"/></linearGradient></defs><path d="M12 2C15.5 9.5 21 12.5 21 20a9 9 0 0 1-18 0c0-5 2.6-7.6 4.6-10.4 1.1 1.9 2.4 3.1 2.4 3.1C10.6 9.1 11.4 5.4 12 2z" fill="url(#flameGrad)"/></svg></span> Dread Hollow</h1>
   <p class="tagline">A manor that builds itself, one dreadful room at a time — until one of you stops being a friend. Pick your party (pass-and-play on one screen) and begin the descent.</p>
   <div id="wardrobe">
     <div id="wardrobe-stage"></div>
@@ -482,8 +575,13 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <button id="help-btn" class="icon-btn" title="How to play" aria-label="How to play">?</button>
   <div id="hud-hint">Drag to orbit · arrows/WASD walk by the map — ↑ north, ← west · click a glowing room, flame arrow or map square · click a monster to strike</div>
   <div id="minimap" class="minimap" aria-label="Floor map">
+    <div class="mm-head">
+      <div id="mm-here" class="mm-here"></div>
+      <div id="mm-turn" class="mm-turn"></div>
+    </div>
     <div id="minimap-floors" class="minimap-floors"></div>
     <canvas id="minimap-canvas" class="minimap-canvas"></canvas>
+    <div id="mm-you" class="mm-you" aria-hidden="true"></div>
     <div id="minimap-tip" class="minimap-tip"></div>
   </div>
   <div id="overlay"></div>

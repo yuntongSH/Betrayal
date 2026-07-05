@@ -22,13 +22,15 @@ const camDir = new THREE.Vector3();
 /**
  * X-ray walls: any wall mesh between the camera and a living character fades to
  * ghost opacity so the figure is never hidden, and the followed room's
- * camera-facing walls stay ghosted even at rest. Room-perimeter walls, door
- * stubs/headers and wall-height decor trim (cornice/beams/pilasters, tagged
- * `xrayTrim`) are registered — jambs, door leaves and furniture never fade.
- * A zero normal skips pass B's facing test: door pieces (roomKey "") stay
- * raycast-only, while trim (real roomKey) ghosts with its whole room so faded
- * walls never leave floating opaque bars. This is the ONLY code that touches
- * wall opacity/transparent/depthWrite (fog-of-war owns color, they compose).
+ * camera-facing walls stay ghosted even at rest. Room-perimeter walls,
+ * wall-height decor trim (cornice/beams/pilasters, tagged `xrayTrim`) and the
+ * WHOLE doorway assembly (stubs, header, jambs, swinging leaf) are registered —
+ * only furniture never fades. A zero normal skips pass B's facing test: trim
+ * ghosts with its whole room, and doors carry BOTH adjacent room keys so the
+ * followed room's boundary reads open door-and-all from any orbit angle
+ * (players kept reporting "the door is blocking the view" when only the walls
+ * ghosted). This is the ONLY code that touches wall
+ * opacity/transparent/depthWrite (fog-of-war owns color, they compose).
  */
 export function XrayWalls() {
   useFrame(({ camera }, rawDt) => {
@@ -66,7 +68,7 @@ export function XrayWalls() {
       for (const w of xrayWalls) {
         const x = w.userData.xray as XrayData;
         if (
-          x.roomKey === room.key &&
+          x.roomKeys.includes(room.key) &&
           (x.normal.lengthSq() === 0 || x.normal.dot(camDir) > FACING_DOT)
         ) {
           x.until = now + XRAY_HOLD_MS;

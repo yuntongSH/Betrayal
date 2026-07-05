@@ -1045,10 +1045,13 @@ const camLook = new THREE.Vector3();
 // Single source of truth for "is the active explorer walking" — written each
 // frame by the active token in the animate loop, consumed by the camera.
 const followTarget = { pos: new THREE.Vector3(), yaw: 0, moving: false, valid: false };
-// X-ray walls: every room-perimeter wall mesh PLUS each doorway's stubs and
-// header, tagged so any of them between the camera and a living character can
-// ghost to 0.12 opacity. Door leaves, jambs and decor never fade.
+// X-ray walls: every room-perimeter wall mesh PLUS the ENTIRE doorway
+// assembly (stubs, header, jambs, leaf, panels, knob), tagged so any of them
+// between the camera and a living character can ghost to 0.12 opacity. Door
+// pieces carry BOTH adjacent room keys, so the followed room's boundary ghosts
+// door-and-all; only furniture never fades.
 const xrayWalls = []; // flat registry, rebuilt whenever the room/door count changes
+const doorsByRoom = new Map(); // room key -> door xwall meshes bounding it (pass B index)
 let xrayUnitCount = 0; // rooms + doors last time the registry was rebuilt
 const XRAY_OPACITY = 0.12;
 const XRAY_HOLD_MS = 250; // absorbs single-frame raycast flicker
@@ -1066,7 +1069,7 @@ function buildLobby() {
     const chosen = party.some((p) => p.charId === c.id);
     const card = document.createElement("button");
     card.className = "char-card" + (chosen ? " mine" : "");
-    card.style.borderColor = c.color;
+    card.style.borderLeftColor = c.color; // identity rides the left edge; the ledger's amber top rule survives
     card.innerHTML =
       `<div class="char-avatar" style="background:${c.color}">${c.name.charAt(0)}</div>` +
       `<div class="char-info"><strong>${c.name}</strong><em>${c.title}</em>` +
@@ -1330,9 +1333,11 @@ function buildRoomGroup(room) {
     wall.receiveShadow = true;
     // Tag for the per-frame x-ray pass: outward normal + precomputed world box
     // (walls are static axis-aligned boxes — nothing to recompute per frame).
+    // roomKeys is an array (walls/trim bound ONE room; doorway pieces carry
+    // both neighbours) — same contract as the React client's XrayData.
     wall.userData.xray = {
       until: 0,
-      roomKey: room.key,
+      roomKeys: [room.key],
       normal: new THREE.Vector3(d === "east" ? 1 : d === "west" ? -1 : 0, 0, d === "south" ? 1 : d === "north" ? -1 : 0),
       box: null,
     };
@@ -1378,7 +1383,7 @@ function buildRoomGroup(room) {
       const proxy = byMat.get(o.material);
       if (proxy) proxy.userData.xray.box.union(box);
       else {
-        o.userData.xray = { until: 0, roomKey: room.key, normal: new THREE.Vector3(), box };
+        o.userData.xray = { until: 0, roomKeys: [room.key], normal: new THREE.Vector3(), box };
         byMat.set(o.material, o);
         trimMats.push(o.material);
       }
@@ -1485,11 +1490,21 @@ function buildHouse(legal) {
   syncDoors();
   // Keep the flat x-ray registry in step with both caches (self-heals across
   // rebuilds and new games — a size change is the only way rooms/doors appear).
+  // doorsByRoom indexes each door's pieces under BOTH adjacent room keys so
+  // pass B can ghost the followed room's doors without scanning every door.
   if (roomCache.size + doorCache.size !== xrayUnitCount) {
     xrayUnitCount = roomCache.size + doorCache.size;
     xrayWalls.length = 0;
+    doorsByRoom.clear();
     for (const e of roomCache.values()) if (e.walls) xrayWalls.push(...e.walls);
-    for (const e of doorCache.values()) if (e.walls) xrayWalls.push(...e.walls);
+    for (const e of doorCache.values()) if (e.walls) {
+      xrayWalls.push(...e.walls);
+      for (const k of e.rooms ?? []) {
+        const list = doorsByRoom.get(k);
+        if (list) list.push(...e.walls);
+        else doorsByRoom.set(k, [...e.walls]);
+      }
+    }
   }
 }
 
@@ -1500,7 +1515,7 @@ function buildHouse(legal) {
 // the door springs into being the moment the new room is placed beyond it.
 const DOOR_MAX_SWING = Math.PI * 0.56;
 
-function buildDoorEntry(pos, rotated) {
+function buildDoorEntry(pos, rotated, keyA, keyB) {
   const g = new THREE.Group();
   g.position.copy(pos);
   if (rotated) g.rotation.y = Math.PI / 2; // east/west boundary: opening runs along z
@@ -1510,17 +1525,19 @@ function buildDoorEntry(pos, rotated) {
   const DHt = 2.6; // door height — grand but human, leaving a real header under the wall top
   const WT = 0.22; // wall/door-wall thickness
   const LT = 0.12; // leaf thickness
-  // One material PER stub/header mesh — they join the x-ray pass, whose fade
-  // writes per-mesh opacity and must never leak to a sibling segment.
+  // One material PER mesh — EVERY doorway piece joins the x-ray pass, whose
+  // fade writes per-mesh opacity and must never leak to a sibling piece.
   const wallMatFor = () => new THREE.MeshStandardMaterial({ color: 0x241b14, roughness: 1 });
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x2c2016, roughness: 0.95 });
+  const frameMatFor = () => new THREE.MeshStandardMaterial({ color: 0x2c2016, roughness: 0.95 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a3422, roughness: 0.82, metalness: 0.04 });
 
   // Stubs of dividing wall either side of the opening, and a header above it, so
   // the boundary reads as a solid wall with a doorway cut into it. The chase cam
   // puts this boundary square between camera and hero at every room crossing,
-  // so all three ghost like room walls do (the leaf and jambs never fade).
-  const xwalls = [];
+  // so the WHOLE assembly ghosts like room walls do — a closed leaf used to be
+  // the one opaque slab left standing between the camera and a character.
+  const xwalls = []; // stubs + header: own precise boxes
+  const portalPieces = []; // jambs + leaf + panels + knob: one shared "portal" box
   const stubW = H - DW / 2;
   for (const sx of [-1, 1]) {
     const stub = new THREE.Mesh(new THREE.BoxGeometry(stubW, WALL_H, WT), wallMatFor());
@@ -1538,9 +1555,10 @@ function buildDoorEntry(pos, rotated) {
   // jambs frame the opening
   const postGeo = new THREE.BoxGeometry(0.1, DHt + 0.06, WT + 0.06);
   for (const sx of [-1, 1]) {
-    const post = new THREE.Mesh(postGeo, frameMat);
+    const post = new THREE.Mesh(postGeo, frameMatFor());
     post.position.set(sx * (DW / 2), DHt / 2, 0);
     post.castShadow = true;
+    portalPieces.push(post);
     g.add(post);
   }
 
@@ -1552,12 +1570,16 @@ function buildDoorEntry(pos, rotated) {
   const leaf = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, LT), leafMat);
   leaf.position.set(leafW / 2, leafH / 2, 0);
   leaf.castShadow = true; leaf.receiveShadow = true;
+  portalPieces.push(leaf);
   pivot.add(leaf);
   // two recessed panels for a little relief
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.9 });
   for (const py of [leafH * 0.28, leafH * 0.68]) {
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(leafW * 0.6, leafH * 0.26, 0.03), panelMat);
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(leafW * 0.6, leafH * 0.26, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.9 }),
+    );
     panel.position.set(leafW / 2, py, LT / 2);
+    portalPieces.push(panel);
     pivot.add(panel);
   }
   // brass knob near the free edge
@@ -1566,17 +1588,32 @@ function buildDoorEntry(pos, rotated) {
     new THREE.MeshStandardMaterial({ color: 0xc8a23a, metalness: 0.75, roughness: 0.3 }),
   );
   knob.position.set(leafW - 0.18, leafH * 0.5, LT / 2 + 0.03);
+  portalPieces.push(knob);
   pivot.add(knob);
 
   g.add(pivot);
   doorGroup.add(g);
   // World boxes need the group's final placement — same pattern as
   // buildRoomGroup: one matrix update after attach settles them for good.
+  // Every piece carries BOTH adjacent room keys and a zero normal (pass B's
+  // facing test is skipped), so the followed room's boundary ghosts door-and-
+  // all. Jambs and every leaf piece share ONE portal box spanning the whole
+  // opening — local center [0, DHt/2, 0], size [DW+0.2, DHt+0.06, WT+0.2],
+  // mapped through the door's rotation and computed once at the closed pose
+  // (the swing is brief; a slightly stale box only over-fades).
   g.updateMatrixWorld(true);
   for (const w of xwalls) {
-    w.userData.xray = { until: 0, roomKey: "", normal: new THREE.Vector3(), box: new THREE.Box3().setFromObject(w) };
+    w.userData.xray = { until: 0, roomKeys: [keyA, keyB], normal: new THREE.Vector3(), box: new THREE.Box3().setFromObject(w) };
   }
-  return { group: g, pivot, open: 0, openTarget: 0, closeAt: 0, walls: xwalls };
+  const portalBox = new THREE.Box3().setFromCenterAndSize(
+    new THREE.Vector3(pos.x, pos.y + DHt / 2, pos.z),
+    new THREE.Vector3(rotated ? WT + 0.2 : DW + 0.2, DHt + 0.06, rotated ? DW + 0.2 : WT + 0.2),
+  );
+  for (const w of portalPieces) {
+    w.userData.xray = { until: 0, roomKeys: [keyA, keyB], normal: new THREE.Vector3(), box: portalBox };
+  }
+  xwalls.push(...portalPieces);
+  return { group: g, pivot, open: 0, openTarget: 0, closeAt: 0, walls: xwalls, rooms: [keyA, keyB] };
 }
 
 /** Create any missing doors at boundaries that have become real passages. */
@@ -1594,7 +1631,7 @@ function syncDoors() {
       if (doorCache.has(bid)) continue;
       const { dx, dy } = DH.DIR_DELTA[d];
       const pos = new THREE.Vector3(room.x * TILE + dx * H, FLOOR_Y[room.floor], room.y * TILE + dy * H);
-      doorCache.set(bid, buildDoorEntry(pos, d === "east" || d === "west"));
+      doorCache.set(bid, buildDoorEntry(pos, d === "east" || d === "west", room.key, nKey));
     }
   }
 }
@@ -1868,7 +1905,10 @@ function buildArrows(legal) {
 // frame. Clicking a reachable room dispatches the SAME move as a 3D click.
 // =========================================================================
 const MM_TABS = [["basement", "B"], ["ground", "G"], ["upper", "U"]];
-const mm = { floor: "ground", followFloor: null, cell: 0, rooms: [], legal: null };
+const MM_FLOOR_TITLE = { basement: "Basement", ground: "Ground floor", upper: "Upper floor" };
+// dots: playerId -> {x,y} canvas position of that player's dot on the SHOWN
+// floor (drives the .mm-you DOM pin and the locate-flash ring).
+const mm = { floor: "ground", followFloor: null, cell: 0, rooms: [], legal: null, dots: new Map() };
 
 /** Whose experience the minimap frames: the solo human, else the active
  *  hotseat human, else the first human at the table. */
@@ -1895,9 +1935,39 @@ function drawMinimap(legal) {
   const wFloor = w?.position ? DH.parseKey(w.position).floor : null;
   if (wFloor && wFloor !== mm.followFloor) { mm.followFloor = wFloor; mm.floor = wFloor; }
 
+  // Header strip: WHERE the watched explorer is (always current), then WHOSE
+  // move it is — "Your move" in amber, or "<Name> is exploring…" dimmed.
+  const activeP = state.players.find((p) => p.id === state.activePlayerId);
+  const yourTurn = !!w && w.id === state.activePlayerId && !w.isBot &&
+    (state.phase === "explore" || state.phase === "haunt");
+  const hereEl = $("mm-here");
+  if (hereEl) {
+    const wRoom = w?.position ? state.house[w.position] : null;
+    const wDef = wRoom ? DH.ROOMS_BY_ID[wRoom.roomId] : null;
+    hereEl.textContent = wDef ? `⌖ ${wDef.name} · ${MM_FLOOR_TITLE[wRoom.floor]}` : "⌖ …";
+  }
+  const turnEl = $("mm-turn");
+  if (turnEl) {
+    turnEl.textContent = yourTurn ? "Your move" : `${activeP?.name ?? "…"} is exploring…`;
+    turnEl.classList.toggle("yours", yourTurn);
+  }
+
+  // Floor tabs: letter + up to four occupancy dots (player colours) so "who
+  // is on which floor" reads without switching; the watched player's floor
+  // tab carries an amber ⌖ when it isn't the one shown.
   const tabs = $("minimap-floors");
+  const byFloor = { basement: [], ground: [], upper: [] };
+  for (const p of state.players) {
+    if (!p.alive || !p.position) continue;
+    const f = DH.parseKey(p.position).floor;
+    const c = p.characterId ? DH.CHARACTERS_BY_ID[p.characterId] : null;
+    if (byFloor[f] && byFloor[f].length < 4) byFloor[f].push(c?.color ?? "#888");
+  }
   tabs.innerHTML = MM_TABS.map(([f, l]) =>
-    `<button class="mm-tab${mm.floor === f ? " sel" : ""}" data-f="${f}" title="${f}">${l}</button>`).join("");
+    `<button class="mm-tab${mm.floor === f ? " sel" : ""}" data-f="${f}" title="${MM_FLOOR_TITLE[f]}" aria-label="${MM_FLOOR_TITLE[f]}">` +
+    `<span class="mm-tab-l">${l}${wFloor === f && mm.floor !== f ? '<span class="mm-tab-mark">⌖</span>' : ""}</span>` +
+    `<span class="mm-tab-dots">${byFloor[f].map((c) => `<i style="background:${c}"></i>`).join("")}</span>` +
+    `</button>`).join("");
   for (const b of tabs.querySelectorAll(".mm-tab")) {
     b.onclick = () => { mm.floor = b.dataset.f; drawMinimap(mm.legal); };
   }
@@ -1909,6 +1979,20 @@ function drawMinimap(legal) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
   mm.rooms = [];
+  mm.dots.clear();
+  const youEl = $("mm-you");
+  if (youEl) youEl.style.display = "none"; // re-shown below if your dot lands
+
+  // Compass: ↑ key = north = map-up, tied together in the corner.
+  g.strokeStyle = "rgba(216,207,196,.5)";
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(8, 9); g.lineTo(11, 4); g.lineTo(14, 9);
+  g.stroke();
+  g.fillStyle = "rgba(216,207,196,.55)";
+  g.font = "9px Georgia,serif";
+  g.textAlign = "center"; g.textBaseline = "top";
+  g.fillText("N", 11, 11);
 
   const rooms = Object.values(state.house).filter((r) => r.floor === mm.floor);
   if (!rooms.length) {
@@ -1933,11 +2017,11 @@ function drawMinimap(legal) {
 
   // Reachable rooms only light on the watched human's own turn — the same
   // set the 3D view marks as walkable (legal.explored, for the active player).
-  const yourTurn = !!w && w.id === state.activePlayerId && !w.isBot &&
-    (state.phase === "explore" || state.phase === "haunt");
   const reach = yourTurn ? new Set(legal.explored) : new Set();
 
-  const inset = 1.5, gapK = 0.38;
+  // Ink language: room-ink fill, bone walls, amber invitation. Door gaps at
+  // 0.4·cell so openings read at a glance.
+  const inset = 1.5, gapK = 0.4;
   for (const r of rooms) {
     const x0 = ox + (r.x - minX) * cell, y0 = oy + (r.y - minY) * cell;
     const def = DH.ROOMS_BY_ID[r.roomId];
@@ -1947,13 +2031,20 @@ function drawMinimap(legal) {
     const x1 = x0 + inset, y1 = y0 + inset, x2 = x0 + cell - inset, y2 = y0 + cell - inset;
     g.beginPath();
     g.roundRect(x1, y1, x2 - x1, y2 - y1, Math.max(2, cell * 0.14));
-    g.fillStyle = reachable ? "rgba(90,143,90,.32)" : "rgba(216,207,196,.09)";
+    g.fillStyle = reachable ? "rgba(232,168,90,.28)" : "#1d1826";
     g.fill();
 
-    // Doorway edges are notched open; solid walls draw through.
+    // Doorway edges are notched open; solid walls draw through. Reachable
+    // rooms stroke amber with a soft glow (shadowBlur set for those only).
     const doors = DH.placedDoorways(r);
-    g.lineWidth = 1;
-    g.strokeStyle = reachable ? "rgba(150,205,150,.9)" : "rgba(140,110,85,.6)";
+    g.lineWidth = 2;
+    if (reachable) {
+      g.strokeStyle = "#e8a85a";
+      g.shadowColor = "rgba(232,168,90,.85)";
+      g.shadowBlur = 6;
+    } else {
+      g.strokeStyle = "rgba(216,207,196,.85)";
+    }
     const rr = Math.max(2, cell * 0.14);
     for (const [d, ax, ay, bx, by] of [
       ["north", x1 + rr, y1, x2 - rr, y1],
@@ -1974,54 +2065,107 @@ function drawMinimap(legal) {
       }
       g.stroke();
     }
+    g.shadowBlur = 0;
+
+    // The watched player's CURRENT room: an extra bone stroke, so "where am
+    // I" has a room-level answer before you even spot your pin.
+    if (w && w.position === r.key) {
+      g.lineWidth = 2.5;
+      g.strokeStyle = "rgba(233,223,204,.95)";
+      g.beginPath();
+      g.roundRect(x1 - 1, y1 - 1, x2 - x1 + 2, y2 - y1 + 2, Math.max(2, cell * 0.14));
+      g.stroke();
+    }
 
     // Stairs / elevator glyph, centered and faint under the occupant dots.
     const glyph = mmGlyph(def?.special);
     if (glyph) {
-      g.fillStyle = "rgba(232,168,90,.75)";
+      g.fillStyle = "rgba(232,168,90,.9)";
       g.font = `${Math.max(9, cell * 0.42)}px Georgia,serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText(glyph, x0 + cell / 2, y0 + cell / 2);
     }
     // Aura mark in the corner: blessed ✦ gold, cursed ☓ red.
     if (def?.aura) {
-      g.fillStyle = def.aura > 0 ? "#e2c15a" : "#c2412f";
+      g.fillStyle = def.aura > 0 ? "#e8ca62" : "#d0503c";
       g.font = `${Math.max(7, cell * 0.28)}px Georgia,serif`;
       g.textAlign = "left"; g.textBaseline = "top";
       g.fillText(def.aura > 0 ? "✦" : "☓", x1 + 1.5, y1 + 1);
     }
   }
 
-  // Occupants: explorer dots in identity colours (the watched player ringed),
-  // monsters in threat red. Multiple occupants fan out on a small ring.
+  // Occupants: explorer dots in identity colours (with the character's
+  // initial when the cells are large enough), monsters in threat red.
+  // Multiple occupants fan out on a small ring.
   const occ = {};
   for (const p of state.players) if (p.position) (occ[p.position] ??= []).push({ kind: "p", p });
   for (const mn of state.haunt?.monsters ?? []) if (mn.hp > 0 && mn.position) (occ[mn.position] ??= []).push({ kind: "m" });
+  const rad = Math.max(4.5, cell * 0.16);
   for (const rm of mm.rooms) {
     const list = occ[rm.key];
     if (!list) continue;
-    const rad = Math.max(2.5, cell * 0.11);
     list.forEach((o, i) => {
       const [dx, dz] = ring(i, list.length, cell * 0.2);
       const cx = rm.x0 + cell / 2 + dx, cy = rm.y0 + cell / 2 + dz;
       g.beginPath();
       g.arc(cx, cy, rad, 0, Math.PI * 2);
+      let c = null;
       if (o.kind === "m") g.fillStyle = "#c2412f";
       else {
-        const c = o.p.characterId ? DH.CHARACTERS_BY_ID[o.p.characterId] : null;
+        c = o.p.characterId ? DH.CHARACTERS_BY_ID[o.p.characterId] : null;
         g.fillStyle = o.p.alive ? (c?.color ?? "#888") : "#4a4440";
       }
       g.fill();
-      if (o.kind === "p" && w && o.p.id === w.id) {
-        g.lineWidth = 1.5;
-        g.strokeStyle = "#f4e7dd";
-        g.beginPath();
-        g.arc(cx, cy, rad + 2, 0, Math.PI * 2);
-        g.stroke();
+      g.lineWidth = 1;
+      g.strokeStyle = "rgba(0,0,0,.65)";
+      g.stroke();
+      if (o.kind === "p") {
+        mm.dots.set(o.p.id, { x: cx, y: cy });
+        if (cell >= 22 && c && o.p.alive) {
+          g.fillStyle = "#14111c";
+          g.font = "bold 9px Georgia,serif";
+          g.textAlign = "center"; g.textBaseline = "middle";
+          g.fillText(c.name.charAt(0), cx, cy + 0.5);
+        }
       }
     });
   }
+
+  // YOU-pin: a DOM ring in your character's colour with a pulsing amber halo
+  // (pure CSS), positioned from this draw's mapping — hidden when the map is
+  // showing another floor (the ⌖ on your floor's tab points the way back).
+  if (youEl && w && w.alive) {
+    const dot = mm.dots.get(w.id);
+    if (dot) {
+      const c = w.characterId ? DH.CHARACTERS_BY_ID[w.characterId] : null;
+      youEl.style.display = "block";
+      youEl.style.left = `${canvas.offsetLeft + dot.x}px`;
+      youEl.style.top = `${canvas.offsetTop + dot.y}px`;
+      youEl.style.setProperty("--yc", c?.color ?? "#e8a85a");
+    }
+  }
 }
+
+/** Locate-flash: jump the map to `playerId`'s floor and drop a temporary
+ *  expanding ring over their dot (~1.8s, CSS keyframe). Roster clicks use it. */
+function flashOnMap(playerId) {
+  if (!state) return;
+  const p = state.players.find((q) => q.id === playerId);
+  if (!p || !p.position) return;
+  mm.floor = DH.parseKey(p.position).floor;
+  if (mm.legal) drawMinimap(mm.legal);
+  const dot = mm.dots.get(playerId);
+  const panel = $("minimap");
+  const canvas = $("minimap-canvas");
+  if (!dot || !panel || !canvas) return;
+  const ring = document.createElement("div");
+  ring.className = "mm-flash";
+  ring.style.left = `${canvas.offsetLeft + dot.x}px`;
+  ring.style.top = `${canvas.offsetTop + dot.y}px`;
+  panel.appendChild(ring);
+  setTimeout(() => ring.remove(), 1800);
+}
+window.__mmFlash = flashOnMap;
 
 // Minimap interactions — bound once (the canvas lives in the static template).
 if ($("minimap-canvas")) {
@@ -2281,11 +2425,17 @@ function updateHUD(legal) {
             `<span class="rt-ico">${TRAIT_ICON[t]}</span><span class="rt-val">${val}</span>${badge}</span>`;
         }).join("") + `</span>`
       : "";
-    return `<div class="roster-row${state.activePlayerId === p.id ? " active" : ""}${!p.alive ? " dead" : ""}">` +
+    // Where-line: the room they stand in (dead explorers read "fallen"), and
+    // the whole row is a button — click it to flash them on the minimap.
+    const _proom = p.position ? state.house[p.position] : null;
+    const where = !p.alive ? "fallen" : (_proom ? DH.ROOMS_BY_ID[_proom.roomId]?.name ?? "…" : "…");
+    return `<button type="button" class="roster-row${state.activePlayerId === p.id ? " active" : ""}${!p.alive ? " dead" : ""}"` +
+      ` onclick="window.__mmFlash('${p.id}')" aria-label="Show ${p.name} on the map" title="Show ${p.name} on the map">` +
       `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") : "☠"}</span>` +
-      `<span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
+      `<span class="roster-id"><span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
+      `<span class="roster-where">— ${where}</span></span>` +
       traits +
-      `${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}</div>`;
+      `${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}</button>`;
   }).join("");
   // Chronicle: a compact icon-led toast feed by default (recent entries fade to
   // 40% after 8s via the --age animation-delay trick, surviving innerHTML
@@ -2750,12 +2900,13 @@ function animate() {
     e.pivot.rotation.y = -e.open * DOOR_MAX_SWING;
   }
 
-  // X-ray walls: any wall — including a doorway's stubs and header — between
-  // the camera and a living character ghosts to 0.12, and the followed room's
-  // camera-facing walls always do; smoothly, per-mesh. Wall-height decor trim
-  // (cornice/beams/pilasters) ghosts with its room the same way — a zero
-  // normal in aEntry.walls marks trim. Door leaves, jambs and furniture never
-  // fade (the opening reads through on its own).
+  // X-ray walls: any wall — including the WHOLE doorway assembly (stubs,
+  // header, jambs, leaf, panels, knob) — between the camera and a living
+  // character ghosts to 0.12, and the followed room's camera-facing walls
+  // always do; smoothly, per-mesh. Wall-height decor trim and door pieces
+  // carry a zero normal (facing test skipped), and door pieces carry both
+  // adjacent room keys, so the followed room's boundary reads open door-and-
+  // all from any orbit angle. Only furniture never fades.
   if (state && xrayWalls.length) {
     // A. raycast camera -> every living character's chest
     for (const tok of tokenCache.values()) {
@@ -2772,7 +2923,9 @@ function animate() {
         }
       }
     }
-    // B. the active player's room: its near-side walls ghost from any angle
+    // B. the active player's room: its near-side walls ghost from any angle,
+    //    and so does every doorway bounding the room (doorsByRoom index —
+    //    door pieces have zero normals, so no facing test applies).
     const activeP = state.players.find((p) => p.id === state.activePlayerId);
     const aRoom = activeP && activeP.position ? state.house[activeP.position] : null;
     const aEntry = aRoom ? roomCache.get(aRoom.key) : null;
@@ -2783,6 +2936,10 @@ function animate() {
         const x = w.userData.xray;
         if (x.normal.lengthSq() === 0 || x.normal.dot(xrayDir) > 0.15) x.until = nowMs + XRAY_HOLD_MS;
       }
+    }
+    if (aRoom) {
+      const dws = doorsByRoom.get(aRoom.key);
+      if (dws) for (const w of dws) w.userData.xray.until = nowMs + XRAY_HOLD_MS;
     }
     // C. fade application — the ONLY code allowed to touch wall opacity.
     xraySettled = true;
