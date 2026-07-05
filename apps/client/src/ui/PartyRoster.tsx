@@ -5,6 +5,7 @@ import { useStore } from "../state/store";
 import { useBeats, type TraitDelta } from "../state/beats";
 import { flashOnMap } from "./Minimap";
 import { TRAIT_COLOR, TRAIT_ICON } from "./icons";
+import { Portrait } from "./Portrait";
 
 /** Newest live delta for one chip cell (multiple hits on a trait are rare). */
 function latestDelta(deltas: readonly TraitDelta[], playerId: string, trait: Trait): TraitDelta | undefined {
@@ -49,6 +50,8 @@ export function PartyRoster() {
                 style={{ "--pc": char?.color ?? "#888" } as CSSProperties}
               >
                 {p.alive ? char?.name.charAt(0) ?? "?" : "☠"}
+                {/* the ☠ stays the death signal at 20px — no portrait then */}
+                {p.alive && char && <Portrait id={char.id} />}
               </span>
               <span className="roster-name">
                 {p.name}

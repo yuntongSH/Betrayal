@@ -73,6 +73,11 @@ window.__logToggle = () => { logOpen = !logOpen; render(); };
 // self-contained glTF with an Idle clip, mapped thematically to our cast and
 // themed by height. The procedural figure remains the offline fallback.
 const PPL = "models/people";
+/** A hero's baked 2D face (head crop of the 3D model, shipped next to the
+ *  glTF bodies). Rendered INSIDE a medallion over the initial letter — if the
+ *  image ever fails to load it removes itself and the letter shows again. */
+const pface = (id) =>
+  `<img class="pface" src="models/portraits/${id}.webp" alt="" draggable="false" onerror="this.remove()">`;
 const EXPLORER_MODELS = {
   crow:   { url: `${PPL}/M_Farmer.gltf`,     h: 1.9 , tint: 0x6b4a2c }, // rustic, burly strongman
   vance:  { url: `${PPL}/W_Formal.gltf`,     h: 1.68, tint: 0x46615f }, // cool clinical grey-teal
@@ -549,7 +554,7 @@ const Beats = (() => {
   function deathHtml(b) {
     const c = DH.CHARACTERS_BY_ID[b.charId];
     return `<div class="death-banner">` +
-      `<div class="db-disc" style="--pc:${c?.color ?? "#888"}">${c?.name.charAt(0) ?? "?"}</div>` +
+      `<div class="db-disc" style="--pc:${c?.color ?? "#888"}">${c?.name.charAt(0) ?? "?"}${c ? pface(c.id) : ""}</div>` +
       `<div class="kick">LOST TO THE HOUSE</div>` +
       `<h2>${c?.name ?? b.playerName}</h2>` +
       `<div class="muted">${c?.title ?? ""}</div>` +
@@ -1071,7 +1076,7 @@ function buildLobby() {
     card.className = "char-card" + (chosen ? " mine" : "");
     card.style.setProperty("--pc", c.color); // identity colour — CSS derives the cameo backdrop + medallion from it
     card.innerHTML =
-      `<div class="char-avatar">${c.name.charAt(0)}</div>` +
+      `<div class="char-avatar">${c.name.charAt(0)}${pface(c.id)}</div>` +
       `<div class="char-info"><strong>${c.name}</strong><em>${c.title}</em>` +
       `<div class="char-traits">` +
       DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("") +
@@ -2388,7 +2393,7 @@ function updateHUD(legal) {
 
   const activeChar = active?.characterId ? DH.CHARACTERS_BY_ID[active.characterId] : null;
   const turnChip = activeChar
-    ? `<span class="turn-chip"><span class="roster-avatar" style="--pc:${activeChar.color}">${activeChar.name.charAt(0)}</span> ${active.name}</span>`
+    ? `<span class="turn-chip"><span class="roster-avatar" style="--pc:${activeChar.color}">${activeChar.name.charAt(0)}${pface(activeChar.id)}</span> ${active.name}</span>`
     : `<span class="turn-chip">${active?.name ?? "…"}</span>`;
   // Movement as lit boot pips instead of a raw number (first 8; overflow as +N).
   const spd = activeChar ? activeChar.traits.speed.values[active.traitIndex.speed] : 0;
@@ -2431,7 +2436,7 @@ function updateHUD(legal) {
     const where = !p.alive ? "fallen" : (_proom ? DH.ROOMS_BY_ID[_proom.roomId]?.name ?? "…" : "…");
     return `<button type="button" class="roster-row${state.activePlayerId === p.id ? " active" : ""}${!p.alive ? " dead" : ""}"` +
       ` onclick="window.__mmFlash('${p.id}')" aria-label="Show ${p.name} on the map" title="Show ${p.name} on the map">` +
-      `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") : "☠"}</span>` +
+      `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") + (c ? pface(c.id) : "") : "☠"}</span>` +
       `<span class="roster-id"><span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
       `<span class="roster-where">— ${where}</span></span>` +
       traits +
@@ -2475,7 +2480,7 @@ function updateHUD(legal) {
     $("hud-right").innerHTML =
       roomCard +
       `<div class="panel trait-panel ${!me.alive ? "dead" : ""}">` +
-      `<div class="tp-head" style="border-color:${c.color}"><div class="tp-avatar" style="--pc:${c.color}">${c.name.charAt(0)}</div>` +
+      `<div class="tp-head" style="border-color:${c.color}"><div class="tp-avatar" style="--pc:${c.color}">${c.name.charAt(0)}${pface(c.id)}</div>` +
       `<div><strong>${c.name}</strong><div class="muted small">${c.title}</div></div>` +
       `${me.side ? `<span class="side-tag ${me.side}">${me.side === "traitor" ? "TRAITOR" : "HERO"}</span>` : ""}</div>` +
       (!me.alive ? `<div class="tp-dead">Lost to the house.</div>` : "") +
@@ -2544,10 +2549,10 @@ function updateHUD(legal) {
     }
     // Deliberate actions — each spends a step, so they trade off against moving.
     if (legal.canInvestigate) {
-      bottom += `<button class="btn act" title="A Knowledge check to read the danger ahead (costs 1 step)" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
+      bottom += `<button class="btn act" title="Costs 1 step · Knowledge roll vs 4 — glimpse the next omen, or read a monster during the haunt" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
     }
     if (legal.canRest) {
-      bottom += `<button class="btn act" title="Catch your breath to recover your most-wounded trait — ends your movement" onclick="window.__act({type:'rest',playerId:'${active.id}'})"><span class="bi">✚</span><span>Steady</span></button>`;
+      bottom += `<button class="btn act" title="Ends your movement · recover +1 on your most-wounded trait" onclick="window.__act({type:'rest',playerId:'${active.id}'})"><span class="bi">✚</span><span>Steady</span></button>`;
     }
     const _broom = active.position ? state.house[active.position] : null;
     for (const dir of legal.barricadeDoors ?? []) {
@@ -2557,7 +2562,7 @@ function updateHUD(legal) {
         const nDef = state.house[nKey] ? DH.ROOMS_BY_ID[state.house[nKey].roomId] : null;
         if (nDef) label = nDef.name;
       }
-      bottom += `<button class="btn act" title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
+      bottom += `<button class="btn act" title="Costs 1 step · wedge this door shut for 3 rounds — nothing gets through either way" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
     }
     const etAge = shineNow ? (performance.now() - autoEndArmedAt).toFixed(0) : "0";
     bottom += `<button class="btn primary${shineNow ? " shine" : ""}"${shineNow ? ` style="--dly:-${etAge}ms"` : ""} onclick="window.__act({type:'end-turn',playerId:'${active.id}'})"><span class="bi">🕯</span><span>End turn</span>${humans.length > 1 ? ' <span class="small muted">pass device</span>' : ""}${shineNow ? `<span class="et-timer" style="animation-duration:${AUTO_END_MS}ms;animation-delay:-${etAge}ms"></span>` : ""}</button>`;

@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { RoomDef, Trait, TraitTrackDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { SKULL_ICON, TRAIT_COLOR, TraitIcon, tagIcon } from "./icons";
+import { Portrait } from "./Portrait";
 
 /** Plain-language notes on what a room does — its standing aura and any
  *  one-time effect on discovery — so a player knows what they walked into. */
@@ -136,6 +137,7 @@ export function TraitPanel() {
       <div className="tp-head" style={{ borderColor: char.color }}>
         <div className="tp-avatar" style={{ "--pc": char.color } as CSSProperties}>
           {char.name.charAt(0)}
+          <Portrait id={char.id} />
         </div>
         <div>
           <strong>{char.name}</strong>

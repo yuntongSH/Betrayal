@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { CHARACTERS_BY_ID } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
 import { DICE_STAGGER_MS, DIE_PIPS, dismissActive, useBeats } from "../state/beats";
+import { Portrait } from "./Portrait";
 
 /** Card-type icons — exact inline SVGs shared verbatim with the artifact. */
 const CARD_ICON: Record<string, string> = {
@@ -95,6 +96,7 @@ export function BeatOverlay() {
               style={{ "--pc": char?.color ?? "#888" } as CSSProperties}
             >
               {char?.name.charAt(0) ?? "☠"}
+              {char && <Portrait id={char.id} />}
             </div>
             <div className="db-kicker">Lost to the house</div>
             <h2>{char?.name ?? active.playerName}</h2>

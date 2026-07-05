@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { CHARACTERS_BY_ID, ROOMS_BY_ID, TRAITS, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
 import { useStore } from "../state/store";
+import { Portrait } from "./Portrait";
 import { beatsBusy, useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 import { Scene } from "../three/Scene";
@@ -114,6 +115,7 @@ export function GameScreen() {
                 style={{ "--pc": activeChar.color } as CSSProperties}
               >
                 {activeChar.name.charAt(0)}
+                <Portrait id={activeChar.id} />
               </span>
             )}
             {active?.name ?? "…"}
@@ -184,7 +186,7 @@ export function GameScreen() {
               <button
                 className="btn act"
                 onClick={investigate}
-                title="A Knowledge check to read the danger ahead (costs 1 step)"
+                title="Costs 1 step · Knowledge roll vs 4 — glimpse the next omen, or read a monster during the haunt"
               >
                 <span className="bi">👁</span>
                 <span>Investigate</span>
@@ -194,7 +196,7 @@ export function GameScreen() {
               <button
                 className="btn act"
                 onClick={rest}
-                title="Catch your breath to recover your most-wounded trait — ends your movement"
+                title="Ends your movement · recover +1 on your most-wounded trait"
               >
                 <span className="bi">✚</span>
                 <span>Steady</span>
@@ -213,7 +215,7 @@ export function GameScreen() {
                   key={`barricade-${dir}`}
                   className="btn act"
                   onClick={() => barricade(dir)}
-                  title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)"
+                  title="Costs 1 step · wedge this door shut for 3 rounds — nothing gets through either way"
                 >
                   <span className="bi">⛓</span>
                   <span>Barricade → {nName}</span>

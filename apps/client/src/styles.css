@@ -1059,6 +1059,10 @@ kbd {
 .tp-avatar{width:44px;height:44px;font-size:1.35rem}
 .roster-avatar{width:20px;height:20px;font-size:.68rem;flex:0 0 auto}
 .roster-row.dead .roster-avatar,.trait-panel.dead .tp-avatar{filter:grayscale(1) brightness(.6)}
+/* Baked 2D face inside every identity medallion (Portrait.tsx). The initial
+   letter stays underneath as the fallback; the --pc ring survives on top. */
+.char-avatar,.roster-avatar,.tp-avatar,.db-disc{position:relative;overflow:hidden}
+.pface{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
 .tp-traits{display:flex;flex-direction:column;gap:.42rem}
 .tp-trait{display:flex;align-items:center;gap:.45rem;border-radius:6px}
 .g-ico{width:19px;height:19px;flex:0 0 auto;color:var(--tc)} .g-ico svg{width:100%;height:100%;display:block}

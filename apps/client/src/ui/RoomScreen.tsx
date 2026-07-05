@@ -3,6 +3,7 @@ import { CHARACTERS, CHARACTERS_BY_ID, DIFFICULTIES, TRAITS } from "@dread-hollo
 import type { CharacterDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { DuskScene } from "./DuskScene";
+import { Portrait } from "./Portrait";
 
 const DIFFICULTY_BLURB: Record<string, string> = {
   relaxed: "Gentler haunts — monsters hit softer and die sooner.",
@@ -101,6 +102,7 @@ export function RoomScreen() {
               >
                 <div className="char-avatar" style={{ background: c.color }}>
                   {c.name.charAt(0)}
+                  <Portrait id={c.id} />
                 </div>
                 <div className="char-info">
                   <strong>{c.name}</strong>
