@@ -8,11 +8,14 @@ import { XrayWalls } from "./XrayWalls";
 import { BeatFX } from "./BeatFX";
 import { KeyboardMover } from "./KeyboardMover";
 import { PostFX } from "./PostFX";
+import { PerfGovernor, INITIAL_DPR } from "./governor";
 import { FLOOR_GAP } from "./layout";
 
 export function Scene() {
   return (
-    <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }}>
+    /* dpr capped at 1.5 — retina 2x doubled the GPU bill for no readable gain;
+       from here the PerfGovernor walks it down/up with measured frame times. */
+    <Canvas shadows dpr={INITIAL_DPR} gl={{ antialias: true }}>
       <color attach="background" args={["#040407"]} />
       {/* fog pulled in tight so rooms far from any explorer dissolve into dread */}
       <fog attach="fog" args={["#05050a", 16, 60]} />
@@ -38,7 +41,7 @@ export function Scene() {
         intensity={0.24}
         color="#8fa2cc"
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[1024, 1024]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
         shadow-camera-left={-80}
@@ -60,6 +63,7 @@ export function Scene() {
       <XrayWalls />
       <BeatFX />
       <KeyboardMover />
+      <PerfGovernor />
 
       {/* the void the house floats in */}
       <mesh position={[0, -FLOOR_GAP - 2, 7]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

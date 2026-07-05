@@ -5,6 +5,7 @@ import { useStore } from "../state/store";
 import { pendingFx as beatQueue, useBeats } from "../state/beats";
 import { TILE, roomWorld } from "./layout";
 import { MAX_FRAME_DT } from "./followCam";
+import { markActive } from "./governor";
 import { FX_COLORS, pendingFx, type FxRequest } from "./director";
 
 const S = TILE / 4; // world-scale factor for distances tuned at the old 4-unit tile
@@ -59,6 +60,17 @@ export function BeatFX() {
     // their queues), so the room's flourish plays as the world resumes.
     if (useBeats.getState().worldFrozen) return;
     const dt = Math.min(MAX_FRAME_DT, rawDt);
+
+    // Live particles/pulses (or queued requests) must render at full rate —
+    // the governor can't see them (lights and points aren't tracked tokens).
+    if (
+      pulses.current.length > 0 ||
+      bursts.current.length > 0 ||
+      pendingFx.length > 0 ||
+      beatQueue.length > 0
+    ) {
+      markActive(100);
+    }
 
     // Drain new requests from the beat layer AND the director's own queue
     // (read the house from the store — read-only).

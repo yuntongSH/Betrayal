@@ -1162,8 +1162,10 @@ function initScene() {
   moon.position.set(24.5, 49, 10.5);
   // The moon is the one shadow-casting key — without this the artifact rendered
   // ZERO shadows despite shadowMap.enabled, so nothing was grounded.
+  // 1024² map (was 2048²): a quarter of the shadow fill-rate/VRAM; PCFSoft
+  // filtering hides the coarser texels at this camera distance.
   moon.castShadow = true;
-  moon.shadow.mapSize.set(2048, 2048);
+  moon.shadow.mapSize.set(1024, 1024);
   moon.shadow.bias = -0.0004;
   moon.shadow.normalBias = 0.03;
   moon.shadow.camera.near = 1;
@@ -2456,20 +2458,111 @@ window.__dismiss = () => { if (state.haunt) lastHauntShown = state.haunt.id; ren
 // =========================================================================
 // LOOP
 // =========================================================================
+// ---- adaptive quality + idle throttle ------------------------------------
+// Two independent cost governors (same constants as the React client):
+//  1. DPR ladder — start at min(1.5, devicePixelRatio) and step DOWN a rung
+//     while the rolling ACTIVE frame time sustains > 34ms; step back UP after
+//     ~10s sustained < 20ms. Min 3s between steps; the gap between the two
+//     thresholds plus the post-step re-warm-up is the hysteresis.
+//  2. Idle throttle — a board game is static most of the time: when nothing
+//     on screen is in motion (no walker, chase relaxed, no beat FX, camera
+//     settled and untouched), GL rendering drops to ~24fps. A skipped tick
+//     returns before touching the scene graph, and the next rendered frame
+//     receives the real accumulated dt — every system below is dt-based, and
+//     the world is static by definition on skipped frames, so nothing drifts
+//     or stutters. DOM/CSS beats (card flip, timer bars, dice tray, auto-end)
+//     and the WebAudio score live entirely outside this loop: unaffected.
+const DPR_LADDER = [1.5, 1.25, 1.0, 0.8];
+const PERF_STEP_DOWN_MS = 34, PERF_STEP_UP_MS = 20; // active frame-time thresholds
+const PERF_STEP_COOLDOWN_MS = 3000, PERF_GOOD_HOLD_MS = 10000, PERF_WARMUP_FRAMES = 30;
+const IDLE_FPS = 24, USER_CAM_HOLD_MS = 1500;
+let dprIndex = 0; // current rung on DPR_LADDER
+let perfAvg = 16.7, perfSamples = 0, perfGoodSince = 0, perfLastStep = 0;
+let lastTickMs = 0, lastActiveTickMs = 0, idleAccumMs = 0, framesRendered = 0;
+let camSettled = true, xraySettled = true, doorsSettled = true; // written by the rendered frame
+let frozenPrev = false, frozenChangedAt = 0;
+const camPrev = new THREE.Vector3(), lookPrev = new THREE.Vector3();
+
+const currentDpr = () => Math.min(DPR_LADDER[dprIndex], window.devicePixelRatio || 1);
+
+/** Rolling average of ACTIVE frame-to-frame time drives the DPR ladder.
+ *  Throttled idle frames never sample — their interval is 24fps by design. */
+function perfSample(frameMs, nowMs) {
+  perfAvg += (frameMs - perfAvg) * 0.08; // EMA ≈ the last ~25 active frames
+  perfSamples++;
+  if (perfAvg >= PERF_STEP_UP_MS) perfGoodSince = 0;
+  else if (!perfGoodSince) perfGoodSince = nowMs;
+  if (perfSamples < PERF_WARMUP_FRAMES || nowMs - perfLastStep < PERF_STEP_COOLDOWN_MS) return;
+  if (perfAvg > PERF_STEP_DOWN_MS && dprIndex < DPR_LADDER.length - 1) dprIndex++;
+  else if (dprIndex > 0 && perfGoodSince && nowMs - perfGoodSince > PERF_GOOD_HOLD_MS) dprIndex--;
+  else return;
+  perfLastStep = nowMs;
+  perfSamples = 0; // re-warm-up: let the new rung settle before judging again
+  perfGoodSince = 0;
+  onResize(); // reapplies pixelRatio + size (labelRenderer is pure CSS: no-op)
+}
+
+/** Is anything on screen in motion (or about to be)? Cheap flag reads only —
+ *  this runs on every rAF tick, including the ones the throttle then skips. */
+function sceneBusy(nowMs) {
+  if (!state) return true;
+  if (nowMs - userCamAt < USER_CAM_HOLD_MS) return true; // user drove the camera just now
+  if (!camSettled) return true; // camera still visibly easing (or user mid-orbit)
+  const frozen = Beats.freeze();
+  if (frozen !== frozenPrev) { frozenPrev = frozen; frozenChangedAt = nowMs; }
+  if (nowMs - frozenChangedAt < 600) return true; // freeze on/off transition settling
+  // A modal freeze clamps dt to 0: the world is a HELD FRAME while the card
+  // is read. Beat FX, walkers, chase eases, door swings and wall fades cannot
+  // move an inch until it lifts — so none of them may hold full rate here.
+  // (Reading a card is the single most common "static screen" in real play.)
+  if (frozen) return false;
+  if (chase > 0.01 || chaseWant !== 0) return true; // chase cam engaged / relaxing
+  if (fxList.length) return true; // beat-FX pulses or embers alive
+  if (nowMs < Beats.director.until) return true; // focus-pulse push-in
+  if (followTarget.valid && followTarget.moving) return true; // active explorer striding
+  for (const tok of tokenCache.values()) {
+    if (tok.path || !tok.placed) return true; // waypoint walk in progress / spawn pending
+    if (tok.group.position.distanceToSquared(tok.target) > 4e-4) return true; // gliding
+  }
+  if (!xraySettled || !doorsSettled) return true; // eases still landing
+  return false;
+}
+
 function onResize() {
   if (!renderer) return;
   const wrap = $("canvas-wrap");
   const w = wrap.clientWidth, h = wrap.clientHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  // DPR discipline: capped at the governor's current rung (1.5 at boot) —
+  // native 2x+ panels were paying 1.8-4x the fragment work for subpixel gains.
+  renderer.setPixelRatio(currentDpr());
   renderer.setSize(w, h);
   labelRenderer.setSize(w, h);
 }
 
 function animate() {
   requestAnimationFrame(animate);
-  const now = performance.now() / 1000;
+  const tickMs = performance.now();
+  const tickDt = lastTickMs ? tickMs - lastTickMs : 16.7;
+  lastTickMs = tickMs;
+  if (sceneBusy(tickMs)) {
+    // ACTIVE: render this tick, and feed the DPR governor the true interval
+    // between consecutive active rendered frames.
+    if (lastActiveTickMs) perfSample(tickMs - lastActiveTickMs, tickMs);
+    lastActiveTickMs = tickMs;
+    idleAccumMs = 0;
+  } else {
+    lastActiveTickMs = 0;
+    // QUIET: accumulate ticks and render at ~24fps. lastFrameT is only
+    // advanced by rendered frames, so the skipped time flows into the next
+    // frame's dt automatically (≈42ms, well under the 0.12 clamp).
+    idleAccumMs += tickDt;
+    if (idleAccumMs < 1000 / IDLE_FPS) return;
+    idleAccumMs = Math.min(idleAccumMs - 1000 / IDLE_FPS, 34); // carry the remainder → a true 24fps average
+  }
+  framesRendered++;
+  const now = tickMs / 1000;
   // Clamp at 0.12 (was 0.05): under heavy late-game frames a 0.05 cap made
   // game-time run at a fraction of wall-time — walking felt glacial exactly
   // when the scene was heaviest. Every easing below is an exp() form (stable
@@ -2649,9 +2742,11 @@ function animate() {
 
   // Ease every door toward its open/closed target and swing the leaf on its hinge.
   const nowMs = performance.now();
+  doorsSettled = true;
   for (const e of doorCache.values()) {
     if (e.openTarget === 1 && nowMs > e.closeAt) e.openTarget = 0;
     e.open += (e.openTarget - e.open) * (1 - Math.exp(-7 * dt));
+    if (Math.abs(e.openTarget - e.open) > 0.005) doorsSettled = false; // mid-swing: hold full rate
     e.pivot.rotation.y = -e.open * DOOR_MAX_SWING;
   }
 
@@ -2690,6 +2785,7 @@ function animate() {
       }
     }
     // C. fade application — the ONLY code allowed to touch wall opacity.
+    xraySettled = true;
     for (const w of xrayWalls) {
       const m = w.material;
       const target = nowMs < w.userData.xray.until ? XRAY_OPACITY : 1;
@@ -2698,8 +2794,18 @@ function animate() {
       m.transparent = !solid;
       m.depthWrite = solid; // opaque pass when fully solid: no sorting artifacts
       if (solid) m.opacity = 1;
+      else if (Math.abs(target - m.opacity) > 0.004) xraySettled = false; // mid-fade: hold full rate
     }
   }
+
+  // Camera truly at rest? Its exp-eases never *quite* land, so "settled" is
+  // sub-millimeter motion since the last rendered frame — the catch-all that
+  // keeps every dolly/orbit/push-in at full rate until it has visibly stopped.
+  camSettled =
+    camera.position.distanceToSquared(camPrev) < 1e-6 &&
+    controls.target.distanceToSquared(lookPrev) < 1e-6;
+  camPrev.copy(camera.position);
+  lookPrev.copy(controls.target);
 
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -2716,7 +2822,7 @@ function initWardrobe() {
   if (!stage) return;
   const w = stage.clientWidth || 300, h = stage.clientHeight || 340;
   wRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  wRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  wRenderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio)); // same DPR cap as the main view
   wRenderer.setSize(w, h);
   // Same filmic response as the game view, so the portrait matches in-game skin.
   wRenderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -2820,9 +2926,21 @@ function stopWardrobe() {
 }
 
 // Headless-verification handle (scripts/screenshot.mjs): read the live state
-// and force a re-render after mutating it. Harmless in normal play.
+// and force a re-render after mutating it. `perf` exposes the throttle and
+// DPR-governor internals so headless runs can assert the idle savings.
+// Harmless in normal play.
 Object.defineProperty(window, "__dh", {
-  value: { get state() { return state; }, render: () => render() },
+  value: {
+    get state() { return state; },
+    render: () => render(),
+    perf: {
+      get frames() { return framesRendered; }, // GL frames actually rendered
+      get avgMs() { return perfAvg; }, // rolling ACTIVE frame time (ms)
+      get dpr() { return currentDpr(); },
+      get rung() { return dprIndex; },
+      get busy() { return renderer ? sceneBusy(performance.now()) : false; },
+    },
+  },
 });
 
 // boot

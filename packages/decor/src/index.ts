@@ -2848,6 +2848,10 @@ function roomArchitecture(g: THREE.Group, tile: number, ctx: DecorCtx): void {
 
   // Crown cornice ring at the very top of the walls (clears doorway openings).
   const crownY = WALL_H - 0.1;
+  // Perf: of the room trim only the PILASTERS cast shadows — they're the
+  // pillar-scale pieces whose grounding shadow actually reads. The crown and
+  // beams hug the wall-tops where their casts vanish under the candle pools,
+  // yet each cost a shadow-pass draw per room per frame.
   const crown = tagXrayTrim(
     instanced(new THREE.BoxGeometry(tile - 0.04, 0.13, 0.09), trimMat, [
       { pos: [0, crownY, -inner] },
@@ -2856,7 +2860,6 @@ function roomArchitecture(g: THREE.Group, tile: number, ctx: DecorCtx): void {
       { pos: [inner, crownY, 0], rot: [0, Math.PI / 2, 0] },
     ])
   );
-  crown.castShadow = true;
   g.add(crown);
 
   // Pilasters — the vertical architecture the bare walls lacked. Corners
@@ -2885,7 +2888,6 @@ function roomArchitecture(g: THREE.Group, tile: number, ctx: DecorCtx): void {
       beamXs.map((x) => ({ pos: [x, WALL_H - 0.22, 0] as [number, number, number] }))
     )
   );
-  beams.castShadow = true;
   g.add(beams);
 
   // A chair rail breaks up the tall plaster on each KNOWN-doorless wall.

@@ -260,9 +260,9 @@ export function attachKeepsake(
 
   const prop = spec.build(opts.light !== false);
   if (spec.rot) prop.rotation.set(...spec.rot);
-  prop.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
-  });
+  // Perf: keepsakes do NOT cast shadows — pocket-scale props are invisible in
+  // the shadow pass under the candle pools, yet each added shadow draws for
+  // every living explorer every frame. (The body itself still casts.)
   holder.add(prop);
   bone.add(holder);
   return holder;
