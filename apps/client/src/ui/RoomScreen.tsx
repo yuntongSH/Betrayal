@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CHARACTERS, CHARACTERS_BY_ID, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
 import type { CharacterDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { DuskScene } from "./DuskScene";
 
 const DIFFICULTY_BLURB: Record<string, string> = {
   relaxed: "Gentler haunts — monsters hit softer and die sooner.",
@@ -69,6 +70,7 @@ export function RoomScreen() {
 
   return (
     <div className="room-screen">
+      <DuskScene />
       <header className="room-header">
         <div>
           <h2>The Foyer</h2>

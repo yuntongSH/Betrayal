@@ -1069,9 +1069,9 @@ function buildLobby() {
     const chosen = party.some((p) => p.charId === c.id);
     const card = document.createElement("button");
     card.className = "char-card" + (chosen ? " mine" : "");
-    card.style.borderLeftColor = c.color; // identity rides the left edge; the ledger's amber top rule survives
+    card.style.setProperty("--pc", c.color); // identity colour — CSS derives the cameo backdrop + medallion from it
     card.innerHTML =
-      `<div class="char-avatar" style="background:${c.color}">${c.name.charAt(0)}</div>` +
+      `<div class="char-avatar">${c.name.charAt(0)}</div>` +
       `<div class="char-info"><strong>${c.name}</strong><em>${c.title}</em>` +
       `<div class="char-traits">` +
       DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("") +
