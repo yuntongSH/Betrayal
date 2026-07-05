@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { useStore } from "../state/store";
 import { pendingFx as beatQueue, useBeats } from "../state/beats";
 import { TILE, roomWorld } from "./layout";
+import { MAX_FRAME_DT } from "./followCam";
 import { FX_COLORS, pendingFx, type FxRequest } from "./director";
 
 const S = TILE / 4; // world-scale factor for distances tuned at the old 4-unit tile
@@ -57,7 +58,7 @@ export function BeatFX() {
     // Modal beat up: particles and light pulses hold (and new requests wait in
     // their queues), so the room's flourish plays as the world resumes.
     if (useBeats.getState().worldFrozen) return;
-    const dt = Math.min(0.05, rawDt);
+    const dt = Math.min(MAX_FRAME_DT, rawDt);
 
     // Drain new requests from the beat layer AND the director's own queue
     // (read the house from the store — read-only).

@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
-import { useBeats } from "../state/beats";
+import { markHauntSeen, useBeats } from "../state/beats";
 
 /** A one-time dramatic reveal when the haunt begins, dismissible per scenario.
- *  (The reveal sting fires from the beats ingest the moment the house turns.) */
+ *  (The reveal sting fires from the beats ingest the moment the house turns.)
+ *  Dismissal lives in the beats store so the End-turn auto-end can hold its
+ *  fire while this banner is still up (or still gated behind the modal queue). */
 export function HauntBanner() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const beatsBusy = useBeats((s) => !!s.active || s.queue.length > 0);
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  const dismissed = useBeats((s) => s.hauntSeen);
+  const setDismissed = markHauntSeen;
 
   const haunt = game.haunt;
-  useEffect(() => {
-    // Reset dismissal if a (hypothetical) new haunt id appears.
-    if (haunt && dismissed && dismissed !== haunt.id) setDismissed(null);
-  }, [haunt, dismissed]);
 
   // Let the beat that triggered the haunt (usually an omen card) finish first.
   if (beatsBusy) return null;

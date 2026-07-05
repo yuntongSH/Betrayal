@@ -15,6 +15,7 @@ import { ALL_CARDS, ROOMS_BY_ID, TRAITS, getCard } from "@dread-hollow/shared";
 import type { CardDef, CardType, GameState, RoomDef, Trait } from "@dread-hollow/shared";
 import { ambient } from "../audio/ambient";
 import { focusPulse } from "../three/director";
+import { followTarget } from "../three/followCam";
 
 export { focusPulse };
 
@@ -37,6 +38,21 @@ export interface Beat {
   rawText?: string;
   /** death beats */
   charId?: string | null;
+  /** Enqueue timestamp (performance.now) — lets activation give a just-issued
+   *  walk one retry to visibly start before the world-freeze engages. */
+  at?: number;
+}
+
+/** A visible dice roll — tumbles, settles onto real faces, then a verdict. */
+export interface DiceTray {
+  id: number;
+  dice: number[];
+  verdict: string;
+  outcome: "ok" | "bad" | "";
+  /** dice[0..settled) show their real face (one lands every DICE_STAGGER_MS). */
+  settled: number;
+  /** true during the closing fade (DICE_FADE_MS). */
+  out: boolean;
 }
 
 export interface BeatToast {
@@ -80,6 +96,11 @@ interface BeatsState {
    *  return / dt clamped to 0 / mixer timeScale 0) so the frozen frame behind
    *  the card matches the moment the card describes. DOM/CSS keeps animating. */
   worldFrozen: boolean;
+  /** The one visible dice roll (rolls queue; never two trays at once). */
+  diceTray: DiceTray | null;
+  /** Haunt id whose reveal banner this player has dismissed — while the
+   *  current haunt's banner is still up (or gated), auto-end must not fire. */
+  hauntSeen: string | null;
 }
 
 export const useBeats = create<BeatsState>(() => ({
@@ -91,7 +112,13 @@ export const useBeats = create<BeatsState>(() => ({
   vignette: { type: "", seq: 0 },
   traitDeltas: [],
   worldFrozen: false,
+  diceTray: null,
+  hauntSeen: null,
 }));
+
+export function markHauntSeen(id: string): void {
+  useBeats.setState({ hauntSeen: id });
+}
 
 /** True while a modal beat is up or pending — game input should be swallowed. */
 export function beatsBusy(): boolean {
@@ -105,15 +132,29 @@ export function beatsBusy(): boolean {
 
 /** Non-interactive holds — long enough to actually read the card. Early
  *  continue (click / Continue / Enter) still dismisses immediately. */
-export const CARD_HOLD_MS = 5000;
-const DEATH_HOLD_MS = 5000;
+export const CARD_HOLD_MS = 6500;
+const DEATH_HOLD_MS = 6500;
+
+/** Walk-arrival gate: a modal must not freeze the world mid-stride. While the
+ *  acting token is still walking (followTarget.moving), activation retries
+ *  every BEAT_WAIT_RETRY_MS, capped at BEAT_WAIT_MAX_MS per beat — then it
+ *  shows anyway. The retry window also gives a just-issued walk one beat of
+ *  grace to visibly start (the state lands before the token takes a step). */
+const BEAT_WAIT_RETRY_MS = 150;
+const BEAT_WAIT_MAX_MS = 3500; // per beat — after this, show anyway
 
 let watched: string | null = null;
 let modalTimer: ReturnType<typeof setTimeout> | null = null;
+/** Wall-clock end of the active non-interactive hold (0 while interactive) —
+ *  lets a dice tray EXTEND the card instead of racing it. */
+let modalEndsAt = 0;
 let gapTimer: ReturnType<typeof setTimeout> | null = null;
+let arrivalTimer: ReturnType<typeof setTimeout> | null = null;
+let arrivalDeadline = 0;
 let toastSeq = 0;
 
 function enqueue(beat: Beat): void {
+  beat.at = performance.now();
   useBeats.setState((s) => ({ queue: [...s.queue, beat] }));
   compressBacklog();
   maybeActivate();
@@ -143,13 +184,42 @@ function maybeActivate(): void {
   const s = useBeats.getState();
   if (s.active || gapTimer) return;
   if (s.queue.length === 0) {
+    arrivalDeadline = 0;
     if (s.worldFrozen) useBeats.setState({ worldFrozen: false }); // belt and braces
     flushHeldToasts();
     return;
   }
   const [beat, ...rest] = s.queue;
+
+  // Reveals wait for the walker: while the acting token is still covering
+  // ground (or its walk hasn't visibly started yet — the state message lands
+  // before the first step), defer activation so the world-freeze engages only
+  // once the move has been SEEN. Capped per beat, then the card shows anyway.
+  const now = performance.now();
+  if (arrivalDeadline === 0) arrivalDeadline = now + BEAT_WAIT_MAX_MS;
+  const justBorn = now - (beat.at ?? 0) < BEAT_WAIT_RETRY_MS;
+  if ((followTarget.moving || justBorn) && now < arrivalDeadline) {
+    // The walk must be free to finish — a hold-over freeze from the previous
+    // modal would deadlock this wait until the cap.
+    if (s.worldFrozen) useBeats.setState({ worldFrozen: false });
+    if (!arrivalTimer) {
+      arrivalTimer = setTimeout(() => {
+        arrivalTimer = null;
+        maybeActivate();
+      }, BEAT_WAIT_RETRY_MS);
+    }
+    return;
+  }
+  arrivalDeadline = 0;
+  if (arrivalTimer) {
+    clearTimeout(arrivalTimer);
+    arrivalTimer = null;
+  }
+
   const interactive = beat.playerId != null && beat.playerId === watched;
-  const hold = beat.kind === "death" ? DEATH_HOLD_MS : CARD_HOLD_MS;
+  let hold = beat.kind === "death" ? DEATH_HOLD_MS : CARD_HOLD_MS;
+  // A dice tray already mid-flight must outlive the card it belongs to.
+  if (trayEndsAt > Date.now()) hold = Math.max(hold, trayEndsAt - Date.now() + DICE_CARD_LINGER_MS);
   useBeats.setState({
     active: beat,
     activeInteractive: interactive,
@@ -158,7 +228,12 @@ function maybeActivate(): void {
     worldFrozen: true,
   });
   showEffects(beat);
-  if (!interactive) modalTimer = setTimeout(dismissActive, hold);
+  if (!interactive) {
+    modalEndsAt = Date.now() + hold;
+    modalTimer = setTimeout(dismissActive, hold);
+  } else {
+    modalEndsAt = 0;
+  }
 }
 
 export function dismissActive(): void {
@@ -167,6 +242,7 @@ export function dismissActive(): void {
     clearTimeout(modalTimer);
     modalTimer = null;
   }
+  modalEndsAt = 0;
   // Unfreeze the 3D world exactly when the modal queue drains; a queued
   // follow-up modal keeps it frozen through the 250ms gap (no jerky resume).
   useBeats.setState((s) => ({ active: null, worldFrozen: s.queue.length > 0 }));
@@ -189,8 +265,17 @@ function showEffects(beat: Beat): void {
 export function resetBeats(): void {
   if (modalTimer) clearTimeout(modalTimer);
   if (gapTimer) clearTimeout(gapTimer);
+  if (arrivalTimer) clearTimeout(arrivalTimer);
   modalTimer = null;
   gapTimer = null;
+  arrivalTimer = null;
+  arrivalDeadline = 0;
+  modalEndsAt = 0;
+  for (const t of trayTimers) clearTimeout(t);
+  trayTimers = [];
+  trayQueue = [];
+  trayEndsAt = 0;
+  trayCurEndsAt = 0;
   pendingFx.length = 0;
   heldToasts = [];
   useBeats.setState({
@@ -201,7 +286,149 @@ export function resetBeats(): void {
     toasts: [],
     traitDeltas: [],
     worldFrozen: false,
+    diceTray: null,
+    hauntSeen: null,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Dice tray — every engine roll (trait tests, haunt roll, combat) becomes a
+// lower-third overlay: dice tumble ~0.9s, settle onto their real faces one by
+// one, a verdict line lands, hold ~2.6s, fade. Rolls queue; never two trays at
+// once. Pure DOM/CSS, so it keeps animating while the 3D world is frozen.
+// (Constants and class names mirror the artifact frontend exactly.)
+// ---------------------------------------------------------------------------
+
+export const DICE_TUMBLE_MS = 900; // spin before the dice settle on their real faces
+export const DICE_STAGGER_MS = 90; // per-die settle offset
+export const DICE_HOLD_MS = 2600; // read time after the last die settles
+export const DICE_FADE_MS = 450;
+export const DICE_GAP_MS = 160; // breath between queued trays
+export const DICE_CARD_LINGER_MS = 1200; // an open card modal outlives the tray by this
+const DICE_QUEUE_MAX = 3; // showing + pending — presentation must not lag the game
+export const DIE_PIPS = ["", "•", "• •"]; // Betrayal d6 faces 0 / 1 / 2
+
+/** Full life of one tray, from mount to the gap before the next. */
+function trayDuration(n: number): number {
+  return DICE_TUMBLE_MS + (n - 1) * DICE_STAGGER_MS + DICE_HOLD_MS + DICE_FADE_MS + DICE_GAP_MS;
+}
+
+interface TrayRequest {
+  dice: number[];
+  verdict: string;
+  outcome: "ok" | "bad" | "";
+}
+
+let trayQueue: TrayRequest[] = [];
+let trayTimers: Array<ReturnType<typeof setTimeout>> = [];
+/** When everything queued (including the tray on screen) finishes (Date.now). */
+let trayEndsAt = 0;
+/** When the tray currently on screen finishes (Date.now; 0 when none). */
+let trayCurEndsAt = 0;
+let traySeq = 0;
+
+function recomputeTrayEnd(): void {
+  let t = trayCurEndsAt || Date.now();
+  for (const q of trayQueue) t += trayDuration(q.dice.length);
+  trayEndsAt = t;
+}
+
+/** Verdict line + ok/bad color, derived from the engine's log text (formats
+ *  frozen in engine.ts:306/:332/:458 and haunt.ts combat lines). */
+function diceVerdict(text: string, total: number): { verdict: string; outcome: "ok" | "bad" | "" } {
+  const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+  // "X rolls might — 3 vs 4: failure."
+  let m = text.match(/rolls (\w+) — (\d+) vs (\d+): (success|failure)/);
+  if (m) {
+    return {
+      verdict: `${cap(m[1]!)} ${m[3]} — rolled ${m[2]} · ${m[4]}`,
+      outcome: m[4] === "success" ? "ok" : "bad",
+    };
+  }
+  // "X makes the haunt roll: 4 vs 3 omen(s) in play." (roll < omens = the turn)
+  m = text.match(/haunt roll: (\d+) vs (\d+) omen/);
+  if (m) {
+    const holds = Number(m[1]) >= Number(m[2]);
+    return {
+      verdict: `Haunt roll — ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`,
+      outcome: holds ? "ok" : "bad",
+    };
+  }
+  // "X studies the shadows — Knowledge 3 vs 4."
+  m = text.match(/— (\w+) (\d+) vs (\d+)/);
+  if (m) {
+    const ok = Number(m[2]) >= Number(m[3]);
+    return {
+      verdict: `${cap(m[1]!)} ${m[3]} — rolled ${m[2]} · ${ok ? "success" : "failure"}`,
+      outcome: ok ? "ok" : "bad",
+    };
+  }
+  // Combat and friends: the log line already narrates the outcome.
+  return { verdict: `${text.replace(/\.\s*$/, "")} · rolled ${total}`, outcome: "" };
+}
+
+function enqueueDiceTray(dice: number[], text: string): void {
+  if (dice.length === 0) return;
+  const total = dice.reduce((a, b) => a + b, 0);
+  trayQueue.push({ dice: [...dice], ...diceVerdict(text, total) });
+  // Never two at once — and never an unbounded backlog (a monster phase can
+  // log several combats in one dispatch): oldest pending rolls drop.
+  while (trayQueue.length > DICE_QUEUE_MAX) trayQueue.shift();
+  recomputeTrayEnd();
+  maybeShowTray();
+  // An open card modal must outlive the roll it demanded.
+  extendModalForDice();
+}
+
+function maybeShowTray(): void {
+  if (useBeats.getState().diceTray) return;
+  const next = trayQueue.shift();
+  if (!next) {
+    trayCurEndsAt = 0;
+    return;
+  }
+  const id = ++traySeq;
+  const n = next.dice.length;
+  useBeats.setState({ diceTray: { id, ...next, settled: 0, out: false } });
+  // Faces flicker while the dice tumble (CSS), then each settles on its real
+  // value in stagger order; the verdict fades in once all have landed.
+  for (let i = 0; i < n; i++) {
+    trayTimers.push(
+      setTimeout(() => {
+        useBeats.setState((s) =>
+          s.diceTray?.id === id ? { diceTray: { ...s.diceTray, settled: i + 1 } } : {},
+        );
+      }, DICE_TUMBLE_MS + i * DICE_STAGGER_MS),
+    );
+  }
+  const settled = DICE_TUMBLE_MS + (n - 1) * DICE_STAGGER_MS;
+  trayTimers.push(
+    setTimeout(() => {
+      useBeats.setState((s) =>
+        s.diceTray?.id === id ? { diceTray: { ...s.diceTray, out: true } } : {},
+      );
+    }, settled + DICE_HOLD_MS),
+    setTimeout(() => {
+      useBeats.setState((s) => (s.diceTray?.id === id ? { diceTray: null } : {}));
+      maybeShowTray();
+    }, settled + DICE_HOLD_MS + DICE_FADE_MS + DICE_GAP_MS),
+  );
+  trayCurEndsAt = Date.now() + trayDuration(n);
+  recomputeTrayEnd();
+}
+
+/** A roll landed while a card is up: the card's auto-dismiss stretches until
+ *  every queued tray finishes + DICE_CARD_LINGER_MS (never shortened). */
+function extendModalForDice(): void {
+  const s = useBeats.getState();
+  if (!s.active || s.activeInteractive || !modalTimer) return;
+  const wantEnd = trayEndsAt + DICE_CARD_LINGER_MS;
+  if (wantEnd <= modalEndsAt) return;
+  const holdLeft = wantEnd - Date.now();
+  clearTimeout(modalTimer);
+  modalTimer = setTimeout(dismissActive, holdLeft);
+  modalEndsAt = wantEnd;
+  useBeats.setState({ activeHoldMs: holdLeft }); // restarts the drain bar
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +574,9 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
 
   const fresh = next.log.filter((e) => e.id >= snap.nextLogId); // log ids are monotonic (state.ts:96)
   for (const e of fresh) {
+    // Every roll the engine made becomes a visible dice tray (trait tests,
+    // the haunt roll, combat) — the board game's soul, not a tiny log chip.
+    if (e.dice && e.dice.length > 0) enqueueDiceTray(e.dice, e.text);
     let m: RegExpMatchArray | null = null;
     if (e.kind === "move" && (m = e.text.match(/^(.+) discovers the (.+)\.$/))) {
       const p = byName(next, m[1]!);

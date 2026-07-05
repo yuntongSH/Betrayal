@@ -86,6 +86,30 @@ export function litFactorFor(d: number | undefined): number {
   return 0.16;
 }
 
+/** Light budget: even lit rooms accumulate as the house grows, and three
+ *  recompiles every lit-material program when the visible light count changes.
+ *  Keep at most this many room accent lights visible, ranked by litFactor. */
+const MAX_ROOM_LIGHTS = 10;
+
+/** The best-lit rooms, capped at MAX_ROOM_LIGHTS. Ordering is stable (ties
+ *  prefer already-lit rooms, then the room key) so the set doesn't churn —
+ *  light-count changes are what force shader recompiles. */
+function pickLitRooms(
+  house: GameState["house"],
+  visibility: Map<string, number>,
+  prev: ReadonlySet<string>,
+): Set<string> {
+  const ranked = Object.keys(house)
+    .map((k) => [k, litFactorFor(visibility.get(k))] as const)
+    .sort(
+      (a, b) =>
+        b[1] - a[1] ||
+        Number(prev.has(b[0])) - Number(prev.has(a[0])) ||
+        (a[0] < b[0] ? -1 : 1),
+    );
+  return new Set(ranked.slice(0, MAX_ROOM_LIGHTS).map(([k]) => k));
+}
+
 function DoorMarker({
   base,
   dir,
@@ -155,6 +179,15 @@ export function HouseView() {
   );
   const visibility = useMemo(() => visibilityLevels(game), [game]);
 
+  // Light budget with hysteresis: remember the last lit set so threshold ties
+  // resolve toward the rooms already lit (no on/off churn between states).
+  const litRoomsPrev = useRef<Set<string>>(new Set());
+  const litRooms = useMemo(() => {
+    const next = pickLitRooms(game.house, visibility, litRoomsPrev.current);
+    litRoomsPrev.current = next;
+    return next;
+  }, [game.house, visibility]);
+
   const me = game.players.find((p) => p.id === myId);
   const myRoom = me?.position ? game.house[me.position] : undefined;
 
@@ -173,6 +206,7 @@ export function HouseView() {
             def={def}
             highlighted={highlightSet.has(room.key)}
             litFactor={litFactorFor(visibility.get(room.key))}
+            lightOn={litRooms.has(room.key)}
             onClick={() => highlightSet.has(room.key) && moveTo(room.key)}
           />
         );

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { CHARACTERS_BY_ID } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
-import { dismissActive, useBeats } from "../state/beats";
+import { DICE_STAGGER_MS, DIE_PIPS, dismissActive, useBeats } from "../state/beats";
 
 /** Card-type icons — exact inline SVGs shared verbatim with the artifact. */
 const CARD_ICON: Record<string, string> = {
@@ -24,6 +24,7 @@ export function BeatOverlay() {
   const holdMs = useBeats((s) => s.activeHoldMs);
   const toasts = useBeats((s) => s.toasts);
   const vignette = useBeats((s) => s.vignette);
+  const tray = useBeats((s) => s.diceTray);
 
   // Enter/Space dismiss while a modal is up (movement keys are swallowed
   // separately by the input layer while beats are busy).
@@ -76,9 +77,10 @@ export function BeatOverlay() {
               <button className="btn primary dc-continue" onClick={dismissActive}>
                 Continue ▸
               </button>
-              {/* auto-advance made legible: drains over the hold duration */}
+              {/* auto-advance made legible: drains over the hold duration
+                  (keyed so a dice-tray extension restarts the drain) */}
               {!interactive && holdMs != null && (
-                <div className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
+                <div key={holdMs} className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
               )}
             </div>
           </div>
@@ -102,8 +104,36 @@ export function BeatOverlay() {
               Continue ▸
             </button>
             {!interactive && holdMs != null && (
-              <div className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
+              <div key={holdMs} className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Dice tray — the roll made visible, lower third. Sits ABOVE the card
+          backdrop (dice-layer z 12 > card-reveal z 9), and pure DOM/CSS so it
+          animates through world-freeze. Timing/queueing lives in beats.ts:
+          dice tumble (faces flicker via CSS), settle one by one in stagger
+          order, then the verdict fades in; hold, fade, next queued tray. */}
+      {tray && (
+        <div className="dice-layer">
+          <div className={`dice-tray${tray.out ? " out" : ""}`}>
+            <div className="dice-row">
+              {tray.dice.map((v, i) => (
+                <span
+                  key={`${tray.id}:${i}`}
+                  className={i < tray.settled ? `die die-${v}` : "die"}
+                  style={{ animationDelay: `${i * DICE_STAGGER_MS}ms` } as CSSProperties}
+                >
+                  {i < tray.settled ? DIE_PIPS[v] ?? String(v) : ""}
+                </span>
+              ))}
+            </div>
+            <div
+              className={`dice-verdict${tray.settled >= tray.dice.length ? " show" : ""}${tray.outcome ? ` ${tray.outcome}` : ""}`}
+            >
+              {tray.verdict}
+            </div>
           </div>
         </div>
       )}

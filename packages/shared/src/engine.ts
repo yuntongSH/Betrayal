@@ -661,6 +661,10 @@ export interface LegalMoves {
   /** A Knowledge check to learn something hidden is available. */
   canInvestigate: boolean;
   canEndTurn: boolean;
+  /** Advisory for the UI: strictly NOTHING remains this turn but ending it —
+   *  no move (not even a free backtrack), door, attack, pickup, usable item,
+   *  possible trade, rest, barricade or investigate. */
+  nothingLeft: boolean;
 }
 
 export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
@@ -676,13 +680,14 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     barricadeDoors: [],
     canInvestigate: false,
     canEndTurn: false,
+    nothingLeft: false,
   };
   const p = getPlayer(s, playerId);
   if (!p || !isActiveTurn(s, playerId) || !p.position) return empty;
   // A player who died mid-turn is briefly still active until the turn hands off;
   // the only thing they can still do is end the turn. Offer exactly that, so the
   // legalMoves contract agrees with the reducer (which accepts their end-turn).
-  if (!p.alive) return { ...empty, canEndTurn: true };
+  if (!p.alive) return { ...empty, canEndTurn: true, nothingLeft: true };
 
   const moving = s.movementLeft > 0;
   // Walking is budgeted by net distance from the turn's start, so a step back
@@ -733,6 +738,20 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
       : [];
   const canInvestigate = moving;
 
+  // Trading only counts as "something to do" if there's an item to hand over.
+  const canTrade = tradePartners.length > 0 && p.inventory.length > 0;
+  const nothingLeft =
+    explored.length === 0 &&
+    doors.length === 0 &&
+    attackMonsters.length === 0 &&
+    attackPlayers.length === 0 &&
+    pickupItems.length === 0 &&
+    usableItems.length === 0 &&
+    !canTrade &&
+    !canRest &&
+    barricadeDoors.length === 0 &&
+    !canInvestigate;
+
   return {
     explored,
     doors,
@@ -745,5 +764,6 @@ export function legalMoves(s: GameState, playerId: PlayerId): LegalMoves {
     barricadeDoors,
     canInvestigate,
     canEndTurn: true,
+    nothingLeft,
   };
 }

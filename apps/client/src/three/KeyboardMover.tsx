@@ -1,32 +1,6 @@
 import { useEffect } from "react";
-import * as THREE from "three";
-import { DIRECTIONS, legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
+import { legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
-import { followTarget } from "./followCam";
-
-/** Grid axes in world space (north = −z, east = +x). */
-const AXIS: Record<Direction, THREE.Vector3> = {
-  north: new THREE.Vector3(0, 0, -1),
-  south: new THREE.Vector3(0, 0, 1),
-  east: new THREE.Vector3(1, 0, 0),
-  west: new THREE.Vector3(-1, 0, 0),
-};
-
-/** Snap an arbitrary ground vector to the nearest compass direction. */
-function snap(v: THREE.Vector3): Direction {
-  let best: Direction = "north";
-  let bestDot = -Infinity;
-  for (const d of DIRECTIONS) {
-    const dot = v.dot(AXIS[d]);
-    if (dot > bestDot) { bestDot = dot; best = d; }
-  }
-  return best;
-}
-
-/** Compass turns relative to a facing (the hero's left is facing rotated +90°). */
-const LEFT_OF: Record<Direction, Direction> = { north: "west", west: "south", south: "east", east: "north" };
-const RIGHT_OF: Record<Direction, Direction> = { north: "east", east: "south", south: "west", west: "north" };
-const BACK_OF: Record<Direction, Direction> = { north: "south", south: "north", east: "west", west: "east" };
 
 const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowUp: "up", w: "up", W: "up",
@@ -35,19 +9,20 @@ const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowRight: "right", d: "right", D: "right",
 };
 
-// Scratch — the hero's facing on the ground plane, rebuilt per keypress.
-const FACING = new THREE.Vector3();
-
 /**
- * Keyboard movement. Arrows/WASD are interpreted **relative to the hero** —
- * "up" continues the way he is walking/standing, "left" is *his* left — by
- * reading the token group's live yaw (broadcast via followTarget by the active
- * token; yaw = atan2(dx, dz), so facing = (sin yaw, 0, cos yaw)) and snapping
- * it to the nearest grid direction. Since the walker always turns to face his
- * travel direction, controls stay consistent hop after hop. E ends the turn.
- * When a press can't do anything we flash a one-line reason instead of
- * silently ignoring it.
+ * Keyboard movement. Arrows/WASD are MAP-ABSOLUTE — ↑ is always north on the
+ * minimap, ← always west — so the keys agree with the bird's-eye map no matter
+ * how the camera orbits or which way the hero stands. (Hero-relative keys were
+ * tried and inverted against the map whenever the hero faced south.) E ends
+ * the turn. When a press can't do anything we flash a one-line reason instead
+ * of silently ignoring it.
  */
+const KEY_DIR: Record<"up" | "down" | "left" | "right", Direction> = {
+  up: "north",
+  down: "south",
+  left: "west",
+  right: "east",
+};
 export function KeyboardMover() {
   const game = useStore((s) => s.game);
   const myId = useStore((s) => s.playerId);
@@ -77,14 +52,8 @@ export function KeyboardMover() {
       const room = me?.position ? game.house[me.position] : undefined;
       if (!room) return;
 
-      // The hero's facing, snapped to the grid: forward is where he looks.
-      FACING.set(Math.sin(followTarget.yaw), 0, Math.cos(followTarget.yaw));
-      const facing = snap(FACING);
-      const dir =
-        which === "up" ? facing
-        : which === "down" ? BACK_OF[facing]
-        : which === "left" ? LEFT_OF[facing]
-        : RIGHT_OF[facing];
+      // Map-absolute: the key IS the compass direction, same as the minimap.
+      const dir = KEY_DIR[which];
 
       const legal = legalMoves(game, myId);
       if (legal.doors.includes(dir)) {

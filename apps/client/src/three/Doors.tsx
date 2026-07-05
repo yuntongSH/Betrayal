@@ -14,7 +14,7 @@ import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 import { FLOOR_Y, TILE, WALL_H } from "./layout";
-import { registerWall, unregisterWall } from "./followCam";
+import { registerWall, unregisterWall, MAX_FRAME_DT } from "./followCam";
 
 const HALF = TILE / 2;
 const DOOR_MAX_SWING = Math.PI * 0.56;
@@ -204,7 +204,7 @@ export function Doors() {
   useFrame((_, delta) => {
     if (useBeats.getState().worldFrozen) return; // hold every leaf mid-swing
     const now = performance.now();
-    const k = 1 - Math.exp(-7 * Math.min(0.05, delta));
+    const k = 1 - Math.exp(-7 * Math.min(MAX_FRAME_DT, delta));
     for (const st of states.current.values()) {
       if (st.openTarget === 1 && now > st.closeAt) st.openTarget = 0;
       st.open += (st.openTarget - st.open) * k;

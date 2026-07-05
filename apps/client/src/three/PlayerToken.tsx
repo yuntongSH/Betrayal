@@ -6,7 +6,7 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
-import { followTarget, registerToken, unregisterToken } from "./followCam";
+import { followTarget, registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
 import { followPath, type WalkPoint } from "./walk";
 import { useBeats } from "../state/beats";
 import { TRAIT_COLOR } from "../ui/icons";
@@ -90,10 +90,12 @@ export function PlayerToken({
     return () => unregisterToken(tokenId);
   }, [tokenId, alive]);
 
-  useFrame((state, dt) => {
+  useFrame((state, rawDt) => {
     const g = group.current;
     if (!g) return;
     const t = state.clock.elapsedTime;
+    // Cap hitches (tab-switch, GC) without dropping to slow-motion at low FPS.
+    const dt = Math.min(MAX_FRAME_DT, rawDt);
 
     // Snap into place on the first frame (never walk in from a stale path);
     // travel thereafter, so a move between rooms reads as walking.

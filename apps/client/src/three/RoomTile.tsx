@@ -9,6 +9,14 @@ import { registerWall, unregisterWall } from "./followCam";
 
 const HALF = TILE / 2;
 
+/** Fog-of-war culling: rooms far from every living explorer stop rendering
+ *  their decor and accent light (floor, walls and label stay, so the dollhouse
+ *  silhouette survives and walls stay x-ray-registered). Hysteresis — hide
+ *  below DECOR_HIDE_LIT, show again only at/above DECOR_SHOW_LIT — so a room
+ *  sitting on the threshold can't flip-flop and thrash shader recompiles. */
+const DECOR_HIDE_LIT = 0.2;
+const DECOR_SHOW_LIT = 0.24;
+
 /** Unit outward normals per wall edge, for the x-ray "camera-facing" test. */
 const WALL_NORMAL: Record<Direction, THREE.Vector3> = {
   north: new THREE.Vector3(0, 0, -1),
@@ -22,6 +30,7 @@ export function RoomTile({
   def,
   highlighted,
   litFactor = 1,
+  lightOn = true,
   onClick,
 }: {
   room: PlacedRoom;
@@ -29,6 +38,9 @@ export function RoomTile({
   highlighted: boolean;
   /** Fog-of-war brightness 0..1 — how near a living explorer's light this is. */
   litFactor?: number;
+  /** Light budget (HouseView): only the ~10 best-lit rooms keep their accent
+   *  pointLight visible — an invisible light frees the shader entirely. */
+  lightOn?: boolean;
   onClick: () => void;
 }) {
   const [wx, wy, wz] = roomWorld(room);
@@ -120,6 +132,12 @@ export function RoomTile({
     }
   }, [trim, room.key, wx, wy, wz]);
 
+  // Deep-fog culling with hysteresis (see DECOR_HIDE_LIT/DECOR_SHOW_LIT).
+  const decorHidden = useRef(false);
+  if (litFactor < DECOR_HIDE_LIT) decorHidden.current = true;
+  else if (litFactor >= DECOR_SHOW_LIT) decorHidden.current = false;
+  const dimmed = decorHidden.current;
+
   // Track the highlight on the (mutable) floor material each render.
   if (highlighted) {
     floorMat.emissive.set("#5a8f5a");
@@ -204,12 +222,16 @@ export function RoomTile({
         );
       })}
 
-      {/* the room's themed furnishings */}
-      <primitive object={decor} />
+      {/* the room's themed furnishings (hidden deep in the fog — the floor,
+          walls and label carry the silhouette) */}
+      <primitive object={decor} visible={!dimmed} />
 
       {/* per-room candle-pool: lower + tighter falloff gives a bright pool with
-          a dark edge instead of a flat fill */}
+          a dark edge instead of a flat fill. Only the best-lit rooms keep the
+          light VISIBLE (budget + fog culling) — three re-counts lights and
+          skips the room's shading cost entirely when it is off. */}
       <pointLight
+        visible={lightOn && !dimmed}
         position={[0, WALL_H * 0.55, 0]}
         color={theme.accent}
         intensity={theme.accentIntensity * 20 * litFactor}

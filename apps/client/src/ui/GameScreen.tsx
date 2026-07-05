@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { CHARACTERS_BY_ID, ROOMS_BY_ID, TRAITS, getCard, legalMoves, neighborKey } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
 import { useStore } from "../state/store";
+import { beatsBusy, useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 import { Scene } from "../three/Scene";
 import { TraitPanel } from "./TraitPanel";
@@ -13,6 +14,10 @@ import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
 import { Minimap } from "./Minimap";
 import { TRAIT_ICON, tagIcon } from "./icons";
+
+/** When strictly nothing remains this turn, End turn shines and a visible
+ *  countdown auto-ends it after this long (matches the .et-timer CSS drain). */
+const AUTO_END_MS = 5000;
 
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
@@ -63,7 +68,35 @@ export function GameScreen() {
   const barricadeDoors = legal?.barricadeDoors ?? [];
   const myRoom = active && active.position ? game.house[active.position] : null;
 
-  // Keyboard movement (hero-relative) lives in <KeyboardMover/> inside the Canvas.
+  // End-turn shine + auto-end: when it's MY turn and the engine says strictly
+  // NOTHING remains (legal.nothingLeft), the button glows and a visible 5s
+  // countdown ends the turn for me. Any state change restarts the countdown;
+  // a card modal (worldFrozen) pauses it entirely — it restarts on dismissal.
+  // The haunt-reveal banner (up or still gated) also holds the countdown.
+  const worldFrozen = useBeats((s) => s.worldFrozen);
+  const hauntSeen = useBeats((s) => s.hauntSeen);
+  const hauntPending =
+    game.phase === "haunt" && !!game.haunt && hauntSeen !== game.haunt.id;
+  const shine =
+    myTurn && !ended && !!legal?.nothingLeft && !worldFrozen && !hauntPending;
+  // A per-state key restarts the .et-timer drain whenever the game changes.
+  const shineSeq = useRef(0);
+  const shineGame = useRef<typeof game | null>(null);
+  if (shineGame.current !== game) {
+    shineGame.current = game;
+    shineSeq.current++;
+  }
+  useEffect(() => {
+    if (!shine) return;
+    const t = setTimeout(() => {
+      // Re-check at the wire: a beat may have landed since (its modal shows a
+      // breath later) — never end the turn under the player mid-reveal.
+      if (!beatsBusy()) endTurn();
+    }, AUTO_END_MS);
+    return () => clearTimeout(t);
+  }, [shine, game, endTurn]);
+
+  // Keyboard movement (map-absolute) lives in <KeyboardMover/> inside the Canvas.
 
   return (
     <div className="game-shell">
@@ -183,9 +216,17 @@ export function GameScreen() {
                 </button>
               );
             })}
-            <button className="btn primary" onClick={endTurn}>
+            <button className={`btn primary${shine ? " shine" : ""}`} onClick={endTurn}>
               <span className="bi">🕯</span>
               <span>End turn</span>
+              {/* visible 5s countdown: a thin bar drains, then the turn ends */}
+              {shine && (
+                <span
+                  key={shineSeq.current}
+                  className="et-timer"
+                  style={{ animationDuration: `${AUTO_END_MS}ms` }}
+                />
+              )}
             </button>
           </>
         )}
@@ -233,9 +274,8 @@ export function GameScreen() {
       )}
 
       <div className="hud-hint">
-        Drag to orbit · ↑ walks your explorer onward, ←/→ step to their left
-        and right, ↓ turns back · click a glowing room, a flame arrow or the
-        map · E ends your turn
+        Drag to orbit · arrows walk by the map — ↑ north, ← west · click a
+        glowing room, a flame arrow or the map · E ends your turn
         {game.phase === "haunt" ? " · click a monster to strike · ✦ spectral foes are fought with the mind" : ""}
       </div>
     </div>

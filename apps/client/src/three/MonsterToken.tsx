@@ -4,7 +4,7 @@ import { Html } from "@react-three/drei";
 import { buildMonsterFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
-import { registerToken, unregisterToken } from "./followCam";
+import { registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
 import { followPath, type WalkPoint } from "./walk";
 import { useBeats } from "../state/beats";
 
@@ -56,10 +56,12 @@ export function MonsterToken({
     return () => unregisterToken(tokenId);
   }, [tokenId]);
 
-  useFrame((state, dt) => {
+  useFrame((state, rawDt) => {
     const g = group.current;
     if (!g) return;
     const t = state.clock.elapsedTime;
+    // Cap hitches (tab-switch, GC) without dropping to slow-motion at low FPS.
+    const dt = Math.min(MAX_FRAME_DT, rawDt);
     if (!placed.current) {
       g.position.copy(target.current);
       if (activePath.current) cursor.current.i = activePath.current.length; // never walk in from a stale path

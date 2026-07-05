@@ -385,6 +385,48 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
 .card-timer{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--bc,#c2517a);
   opacity:.85;transform-origin:left center;animation:card-timer-drain linear both}
 @keyframes card-timer-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+/* ===== End-turn shine — nothing left to do but end the turn ===== */
+/* Warm pulsing glow on the End turn button plus a thin bar draining over the
+   5s auto-end window. Both resume mid-animation after a HUD rebuild via the
+   negative animation-delay in --dly (same trick as the trait pulses). */
+.btn.primary.shine{position:relative;overflow:hidden;animation:et-pulse 1.6s ease-in-out infinite;
+  animation-delay:var(--dly,0ms);border-color:var(--flame)}
+@keyframes et-pulse{0%,100%{box-shadow:0 0 8px rgba(232,168,90,.3)}
+  50%{box-shadow:0 0 22px rgba(232,168,90,.85),0 0 44px rgba(232,168,90,.28)}}
+.et-timer{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--flame);opacity:.9;
+  transform-origin:left center;pointer-events:none;animation:et-drain 5000ms linear both}
+@keyframes et-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+
+/* ===== Dice tray — visible rolls as a lower-third overlay ===== */
+/* Sits ABOVE the card-reveal backdrop (z 9) and the haunt overlay (z 10):
+   an event card that demands a roll shows its dice over the open card. */
+#dice-layer{position:absolute;inset:0;pointer-events:none;z-index:12}
+.dice-tray{position:absolute;left:50%;bottom:26%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:.5rem;
+  padding:.85rem 1.35rem .7rem;border-radius:14px;background:rgba(12,9,8,.86);
+  border:1px solid rgba(226,168,90,.42);box-shadow:0 12px 44px rgba(0,0,0,.6);
+  backdrop-filter:blur(3px);animation:toast-in .25s ease both}
+.dice-tray.out{transition:opacity .45s ease,transform .45s ease;opacity:0;
+  transform:translateX(-50%) translateY(10px)}
+.dice-tray .dice-row{display:flex;gap:.5rem;perspective:420px}
+/* Bone-parchment dice (0/1/2 pips). Scoped under .dice-tray so the tiny
+   Chronicle log chips (.die.d0 …) keep their own look. */
+.dice-tray .die{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;
+  font-size:15px;font-weight:700;letter-spacing:1px;color:#241a10;font-style:normal;
+  background:linear-gradient(150deg,#f2e7d4,#cdbfa6);border:1px solid #8a7a5e;
+  box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.5);
+  animation:die-tumble .9s cubic-bezier(.32,.72,.36,1.04) both}
+.dice-tray .die.die-0{color:#9a8d78}
+.dice-tray .die.die-2{background:linear-gradient(150deg,#f6e3bd,#e2b874);border-color:var(--flame);
+  box-shadow:0 3px 10px rgba(232,168,90,.4),inset 0 1px 0 rgba(255,255,255,.5)}
+@keyframes die-tumble{0%{transform:translateY(-30px) rotateX(0) rotateZ(-14deg);opacity:0}
+  15%{opacity:1}62%{transform:translateY(2px) rotateX(660deg) rotateZ(8deg)}
+  82%{transform:translateY(0) rotateX(714deg) rotateZ(-3deg) scale(1.12)}
+  100%{transform:rotateX(720deg) rotateZ(0) scale(1)}}
+.dice-verdict{font-size:.95rem;font-style:italic;color:#e8dcc9;opacity:0;transition:opacity .3s ease .05s}
+.dice-verdict.show{opacity:1}
+.dice-verdict.ok{color:#8fd08f}.dice-verdict.bad{color:#e88f7e}
+
 /* Floating trait delta over a 3D character ("−1 Knowledge"). The outer element
    belongs to CSS2DRenderer (it owns its transform); the inner span animates. */
 .stat-float{pointer-events:none;font-weight:bold;font-size:14px;white-space:nowrap;
@@ -438,7 +480,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
   <div id="hud-bottom" class="hud-bottom"></div>
   <button id="sound-btn" class="icon-btn" title="Toggle sound" aria-label="Toggle sound">🔈</button>
   <button id="help-btn" class="icon-btn" title="How to play" aria-label="How to play">?</button>
-  <div id="hud-hint">Drag to orbit · arrows/WASD move relative to your explorer — ↑ walks the way they face · click a glowing room, flame arrow or map square · click a monster to strike</div>
+  <div id="hud-hint">Drag to orbit · arrows/WASD walk by the map — ↑ north, ← west · click a glowing room, flame arrow or map square · click a monster to strike</div>
   <div id="minimap" class="minimap" aria-label="Floor map">
     <div id="minimap-floors" class="minimap-floors"></div>
     <canvas id="minimap-canvas" class="minimap-canvas"></canvas>
@@ -449,6 +491,7 @@ body.haunting .atmos-warm{background:radial-gradient(72% 56% at 50% 46%,rgba(194
     <div class="beat-vignette"></div>
     <div class="beat-toasts"></div>
   </div>
+  <div id="dice-layer"></div>
 </div>
 
 <div id="help-overlay" class="modal-overlay">

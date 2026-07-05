@@ -421,3 +421,34 @@ describe("deliberate turn actions (rest / barricade / investigate)", () => {
     expect(added).toMatch(/studies the shadows/);
   });
 });
+
+// ---- nothingLeft: the UI's "shine / auto-end the turn" advisory -------------
+describe("legalMoves.nothingLeft", () => {
+  it("is false on a fresh turn (doors/moves remain) and true once truly exhausted", () => {
+    const s = startedGame();
+    const pid = s.activePlayerId!;
+    beginTurn(s);
+    expect(legalMoves(s, pid).nothingLeft).toBe(false); // fresh turn: doors exist
+
+    // Exhaust the turn the way a draw-halt does: all steps spent, none refundable.
+    const p = getPlayer(s, pid)!;
+    s.turnSpent = 99;
+    s.movementLeft = 0;
+    const legal = legalMoves(s, pid);
+    expect(legal.explored).toHaveLength(0); // not even a free backtrack
+    expect(legal.doors).toHaveLength(0);
+    expect(legal.canEndTurn).toBe(true);
+    expect(legal.nothingLeft).toBe(true);
+
+    // A usable consumable is still "something to do".
+    p.inventory.push("calming-tonic");
+    expect(legalMoves(s, pid).nothingLeft).toBe(false);
+    p.inventory.pop();
+
+    // A dead-but-active player has exactly one thing left: ending the turn.
+    p.alive = false;
+    const dead = legalMoves(s, pid);
+    expect(dead.canEndTurn).toBe(true);
+    expect(dead.nothingLeft).toBe(true);
+  });
+});

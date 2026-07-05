@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
 import { roomWorld } from "./layout";
-import { trackedTokens, xrayWalls, type XrayData } from "./followCam";
+import { trackedTokens, xrayWalls, MAX_FRAME_DT, type XrayData } from "./followCam";
 
 const XRAY_OPACITY = 0.12;
 const XRAY_HOLD_MS = 250; // absorbs single-frame raycast flicker
@@ -34,7 +34,7 @@ export function XrayWalls() {
   useFrame(({ camera }, rawDt) => {
     // Modal beat up: hold every wall at its current opacity (no fade lerps).
     if (useBeats.getState().worldFrozen) return;
-    const dt = Math.min(0.05, rawDt);
+    const dt = Math.min(MAX_FRAME_DT, rawDt);
     const now = performance.now();
 
     // A. raycast camera -> every living character's chest; occluders go ghost.

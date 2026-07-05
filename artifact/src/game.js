@@ -19,7 +19,15 @@ const TRAIT_COLOR = { speed: "#d8b54a", might: "#c2412f", sanity: "#6fb6b5", kno
 // slots + travel lane sit mid-annulus, outside ISLAND_R (=1.2) where the props live.
 const WALK_R = (RING[0] + RING[1]) / 2; // 1.6
 const WALK_SPEED = 2.7; // u/s — constant waypoint-walk pace (stride clip reads right at ~2.4–3.0)
-const CARD_HOLD_MS = 5000; // every non-interactive card/death reveal holds this long
+const CARD_HOLD_MS = 6500; // every non-interactive card/death reveal holds this long
+// A reveal must not freeze the world before its walk visibly lands: while the
+// active token is still mid-path the modal defers, retrying until a cap.
+const BEAT_WAIT_RETRY_MS = 150;
+const BEAT_WAIT_MAX_MS = 3500; // per beat — after this, show anyway
+// End-turn shine + auto-end: when strictly NOTHING remains this turn, the End
+// turn button glows and a 5s bar drains; then the turn ends itself.
+const AUTO_END_MS = 5000;
+const AUTO_END_RETRY_MS = 400; // a modal at fire time postpones, not cancels
 const TRAIT_PULSE_MS = 900; // roster value pulse on a trait change
 const TRAIT_DELTA_MS = 1600; // floating ±N badge life on the roster chip
 
@@ -208,30 +216,15 @@ const SPECIAL_GLOW = {
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
 };
 const DIRS = ["north", "east", "south", "west"]; // clockwise — index+1 is a right turn
-// Arrows/WASD are interpreted relative to the HERO's facing (see onKeyMove):
-// "up" walks the way the explorer faces, left/right are HIS flanks.
+// Arrows/WASD are MAP-ABSOLUTE (see onKeyMove): ↑ is always north on the
+// minimap, ← always west — the keys agree with the bird's-eye map regardless
+// of camera orbit or which way the hero stands.
 const SCREEN_KEY = {
   ArrowUp: "up", w: "up", W: "up",
   ArrowDown: "down", s: "down", S: "down",
   ArrowLeft: "left", a: "left", A: "left",
   ArrowRight: "right", d: "right", D: "right",
 };
-const GRID_AXIS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
-function snapGrid(vx, vz) {
-  let best = "north", bd = -Infinity;
-  for (const d in GRID_AXIS) { const [ax, az] = GRID_AXIS[d]; const dot = vx * ax + vz * az; if (dot > bd) { bd = dot; best = d; } }
-  return best;
-}
-/** The hero's facing as a grid direction: the direction he last travelled
- *  (recorded by the walker — ring arcs make the raw yaw lie mid-walk), else
- *  his settled body yaw snapped to the nearest compass direction. Because he
- *  turns to face each move, chained ↑ presses walk on naturally. */
-function heroFacingDir(tok) {
-  if (!tok) return "north";
-  if (tok.travelDir) return tok.travelDir;
-  // token yaw convention: facing vector = (sin yaw, 0, cos yaw)
-  return snapGrid(Math.sin(tok.yaw), Math.cos(tok.yaw));
-}
 let _toastT;
 function toast(msg) {
   let el = document.getElementById("toast");
@@ -362,11 +355,138 @@ function spawnBeatFx(roomKey, type, embers = true) {
   fxList.push({ kind: "embers", points: pts, vel, t: 0 });
 }
 
+// =========================================================================
+// DICE TRAY — every roll the engine logs (a `dice` array of d6 faces 0/1/2)
+// plays as a centered lower-third overlay: the dice tumble, settle on the
+// real values, then a verdict line reads the outcome. Pure DOM/CSS, so it
+// animates even while a modal beat freezes the 3D world. One tray at a time;
+// simultaneous rolls queue.
+// =========================================================================
+const DICE_TUMBLE_MS = 900; // spin before the dice settle on their real faces
+const DICE_STAGGER_MS = 90; // per-die settle offset
+const DICE_HOLD_MS = 2600; // read time after the last die settles
+const DICE_FADE_MS = 450;
+const DICE_GAP_MS = 160; // breath between queued trays
+const DICE_CARD_LINGER_MS = 1200; // an open card modal outlives the tray by this
+const DICE_QUEUE_MAX = 3; // showing + pending — presentation must not lag the game
+const DIE_PIPS = ["", "•", "• •"]; // Betrayal d6 faces 0 / 1 / 2
+
+function trayDuration(n) {
+  return DICE_TUMBLE_MS + (n - 1) * DICE_STAGGER_MS + DICE_HOLD_MS + DICE_FADE_MS + DICE_GAP_MS;
+}
+
+/** Human verdict for a rolled log entry — "Might 4 — rolled 5 · success",
+ *  coloured green/red only when the text makes success determinable. */
+function diceVerdict(e) {
+  const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+  const total = e.dice.reduce((a, b) => a + b, 0);
+  let m;
+  // "X rolls might — 5 vs 4: success."
+  if ((m = e.text.match(/rolls (\w+) — (\d+) vs (\d+): (success|failure)/))) {
+    return { text: `${cap(m[1])} ${m[3]} — rolled ${m[2]} · ${m[4]}`, cls: m[4] === "success" ? "ok" : "bad" };
+  }
+  // "X makes the haunt roll: 4 vs 3 omen(s) in play." (roll < omens = the turn)
+  if ((m = e.text.match(/haunt roll: (\d+) vs (\d+) omen/))) {
+    const holds = +m[1] >= +m[2];
+    return { text: `Haunt roll — ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`, cls: holds ? "ok" : "bad" };
+  }
+  // "X studies the shadows — Knowledge 3 vs 4."
+  if ((m = e.text.match(/— (\w+) (\d+) vs (\d+)/))) {
+    const ok = +m[2] >= +m[3];
+    return { text: `${cap(m[1])} ${m[3]} — rolled ${m[2]} · ${ok ? "success" : "failure"}`, cls: ok ? "ok" : "bad" };
+  }
+  // Combat and friends: the log line already narrates the outcome.
+  return { text: `${e.text.replace(/\.\s*$/, "")} · rolled ${total}`, cls: "" };
+}
+
+const DiceTray = (() => {
+  const queue = []; // pending log entries with dice
+  let cur = null; // { el, timers, cycle, endAt }
+  let endsAtMs = 0; // when everything queued (incl. showing) finishes
+
+  function recomputeEnd() {
+    let t = cur ? cur.endAt : performance.now();
+    for (const e of queue) t += trayDuration(e.dice.length);
+    endsAtMs = t;
+  }
+  function show() {
+    const e = queue.shift();
+    if (!e) { cur = null; return; }
+    const layer = $("dice-layer");
+    if (!layer) { cur = null; queue.length = 0; return; }
+    const n = e.dice.length;
+    const v = diceVerdict(e);
+    const el = document.createElement("div");
+    el.className = "dice-tray";
+    el.innerHTML =
+      `<div class="dice-row">` +
+      e.dice.map((_, i) => `<span class="die" style="animation-delay:${i * DICE_STAGGER_MS}ms"></span>`).join("") +
+      `</div><div class="dice-verdict${v.cls ? " " + v.cls : ""}">${v.text}</div>`;
+    layer.appendChild(el);
+    const dice = [...el.querySelectorAll(".die")];
+    const timers = [];
+    // Faces flicker while the dice tumble, then each settles on its real value
+    // (die + die-N) in stagger order; the verdict fades in once all have landed.
+    for (const d of dice) d.textContent = DIE_PIPS[(Math.random() * 3) | 0];
+    const cycle = setInterval(() => {
+      for (const d of dice) if (!d.dataset.settled) d.textContent = DIE_PIPS[(Math.random() * 3) | 0];
+    }, 110);
+    dice.forEach((d, i) => {
+      timers.push(setTimeout(() => {
+        d.dataset.settled = "1";
+        d.classList.add("die-" + e.dice[i]);
+        d.textContent = DIE_PIPS[e.dice[i]] ?? String(e.dice[i]);
+      }, DICE_TUMBLE_MS + i * DICE_STAGGER_MS));
+    });
+    const settled = DICE_TUMBLE_MS + (n - 1) * DICE_STAGGER_MS;
+    timers.push(setTimeout(() => {
+      clearInterval(cycle);
+      el.querySelector(".dice-verdict").classList.add("show");
+    }, settled));
+    timers.push(setTimeout(() => el.classList.add("out"), settled + DICE_HOLD_MS));
+    timers.push(setTimeout(() => {
+      el.remove();
+      cur = null;
+      show();
+    }, settled + DICE_HOLD_MS + DICE_FADE_MS + DICE_GAP_MS));
+    cur = { el, timers, cycle, endAt: performance.now() + trayDuration(n) };
+    recomputeEnd();
+  }
+
+  return {
+    /** Is a tray on screen or waiting to be? */
+    busy: () => !!cur || queue.length > 0,
+    /** When the last queued tray will have fully faded (performance.now() ms). */
+    endsAt: () => endsAtMs,
+    enqueue(entry) {
+      if (!entry.dice || !entry.dice.length) return;
+      queue.push(entry);
+      // Never two at once — and never an unbounded backlog (a monster phase can
+      // log several combats in one dispatch): oldest pending rolls drop.
+      while (queue.length > DICE_QUEUE_MAX) queue.shift();
+      recomputeEnd();
+      if (!cur) show();
+      // An open card modal must outlive the roll it demanded.
+      Beats.extendForDice();
+    },
+    reset() {
+      queue.length = 0;
+      endsAtMs = 0;
+      if (cur) {
+        clearInterval(cur.cycle);
+        for (const t of cur.timers) clearTimeout(t);
+        cur.el.remove();
+        cur = null;
+      }
+    },
+  };
+})();
+
 const Beats = (() => {
   let CARD_BY_NAME = null; // card name -> def, built lazily (all 35 names unique)
   const queue = []; // pending modal beats (card / death)
   let active = null; // the modal currently on screen
-  let gapTimer = null, autoTimer = null;
+  let gapTimer = null, autoTimer = null, waitTimer = null;
   const consumed = new Set(); // log entry ids already surfaced as beats (skip bot toasts)
   const director = { focusKey: null, until: 0 }; // camera push-in singleton
 
@@ -438,8 +558,29 @@ const Beats = (() => {
       (b.interactive ? "" : `<div class="card-timer" style="animation-duration:${CARD_HOLD_MS}ms"></div>`) +
       `</div>`;
   }
+  /** Is the token whose move this beat reveals still visibly walking? A bot's
+   *  move updates state instantly — the card must not flip (and freeze the
+   *  world) while the body is still crossing the room. */
+  function walkerBusy() {
+    if (!state) return false;
+    const tok = tokenCache.get(state.activePlayerId);
+    // followTarget.moving is only trustworthy when the active living token
+    // armed it this frame (valid) — a dead-but-active player leaves it stale.
+    return !!((followTarget.valid && followTarget.moving) || (tok && tok.path));
+  }
   function showNext() {
     if (active || !queue.length) return;
+    // Gate on arrival: defer while the walker is mid-path (150ms retries,
+    // capped per beat) so the freeze engages only after the walk lands.
+    const head = queue[0];
+    if (walkerBusy()) {
+      head.showBy ??= performance.now() + BEAT_WAIT_MAX_MS;
+      if (performance.now() < head.showBy) {
+        clearTimeout(waitTimer);
+        waitTimer = setTimeout(showNext, BEAT_WAIT_RETRY_MS);
+        return;
+      }
+    }
     const b = (active = queue.shift());
     const layer = $("beat-layer");
     if (!layer) { active = null; return; }
@@ -460,8 +601,20 @@ const Beats = (() => {
     if (b.kind === "death") Sound.sting("death");
     else Sound.sting(b.cardType);
     // Every reveal gets its full reading time — no backlog fast-drain (driveBots
-    // pauses while a beat is up, so the queue stays bounded regardless).
-    if (!b.interactive) autoTimer = setTimeout(dismiss, CARD_HOLD_MS);
+    // pauses while a beat is up, so the queue stays bounded regardless). A card
+    // whose action also rolled dice holds until the tray finishes + a linger.
+    if (!b.interactive) {
+      b.shownAt = performance.now();
+      const hold = Math.max(
+        CARD_HOLD_MS,
+        DiceTray.busy() ? DiceTray.endsAt() - b.shownAt + DICE_CARD_LINGER_MS : 0,
+      );
+      autoTimer = setTimeout(dismiss, hold);
+      if (hold > CARD_HOLD_MS) {
+        const bar = back.querySelector(".card-timer");
+        if (bar) bar.style.animationDuration = `${hold}ms`;
+      }
+    }
   }
   function dismiss() {
     if (!active) return;
@@ -498,16 +651,40 @@ const Beats = (() => {
     consumed,
     focusPulse,
     idle: () => !active && queue.length === 0,
+    /** The 3D world holds its breath only while a modal is actually ON SCREEN —
+     *  a queued beat deferring on the walker leaves time running so the walk
+     *  can visibly land first (input stays locked via idle() regardless). */
+    freeze: () => !!active,
     skip: dismiss,
+    /** A roll landed while a card is up: the card's auto-dismiss stretches
+     *  until the dice tray finishes + DICE_CARD_LINGER_MS, bar included. */
+    extendForDice() {
+      if (!active || active.interactive || !autoTimer) return;
+      const now = performance.now();
+      const remain = Math.max(
+        (active.shownAt ?? now) + CARD_HOLD_MS - now,
+        DiceTray.endsAt() - now + DICE_CARD_LINGER_MS,
+      );
+      clearTimeout(autoTimer);
+      autoTimer = setTimeout(dismiss, remain);
+      const bar = active.el?.querySelector(".card-timer");
+      if (bar) {
+        bar.style.animation = "none";
+        void bar.offsetWidth; // reflow so the drain restarts over the new span
+        bar.style.animation = `card-timer-drain ${remain}ms linear both`;
+      }
+    },
     /** New game: drop queued beats and consumed ids (log ids restart at 1). */
     reset() {
       queue.length = 0;
       clearTimeout(autoTimer); autoTimer = null;
       clearTimeout(gapTimer); gapTimer = null;
+      clearTimeout(waitTimer); waitTimer = null;
       if (active) { active.el?.remove(); active = null; }
       consumed.clear();
       recentDeltas.length = 0;
       director.focusKey = null; director.until = 0;
+      DiceTray.reset();
     },
     /** Pre-action snapshot — everything ingest() needs to diff afterwards. */
     snap(s) {
@@ -537,6 +714,8 @@ const Beats = (() => {
         consumed.add(e.id);
       };
       const fresh = next.log.filter((e) => e.id >= snap.nextLogId);
+      // Every fresh entry carrying dice plays through the tray, in log order.
+      for (const e of fresh) if (e.dice?.length) DiceTray.enqueue(e);
       const deadSeen = new Set(); // several deaths in one action each get a banner
       for (const e of fresh) {
         let m;
@@ -615,7 +794,13 @@ const Beats = (() => {
         }
       }
       while (recentDeltas.length && tNow - recentDeltas[0].at > TRAIT_DELTA_MS * 4) recentDeltas.shift();
-      if (!active && !gapTimer) showNext();
+      // Kick the queue on the next tick, not synchronously: ingest runs inside
+      // dispatch(), BEFORE render() plans the mover's walk path — checked now,
+      // the walker would always look idle and the card would beat the walk.
+      if (!active && !gapTimer) {
+        clearTimeout(waitTimer);
+        waitTimer = setTimeout(showNext, 0);
+      }
     },
   };
 })();
@@ -1060,16 +1245,10 @@ function onKeyMove(e) {
   const room = active.position ? state.house[active.position] : null;
   if (!room) return;
 
-  // Hero-relative basis: forward is the explorer's current facing snapped to
-  // the grid (the walker already yaws the token as he travels); left/right/
-  // back rotate around it. After a move he faces his travel direction, so a
-  // run of ↑ presses chains straight ahead no matter where the camera sits.
-  const fwd = heroFacingDir(tokenCache.get(active.id));
-  const fi = DIRS.indexOf(fwd);
-  const dir = which === "up" ? fwd
-    : which === "down" ? DIRS[(fi + 2) % 4]
-    : which === "right" ? DIRS[(fi + 1) % 4]
-    : DIRS[(fi + 3) % 4];
+  // Map-absolute: the key IS the compass direction, exactly as the minimap
+  // draws it (↑ north, ↓ south, ← west, → east). Hero-relative keys were
+  // tried and read inverted against the map whenever the hero faced south.
+  const dir = which === "up" ? "north" : which === "down" ? "south" : which === "left" ? "west" : "east";
 
   const legal = DH.legalMoves(state, active.id);
   if (legal.doors.includes(dir)) { e.preventDefault(); act({ type: "explore", playerId: active.id, door: dir }); return; }
@@ -1204,7 +1383,7 @@ function buildRoomGroup(room) {
     });
     walls.push(...byMat.values());
   }
-  return { group: g, floor, floorMat, labelEl: el, accent, accentBase, walls, trimMats };
+  return { group: g, key: room.key, floor, floorMat, labelEl: el, accent, accentBase, decor: decorG, walls, trimMats, culled: false, accentOn: true };
 }
 
 /**
@@ -1241,10 +1420,19 @@ function litFactorFor(d) {
   return 0.16;                           // a faint memory of the layout
 }
 
+// Late-game performance: rooms deep in the fog drop their decor and candle
+// entirely (the floor/walls/label silhouette survives), and at most
+// MAX_ACCENT_LIGHTS accent PointLights stay on. Both use hysteresis — a
+// light-count change recompiles shaders, so border rooms must not flip-flop.
+const CULL_HIDE = 0.2; // decor + accent go dark below this litFactor…
+const CULL_SHOW = 0.24; // …and only come back at this
+const MAX_ACCENT_LIGHTS = 10;
+
 /** Sync the house: build new rooms once, then refresh highlight + fog-of-war. */
 function buildHouse(legal) {
   const hi = new Set(legal.explored);
   const vis = visibilityLevels();
+  const lightRank = []; // visible-accent candidates for the light budget
   for (const room of Object.values(state.house)) {
     let entry = roomCache.get(room.key);
     if (!entry) {
@@ -1255,6 +1443,19 @@ function buildHouse(legal) {
     entry.floor.userData.lit = lit;
     // Fog-of-war: dim the candle and the floor for rooms far from any explorer.
     const f = litFactorFor(vis.get(room.key));
+    // Fog-of-war culling (hysteresis): deep-fog rooms shed their decor group
+    // and accent light; floor, walls and label keep the dollhouse silhouette
+    // (walls stay in the x-ray registry).
+    entry.culled = entry.culled ? f < CULL_SHOW : f < CULL_HIDE;
+    entry.decor.visible = !entry.culled;
+    if (entry.culled) {
+      entry.accentOn = false;
+      entry.accent.visible = false;
+    } else {
+      // Sticky score: a light already on outranks a cold one at equal factor.
+      entry.lightScore = f + (entry.accentOn ? 0.03 : 0);
+      lightRank.push(entry);
+    }
     entry.accent.intensity = entry.accentBase * f;
     // Color now multiplies the procedural map: white keeps the texture intact
     // while the emissive provides the lit highlight; otherwise tint by theme,
@@ -1267,6 +1468,15 @@ function buildHouse(legal) {
     // curve) so unlit rooms don't show near-black bars over bright floors.
     for (const tm of entry.trimMats) tm.color.set(tm.userData.baseColor).multiplyScalar(0.35 + 0.65 * f);
     entry.labelEl.className = "lbl3d" + (lit ? " lit" : "") + (f < 0.2 ? " faint" : "");
+  }
+  // Light budget: keep the brightest ~10 accent lights, disable the rest
+  // outright. Stable ordering (score desc, then room key) + the sticky score
+  // above stop equal-factor rooms from trading places every rebuild.
+  lightRank.sort((a, b) => (b.lightScore - a.lightScore) || (a.key < b.key ? -1 : 1));
+  for (let i = 0; i < lightRank.length; i++) {
+    const e = lightRank[i];
+    e.accentOn = i < MAX_ACCENT_LIGHTS;
+    e.accent.visible = e.accentOn;
   }
   // Doors first: a door is born in the same pass its far room lands, and its
   // stubs/header must join THIS rebuild of the registry, not the next one.
@@ -1444,6 +1654,13 @@ function makeMonsterToken(m) {
 }
 
 function disposeToken(tok) {
+  // Retire the token's mixer + life layer from the per-frame update list —
+  // otherwise they keep animating a detached skeleton forever.
+  const ud = tok.group.userData;
+  for (const m of [ud.anim?.mixer, ud.life]) {
+    const i = m ? tokenAvatarMixers.indexOf(m) : -1;
+    if (i >= 0) tokenAvatarMixers.splice(i, 1);
+  }
   tok.group.traverse((o) => {
     o.geometry?.dispose?.();
     if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
@@ -1915,6 +2132,45 @@ function driveBots() {
 }
 
 // =========================================================================
+// END-TURN AUTO-ADVANCE — when there is for sure nothing left to do, the End
+// turn button shines (et-pulse) with a 5s draining bar (et-timer/et-drain);
+// if the player still hasn't clicked when it empties, the turn ends itself.
+// Armed/disarmed from updateHUD (which runs after every dispatch); the arm
+// timestamp is stable across HUD rebuilds so the bar never restarts. Bots
+// never arm it — their driver ends turns on its own.
+// =========================================================================
+let autoEndArmedAt = 0; // performance.now() when armed; 0 = disarmed
+let autoEndPid = null; // whose exhausted turn the countdown belongs to
+let autoEndTimer = null;
+
+/** Strictly nothing remains for the ACTIVE HUMAN this turn (recomputed fresh —
+ *  used both when arming and again at fire time). */
+function autoEndEligible() {
+  if (!state || (state.phase !== "explore" && state.phase !== "haunt")) return false;
+  const active = state.players.find((p) => p.id === state.activePlayerId);
+  if (!active || active.isBot) return false;
+  // The haunt-reveal overlay is modal: never count down behind it.
+  if (state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id) return false;
+  return DH.legalMoves(state, active.id).nothingLeft;
+}
+function disarmAutoEnd() {
+  autoEndArmedAt = 0;
+  autoEndPid = null;
+  if (autoEndTimer) { clearTimeout(autoEndTimer); autoEndTimer = null; }
+}
+function fireAutoEnd() {
+  autoEndTimer = null;
+  if (!autoEndArmedAt) return;
+  if (!autoEndEligible()) { disarmAutoEnd(); return; }
+  // A modal is up right now: postpone, don't cancel — the shine state is
+  // re-evaluated on every render anyway.
+  if (!Beats.idle()) { autoEndTimer = setTimeout(fireAutoEnd, AUTO_END_RETRY_MS); return; }
+  const pid = state.activePlayerId;
+  disarmAutoEnd();
+  act({ type: "end-turn", playerId: pid });
+}
+
+// =========================================================================
 // RENDER (state -> scene + HUD)
 // =========================================================================
 function render() {
@@ -2109,6 +2365,21 @@ function updateHUD(legal) {
     $("hud-right").innerHTML = "";
   }
 
+  // End-turn shine: the active human has strictly nothing left to do. Arm the
+  // 5s auto-end once when the condition becomes true, keep the same arm
+  // timestamp across re-renders (negative animation-delay resumes the bar and
+  // pulse mid-flight), and disarm the moment it goes false.
+  const hauntPending = !!state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id;
+  const shineNow = !ended && !!active && !active.isBot && legal.nothingLeft && !hauntPending && Beats.idle();
+  if (shineNow) {
+    if (!autoEndArmedAt || autoEndPid !== active.id) {
+      disarmAutoEnd();
+      autoEndPid = active.id;
+      autoEndArmedAt = performance.now();
+      autoEndTimer = setTimeout(fireAutoEnd, AUTO_END_MS);
+    }
+  } else disarmAutoEnd();
+
   // bottom controls — icon-led, only on a human's turn
   let bottom = "";
   if (!ended && active && !active.isBot) {
@@ -2136,7 +2407,8 @@ function updateHUD(legal) {
       }
       bottom += `<button class="btn act" title="Wedge this door shut so nothing follows for a few rounds (costs 1 step)" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
     }
-    bottom += `<button class="btn primary" onclick="window.__act({type:'end-turn',playerId:'${active.id}'})"><span class="bi">🕯</span><span>End turn</span>${humans.length > 1 ? ' <span class="small muted">pass device</span>' : ""}</button>`;
+    const etAge = shineNow ? (performance.now() - autoEndArmedAt).toFixed(0) : "0";
+    bottom += `<button class="btn primary${shineNow ? " shine" : ""}"${shineNow ? ` style="--dly:-${etAge}ms"` : ""} onclick="window.__act({type:'end-turn',playerId:'${active.id}'})"><span class="bi">🕯</span><span>End turn</span>${humans.length > 1 ? ' <span class="small muted">pass device</span>' : ""}${shineNow ? `<span class="et-timer" style="animation-duration:${AUTO_END_MS}ms;animation-delay:-${etAge}ms"></span>` : ""}</button>`;
   }
   $("hud-bottom").innerHTML = bottom;
 
@@ -2198,15 +2470,21 @@ function onResize() {
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now() / 1000;
-  const rawDt = lastFrameT ? Math.min(0.05, now - lastFrameT) : 0.016;
+  // Clamp at 0.12 (was 0.05): under heavy late-game frames a 0.05 cap made
+  // game-time run at a fraction of wall-time — walking felt glacial exactly
+  // when the scene was heaviest. Every easing below is an exp() form (stable
+  // at any dt) and the walker consumes waypoints by distance, so 0.12 is safe.
+  const rawDt = lastFrameT ? Math.min(0.12, now - lastFrameT) : 0.016;
   lastFrameT = now;
-  // While a modal beat (card flip / death banner) is up, the WORLD holds its
-  // breath: dt clamps to 0 so mixers, the waypoint walker, camera easing,
-  // x-ray fades and particle beats all stand perfectly still — but frames
-  // keep rendering (the frozen scene reads behind the lightened backdrop) and
-  // DOM/CSS animations (flip, timer bar) run on. Because everything below
-  // eases from its current value, nothing teleports when the queue drains.
-  const frozen = !Beats.idle();
+  // While a modal beat (card flip / death banner) is ON SCREEN, the WORLD
+  // holds its breath: dt clamps to 0 so mixers, the waypoint walker, camera
+  // easing, x-ray fades and particle beats all stand perfectly still — but
+  // frames keep rendering (the frozen scene reads behind the lightened
+  // backdrop) and DOM/CSS animations (flip, timer bar, dice tray) run on.
+  // A beat still QUEUED (deferring on the walker) leaves time running, so
+  // the walk visibly lands before its card freezes the frame. Because
+  // everything below eases from its current value, nothing teleports.
+  const frozen = Beats.freeze();
   const dt = frozen ? 0 : rawDt;
   animT += dt;
   const t = animT; // world clock — every time-driven flourish freezes with it

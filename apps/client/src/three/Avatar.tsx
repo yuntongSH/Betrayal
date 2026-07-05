@@ -5,6 +5,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import { attachKeepsake, refineExplorerAvatar, attachAvatarLife } from "@dread-hollow/decor";
 import * as THREE from "three";
 import { useBeats } from "../state/beats";
+import { MAX_FRAME_DT } from "./followCam";
 import type { AvatarEntry } from "./avatars";
 
 /** Face, hair and eyes keep their natural colour — identity tint lands on
@@ -86,7 +87,7 @@ export function Avatar({
   }, [life, dead]);
   useFrame((_, dt) => {
     if (useBeats.getState().worldFrozen) return; // hold the pose with the mixer
-    life.update(Math.min(0.05, dt));
+    life.update(Math.min(MAX_FRAME_DT, dt));
   });
 
   // Hang the keepsake once, AFTER settling the skeleton out of its T-pose bind

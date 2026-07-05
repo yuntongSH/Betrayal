@@ -5,6 +5,13 @@ import * as THREE from "three";
  * plain mutable singletons so per-frame reads never touch React state.
  */
 
+/** Frame-delta cap for walk/camera/x-ray consumers. 0.05 made game-time run at
+ *  1/3 wall-time below 20 FPS — walking turned glacial exactly when the scene
+ *  was heaviest. 0.12 keeps real-time pacing down to ~8 FPS while still capping
+ *  tab-switch/GC hitches (followPath is distance-based and snaps to a waypoint
+ *  rather than overshooting, so the larger step cannot oscillate). */
+export const MAX_FRAME_DT = 0.12;
+
 /** Written every frame by the ACTIVE player's token; consumed by CameraDirector.
  *  `valid` is cleared after each consume, so a dead/absent active token
  *  degrades gracefully to plain room-follow. */
