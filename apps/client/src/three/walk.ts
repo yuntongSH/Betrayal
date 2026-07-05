@@ -2,7 +2,8 @@
  * Waypoint walking — tokens travel the walkable annulus decor keeps clear
  * around each room's centerpiece island instead of gliding straight through
  * the furniture. HouseView builds a path when a token's assigned slot changes;
- * PlayerToken/MonsterToken consume it at constant walk speed.
+ * PlayerToken/MonsterToken consume it at walk speed under a distance-based
+ * accelerate/settle envelope, so bodies have weight instead of constant glide.
  */
 import * as THREE from "three";
 import { ISLAND_R } from "@dread-hollow/decor";
@@ -11,12 +12,31 @@ import { FLOOR_Y, TILE, WALK_RING_R } from "./layout";
 
 export type WalkPoint = [number, number, number];
 
-/** Constant stride speed (u/s), tuned to the Walk clip cadence at TILE = 7. */
+/** Peak stride speed (u/s), tuned to the Walk clip cadence at TILE = 7. */
 export const WALK_SPEED = 2.7;
 
-/** Ease-out window on the final segment (u) so arrivals settle, not stop dead. */
-const ARRIVE_EASE_DIST = 1.1;
-const ARRIVE_EASE_MIN = 0.35;
+/** Speed envelope, distance-based so frame rate cannot change the shape:
+ *  smoothstep up over the first ACCEL_DIST of the path, smoothstep down over
+ *  the last SETTLE_DIST, floored so a short hop still covers ground. */
+const ACCEL_DIST = 0.45;
+const SETTLE_DIST = 0.6;
+const ENVELOPE_FLOOR = 0.25;
+
+function smooth01(x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  return x * x * (3 - 2 * x);
+}
+
+/** Tokens currently covering ground — the same hysteresis flag that drives the
+ *  Walk clip, mirrored here (keyed like followCam's trackedTokens) so the
+ *  per-frame gaze pass can find walkers without touching React state. */
+export const walkingTokens = new Set<string>();
+
+export function setWalking(id: string, on: boolean): void {
+  if (on) walkingTokens.add(id);
+  else walkingTokens.delete(id);
+}
 
 /** Max arc chord: a 60° chord of the r=1.6 ring stays cos(30°)·1.6 ≈ 1.39 from
  *  center — outside ISLAND_R, so ring travel never clips the centerpiece. */
@@ -96,31 +116,60 @@ export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, t
 // Scratch vector shared across tokens — useFrame callbacks run sequentially.
 const STEP = new THREE.Vector3();
 
+/** Cursor: the next unreached waypoint plus the ground covered so far, so the
+ *  accelerate ramp is distance-based (frame-rate independent) and survives a
+ *  waypoint crossing within a single frame. Reset both when the path changes. */
+export interface WalkCursor {
+  i: number;
+  traveled: number;
+}
+
 /**
- * Advance `pos` one frame along `path` at walk speed, easing out inside the
- * last segment. Returns true while the path still owns the motion (the caller
- * falls back to its glide-to-target once the path is spent). Allocation-free.
+ * Advance `pos` one frame along `path` under an accelerate/settle speed
+ * envelope: it ramps up over the first ACCEL_DIST of ground covered and eases
+ * down over the last SETTLE_DIST to the end, floored at ENVELOPE_FLOOR so a
+ * short hop still moves — bodies gain weight instead of a constant glide.
+ * Returns true while the path still owns the motion (the caller falls back to
+ * its glide-to-target once the path is spent). Allocation-free.
  */
 export function followPath(
   pos: THREE.Vector3,
   path: readonly WalkPoint[],
-  cursor: { i: number },
+  cursor: WalkCursor,
   dt: number,
 ): boolean {
   if (cursor.i >= path.length) return false;
-  const wp = path[cursor.i]!;
-  STEP.set(wp[0] - pos.x, wp[1] - pos.y, wp[2] - pos.z);
-  const dist = STEP.length();
-  const last = cursor.i === path.length - 1;
-  const speed = last
-    ? WALK_SPEED * Math.max(ARRIVE_EASE_MIN, Math.min(1, dist / ARRIVE_EASE_DIST))
-    : WALK_SPEED;
-  const step = speed * dt;
-  if (step < dist) {
-    pos.addScaledVector(STEP, step / dist);
-    return true;
+
+  // Distance still to travel: current position through every remaining waypoint
+  // (paths are a handful of points, so this per-frame walk is negligible).
+  let distToEnd = 0;
+  let px = pos.x, py = pos.y, pz = pos.z;
+  for (let k = cursor.i; k < path.length; k++) {
+    const w = path[k]!;
+    distToEnd += Math.hypot(w[0] - px, w[1] - py, w[2] - pz);
+    px = w[0]; py = w[1]; pz = w[2];
   }
-  pos.set(wp[0], wp[1], wp[2]);
-  cursor.i++;
-  return cursor.i < path.length;
+  const envelope = Math.max(
+    ENVELOPE_FLOOR,
+    Math.min(smooth01(cursor.traveled / ACCEL_DIST), smooth01(distToEnd / SETTLE_DIST)),
+  );
+  let budget = WALK_SPEED * envelope * dt;
+
+  // Spend the frame's travel budget across waypoints (a fast frame may cross
+  // more than one), accumulating ground covered for the accelerate ramp.
+  while (cursor.i < path.length) {
+    const wp = path[cursor.i]!;
+    STEP.set(wp[0] - pos.x, wp[1] - pos.y, wp[2] - pos.z);
+    const dist = STEP.length();
+    if (budget < dist) {
+      pos.addScaledVector(STEP, budget / dist);
+      cursor.traveled += budget;
+      return true;
+    }
+    pos.set(wp[0], wp[1], wp[2]);
+    cursor.traveled += dist;
+    budget -= dist;
+    cursor.i++;
+  }
+  return false;
 }

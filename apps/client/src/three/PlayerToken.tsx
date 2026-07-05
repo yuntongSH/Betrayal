@@ -6,9 +6,11 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
-import { followTarget, registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
-import { followPath, type WalkPoint } from "./walk";
+import { followTarget, registerToken, unregisterToken, trackedTokens, MAX_FRAME_DT } from "./followCam";
+import { followPath, setWalking, walkingTokens, type WalkPoint } from "./walk";
+import { avatarHandles, playOneShotFor } from "./avatarRegistry";
 import { useBeats } from "../state/beats";
+import { useStore } from "../state/store";
 import { TRAIT_COLOR } from "../ui/icons";
 
 /** Shortest-arc angle lerp so a turn never spins the long way round. */
@@ -16,6 +18,17 @@ function lerpAngle(a: number, b: number, t: number): number {
   const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
   return a + d * t;
 }
+
+/** Gaze range: a walker further than this is beneath notice. */
+const GAZE_WALKER_R2 = 12 * 12;
+/** A roommate to glance at sits within about a room's ring. */
+const GAZE_ROOM_R2 = 5 * 5;
+/** Head-turn drop for a passing figure — aim at chest height. */
+const CHEST_Y = 1.2;
+
+// Per-frame scratch — useFrame callbacks run sequentially, never re-entrant.
+const GAZE_AT = new THREE.Vector3();
+const GAZE_BEST = new THREE.Vector3();
 
 export function PlayerToken({
   tokenId,
@@ -59,14 +72,23 @@ export function PlayerToken({
   const prev = useRef(new THREE.Vector3());
   // A fresh path prop restarts waypoint walking from wherever the body stands.
   const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
-  const cursor = useRef({ i: 0 });
+  const cursor = useRef({ i: 0, traveled: 0 });
   if (activePath.current !== path) {
     activePath.current = path;
     cursor.current.i = 0;
+    cursor.current.traveled = 0;
   }
+  // Turn lean (body banks into a turn) and its slew rate, applied to an inner
+  // group so it composes cleanly under the yaw the outer group carries.
+  const lean = useRef<Group>(null);
+  const leanZ = useRef(0);
+  const prevYaw = useRef(0);
+  // Roommate-glance dwell: alternate looking (3–6 s) and resting (2–4 s).
+  const gaze = useRef({ until: 0, looking: false });
   // Trait changes float up off the character ("−1 Knowledge") — see beats.ts.
   const traitDeltas = useBeats((s) => s.traitDeltas);
   const myDeltas = traitDeltas.filter((d) => d.playerId === tokenId);
+  const lastHitDelta = useRef<number | null>(null);
   // Feet match the glide: `moving` flips only on transitions (with hysteresis),
   // so the rigged body strides while covering ground and idles on arrival.
   const movingRef = useRef(false);
@@ -89,6 +111,37 @@ export function PlayerToken({
     registerToken(tokenId, group.current, 1.2);
     return () => unregisterToken(tokenId);
   }, [tokenId, alive]);
+
+  // Free the walking flag when this token unmounts (dies/leaves mid-stride).
+  useEffect(() => () => setWalking(tokenId, false), [tokenId]);
+
+  // A fresh negative trait delta makes the body flinch (rigged avatars only,
+  // and not mid-stride — a walk keeps its footing).
+  useEffect(() => {
+    for (let i = myDeltas.length - 1; i >= 0; i--) {
+      const d = myDeltas[i]!;
+      if (d.delta < 0) {
+        if (lastHitDelta.current !== d.id && !movingRef.current) playOneShotFor(tokenId, "hit");
+        lastHitDelta.current = d.id;
+        return;
+      }
+    }
+  });
+
+  // The whole party reels when the house turns; the survivors' side celebrates
+  // when the night is won. Staggered so they don't move as one machine.
+  const gamePhase = useStore((s) => s.game?.phase);
+  const winner = useStore((s) => s.game?.winner ?? null);
+  const prevPhase = useRef(gamePhase);
+  useEffect(() => {
+    if (gamePhase !== prevPhase.current) {
+      if (gamePhase === "haunt" && alive) playOneShotFor(tokenId, "stagger", Math.random() * 450);
+      if (gamePhase === "ended" && alive && side && side === winner) {
+        playOneShotFor(tokenId, "cheer", Math.random() * 600);
+      }
+      prevPhase.current = gamePhase;
+    }
+  }, [gamePhase, winner, alive, side, tokenId]);
 
   useFrame((state, rawDt) => {
     const g = group.current;
@@ -123,11 +176,65 @@ export function PlayerToken({
     }
     g.rotation.y = yaw.current;
 
+    // Following a path IS walking; otherwise fall back to measured speed so a
+    // plain glide still strides. Hysteresis keeps the clip from flapping.
     const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
-    const isMoving = alive && speed > (movingRef.current ? 0.4 : 0.8);
+    const isMoving = alive && (walking || speed > (movingRef.current ? 0.4 : 0.8));
     if (isMoving !== movingRef.current) {
       movingRef.current = isMoving;
       setMoving(isMoving);
+      setWalking(tokenId, isMoving); // gaze pass reads this to spot passers-by
+    }
+
+    // Body banks into a turn: lean into the yaw rate, ease back to upright when
+    // straight or stopped. Applied to the inner group so yaw stays clean.
+    const yawRate = lerpAngle(0, yaw.current - prevYaw.current, 1) / Math.max(1e-4, dt);
+    prevYaw.current = yaw.current;
+    const targetLean = movingRef.current
+      ? THREE.MathUtils.clamp(-yawRate * 0.12, -0.09, 0.09)
+      : 0;
+    leanZ.current += (targetLean - leanZ.current) * (1 - Math.exp(-8 * dt));
+    if (lean.current) lean.current.rotation.z = leanZ.current;
+
+    // Gaze: a rigged avatar turns its head toward the most interesting thing —
+    // a figure walking past wins, else a roommate to glance at, else it drifts.
+    const life = alive ? avatarHandles.get(tokenId)?.life : undefined;
+    if (life) {
+      if (movingRef.current) {
+        life.setGaze(null); // eyes lead the walk on their own
+      } else {
+        let bestD2 = Infinity;
+        let found = false;
+        // priority a — the nearest OTHER token that is walking, within range.
+        for (const [id, tok] of trackedTokens) {
+          if (id === tokenId || !walkingTokens.has(id)) continue;
+          const d2 = g.position.distanceToSquared(tok.obj.position);
+          if (d2 < GAZE_WALKER_R2 && d2 < bestD2) {
+            bestD2 = d2;
+            GAZE_BEST.copy(tok.obj.position).setY(tok.obj.position.y + tok.chestY);
+            found = true;
+          }
+        }
+        // priority b — else glance at a roommate during the "looking" window.
+        if (!found) {
+          if (t > gaze.current.until) {
+            gaze.current.looking = !gaze.current.looking;
+            gaze.current.until = t + (gaze.current.looking ? 3 + Math.random() * 3 : 2 + Math.random() * 2);
+          }
+          if (gaze.current.looking) {
+            for (const [id, tok] of trackedTokens) {
+              if (id === tokenId || walkingTokens.has(id)) continue;
+              const d2 = g.position.distanceToSquared(tok.obj.position);
+              if (d2 < GAZE_ROOM_R2 && d2 < bestD2) {
+                bestD2 = d2;
+                GAZE_BEST.copy(tok.obj.position).setY(tok.obj.position.y + CHEST_Y);
+                found = true;
+              }
+            }
+          }
+        }
+        life.setGaze(found ? GAZE_AT.copy(GAZE_BEST) : null);
+      }
     }
 
     // Feed the follow camera: whoever is up broadcasts their live position,
@@ -150,12 +257,16 @@ export function PlayerToken({
 
   return (
     <group ref={group}>
-      {figure && <primitive object={figure} />}
-      {entry && (
-        <Suspense fallback={null}>
-          <Avatar entry={entry} archetype={archetype} moving={moving} dead={!alive} />
-        </Suspense>
-      )}
+      {/* inner group carries the turn-lean so the outer group's yaw stays clean */}
+      <group ref={lean}>
+        {figure && <primitive object={figure} />}
+        {entry && (
+          <Suspense fallback={null}>
+            <Avatar entry={entry} archetype={archetype} moving={moving} dead={!alive} tokenId={tokenId} />
+          </Suspense>
+        )}
+      </group>
+
 
       {/* a bright pillar of light marks whoever is up */}
       {isActive && alive && (

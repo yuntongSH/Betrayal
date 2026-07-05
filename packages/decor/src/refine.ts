@@ -599,7 +599,28 @@ export interface AvatarLife {
   update(dt: number): void;
   /** When the house takes them: stills the breath, closes the eyes. */
   dead: boolean;
+  /** Turn the head toward a world-space point (a passing explorer, a monster).
+   *  Pass null to release — the head eases back to its ambient wander. The
+   *  target is copied; callers may reuse the vector. Targets more than ~125°
+   *  behind the face are ignored (nobody owls their neck). */
+  setGaze(target: THREE.Vector3 | null): void;
 }
+
+/** Clip names for one-shot body reactions, shared by both frontends so the
+ *  same beat plays the same motion everywhere. All six Quaternius rigs ship
+ *  all of these. */
+export const REACTION_CLIPS = {
+  /** took damage — a short flinch */
+  hit: "HitRecieve",
+  /** the haunt reveal — a heavier stagger, the whole party reels */
+  stagger: "HitRecieve_2",
+  /** investigating — crouch to study the room */
+  interact: "Interact",
+  /** striking a foe (alternate for variety) */
+  attack: ["Punch_Right", "Punch_Left"],
+  /** the survivors' little victory */
+  cheer: "Wave",
+} as const;
 
 /** Finger curl per joint index (1 = in-palm metacarpal, barely; 2 = knuckle;
  *  3–4 = phalanges) — a relaxed hand, not a fist. Bind pose is starfish-stiff.
@@ -609,6 +630,8 @@ const THUMB_CURL: Record<number, number> = { 1: -0.02, 2: -0.1, 3: -0.12 };
 
 const AXIS_X = new THREE.Vector3(1, 0, 0);
 const tmpQ = new THREE.Quaternion();
+const gazeV = new THREE.Vector3();
+const gazeQ = new THREE.Quaternion();
 
 /**
  * A bone we add rotation on top of the mixer. three's PropertyMixer has a
@@ -687,8 +710,23 @@ export function attachAvatarLife(root: THREE.Object3D, archetype?: string): Avat
   let nextBlink = t + 1.5 + Math.random() * 3;
   const seed = Math.random() * 97;
 
+  // Gaze: smoothed head-turn toward a world point, layered over the ambient
+  // drift (which fades out as the gaze takes hold). All scratch is reused.
+  let gazeTarget: THREE.Vector3 | null = null;
+  const gazeStore = new THREE.Vector3();
+  let gazeYaw = 0;
+  let gazePitch = 0;
+  let gazeW = 0; // 0 = pure ambient wander, 1 = locked on target
+  const GAZE_YAW_MAX = 1.0; // ~57° — a natural head turn, not an owl
+  const GAZE_PITCH_MIN = -0.3;
+  const GAZE_PITCH_MAX = 0.35;
+  const GAZE_BEHIND = 2.2; // targets further behind than this are ignored
+
   const life: AvatarLife = {
     dead: false,
+    setGaze(target: THREE.Vector3 | null) {
+      gazeTarget = target ? gazeStore.copy(target) : null;
+    },
     update(dt: number) {
       if (this.dead) {
         for (const l of lids) l.mesh.scale.y = 1.05; // eyes closed for the fallen
@@ -718,12 +756,46 @@ export function attachAvatarLife(root: THREE.Object3D, archetype?: string): Avat
       // Attention: the head wanders in slow overlapping arcs, the neck follows.
       const yaw = (Math.sin(t * 0.23 + seed) * 0.055 + Math.sin(t * 0.47 + seed * 2) * 0.03) * drift;
       const pitch = (Math.sin(t * 0.19 + seed * 3) * 0.025 + Math.sin(t * 0.53 + seed) * 0.015) * drift;
+
+      // Gaze: where does the target sit in the model's own frame? Tokens face
+      // +Z, so yaw = atan2(x, z). The wanted angles clamp to a natural head
+      // turn, the weight eases in fast (someone moved) and releases slow.
+      let wantYaw = 0;
+      let wantPitch = 0;
+      let wantW = 0;
+      if (gazeTarget && head) {
+        head.bone.getWorldPosition(gazeV);
+        gazeV.subVectors(gazeTarget, gazeV);
+        root.getWorldQuaternion(gazeQ).invert();
+        gazeV.applyQuaternion(gazeQ);
+        const rawYaw = Math.atan2(gazeV.x, gazeV.z);
+        if (Math.abs(rawYaw) <= GAZE_BEHIND && gazeV.lengthSq() > 0.09) {
+          wantYaw = THREE.MathUtils.clamp(rawYaw, -GAZE_YAW_MAX, GAZE_YAW_MAX);
+          wantPitch = THREE.MathUtils.clamp(
+            Math.atan2(gazeV.y, Math.hypot(gazeV.x, gazeV.z)),
+            GAZE_PITCH_MIN,
+            GAZE_PITCH_MAX
+          );
+          wantW = 1;
+        }
+      }
+      const kIn = 1 - Math.exp(-(wantW ? 6 : 2.2) * dt);
+      gazeYaw += (wantYaw - gazeYaw) * kIn;
+      gazePitch += (wantPitch - gazePitch) * kIn;
+      gazeW += (wantW - gazeW) * kIn;
+
+      // Blend: ambient drift fades as the gaze takes hold (65% head, 35% neck).
+      const amb = 1 - gazeW * 0.85;
+      const hYaw = yaw * amb + gazeYaw * gazeW * 0.65;
+      const hPitch = pitch * amb + gazePitch * gazeW * 0.65;
       if (head) {
-        tmpQ.setFromEuler(tmpEuler.set(pitch + postHead, yaw, postRoll));
+        tmpQ.setFromEuler(tmpEuler.set(hPitch + postHead, hYaw, postRoll));
         applyAdd(head, tmpQ);
       }
       if (neck) {
-        tmpQ.setFromEuler(tmpEuler.set(pitch * 0.4, yaw * 0.5, 0));
+        tmpQ.setFromEuler(
+          tmpEuler.set(pitch * 0.4 * amb + gazePitch * gazeW * 0.35, yaw * 0.5 * amb + gazeYaw * gazeW * 0.35, 0)
+        );
         applyAdd(neck, tmpQ);
       }
 

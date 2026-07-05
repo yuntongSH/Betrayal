@@ -34,7 +34,7 @@ import {
 
 export * from "./materials";
 export { attachKeepsake } from "./props";
-export { refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture } from "./refine";
+export { refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, REACTION_CLIPS } from "./refine";
 export type { AvatarLife } from "./refine";
 export { createDreadScore, type DreadScore, type DreadScene, type StingKind } from "./audio";
 

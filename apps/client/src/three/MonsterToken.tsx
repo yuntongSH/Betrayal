@@ -5,7 +5,7 @@ import { buildMonsterFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
 import { registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
-import { followPath, type WalkPoint } from "./walk";
+import { followPath, setWalking, type WalkPoint } from "./walk";
 import { useBeats } from "../state/beats";
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -43,17 +43,22 @@ export function MonsterToken({
   const prev = useRef(new THREE.Vector3());
   // A fresh path prop restarts waypoint walking from wherever the body stands.
   const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
-  const cursor = useRef({ i: 0 });
+  const cursor = useRef({ i: 0, traveled: 0 });
+  const wasWalking = useRef(false);
   if (activePath.current !== path) {
     activePath.current = path;
     cursor.current.i = 0;
+    cursor.current.traveled = 0;
   }
 
   // Monsters only mount while hp > 0 — track them for the x-ray raycast.
   useEffect(() => {
     if (!group.current) return;
     registerToken(tokenId, group.current, 1.0);
-    return () => unregisterToken(tokenId);
+    return () => {
+      unregisterToken(tokenId);
+      setWalking(tokenId, false);
+    };
   }, [tokenId]);
 
   useFrame((state, rawDt) => {
@@ -79,6 +84,11 @@ export function MonsterToken({
       yaw.current = lerpAngle(yaw.current, Math.atan2(dx, dz), 1 - Math.exp(-12 * dt));
     }
     g.rotation.y = yaw.current;
+    // Publish stride state so explorers' gaze notices a monster prowling past.
+    if (walking !== wasWalking.current) {
+      wasWalking.current = walking;
+      setWalking(tokenId, walking);
+    }
     animateFigure(figure, t, { phase: phase.current, baseY: 0.05 });
   });
 

@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, createDreadScore, ISLAND_R, RING } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, buildExplorerFigure, buildMonsterFigure, animateFigure, materials, surfaceFor, attachKeepsake, refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, createDreadScore, ISLAND_R, RING, REACTION_CLIPS } from "@dread-hollow/decor";
 
 const DH = window.DH;
 const $ = (id) => document.getElementById(id);
@@ -108,6 +108,14 @@ function setAvatarClip(group, name, fade = 0.25) {
   if (!anim) return;
   // The life layer stills its breath and closes the eyes for the fallen.
   if (group.userData.life) group.userData.life.dead = name === "death";
+  // A one-shot reaction owns the body until its clip finishes — the base wish
+  // is remembered above (wantClip) and restored by the mixer's `finished`
+  // handler. Only death interrupts a reaction mid-swing.
+  if (anim.oneShot) {
+    if (name !== "death") return;
+    anim.oneShot.action.fadeOut(ONE_SHOT_FADE_IN);
+    anim.oneShot = null;
+  }
   const next = anim.actions[name] || anim.actions.idle;
   if (!next || anim.current === next) return;
   next.reset();
@@ -181,19 +189,44 @@ function attachAvatar(group, archetype, targetH, mixers, opts = {}) {
           const c = gltf.animations.find((a) => re.test(a.name));
           return c ? mixer.clipAction(c) : null;
         };
+        // Reaction one-shots resolve by EXACT clip name — the map is shared
+        // with the React client via @dread-hollow/decor so the same beat plays
+        // the same motion everywhere.
+        const byName = (n) => {
+          const c = gltf.animations.find((a) => a.name === n);
+          return c ? mixer.clipAction(c) : null;
+        };
         const anim = {
           mixer,
           actions: {
             idle: pick(/^idle$/i) || mixer.clipAction(gltf.animations[0]),
+            idle2: pick(/^idle_neutral$/i), // fidget variant (Feature: idle variety)
             walk: pick(/^walk$/i),
             death: pick(/^death$/i),
             wave: pick(/^wave$/i),
           },
+          react: {
+            hit: byName(REACTION_CLIPS.hit),
+            stagger: byName(REACTION_CLIPS.stagger),
+            interact: byName(REACTION_CLIPS.interact),
+            attack: REACTION_CLIPS.attack.map(byName),
+            cheer: byName(REACTION_CLIPS.cheer),
+          },
           current: null,
+          oneShot: null, // { action, kind } while a reaction clip owns the body
         };
         group.userData.anim = anim;
-        // A wardrobe greeting settles into idle once the wave finishes.
         mixer.addEventListener("finished", (e) => {
+          // A reaction one-shot lands: crossfade back to whatever base clip the
+          // token wants right now (idle/walk — wantClip is maintained per frame).
+          if (anim.oneShot && e.action === anim.oneShot.action) {
+            anim.oneShot = null;
+            e.action.fadeOut(ONE_SHOT_FADE_OUT);
+            anim.current = null; // force the fade-in even if wantClip == old base
+            setAvatarClip(group, group.userData.wantClip || "idle", ONE_SHOT_FADE_OUT);
+            return;
+          }
+          // A wardrobe greeting settles into idle once the wave finishes.
           if (e.action === anim.actions.wave) setAvatarClip(group, "idle", 0.35);
         });
         const want = group.userData.wantClip;
@@ -216,6 +249,86 @@ function attachAvatar(group, archetype, targetH, mixers, opts = {}) {
   return true;
 }
 const tokenAvatarMixers = []; // advanced each frame in animate()
+
+// ---- one-shot body reactions ----------------------------------------------
+// LoopOnce clips from REACTION_CLIPS (shared with the React client): a flinch
+// when a wound lands, a heavier stagger at the haunt reveal, a crouch to
+// investigate, alternating punches on an attack, a cheer for the winners.
+// While one plays it owns the body (setAvatarClip defers to it, death excepted)
+// and the finished handler crossfades back to the token's base clip. The
+// governor treats a playing reaction as scene-busy (see sceneBusy) so the
+// motion never judders at the idle 24fps cadence.
+const ONE_SHOT_FADE_IN = 0.15;
+const ONE_SHOT_FADE_OUT = 0.25;
+const STAGGER_MAX_DELAY_MS = 450; // haunt reveal: the party reels a beat apart
+const CHEER_MAX_DELAY_MS = 600; // winners celebrate loosely together
+// Involuntary reactions (hit/stagger) replace deliberate ones (interact/attack/
+// cheer), never the other way around; equals replace (a fresh hit re-flinches).
+const REACT_PRIO = { hit: 2, stagger: 2, attack: 1, interact: 1, cheer: 1 };
+
+/** Play a one-shot reaction on a token's rigged avatar. Safe no-op when the
+ *  model hasn't loaded, the token is dead/dying, or a higher-priority reaction
+ *  is mid-swing. */
+function playOneShot(tok, kind) {
+  if (!tok || tok.dead) return;
+  const group = tok.group;
+  const anim = group.userData.anim;
+  if (!anim || group.userData.wantClip === "death") return; // never interrupt death
+  const cur = anim.oneShot;
+  if (cur && REACT_PRIO[kind] < REACT_PRIO[cur.kind]) return;
+  let action = anim.react[kind];
+  if (kind === "attack") {
+    // Alternate fists for variety, starting on a random side.
+    tok.punch = tok.punch === undefined ? (Math.random() * 2) | 0 : 1 - tok.punch;
+    action = anim.react.attack[tok.punch] || anim.react.attack[1 - tok.punch];
+  }
+  if (!action) return;
+  if (cur && cur.action !== action) cur.action.fadeOut(ONE_SHOT_FADE_IN);
+  action.reset();
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = false;
+  action.fadeIn(ONE_SHOT_FADE_IN).play();
+  if (anim.current && anim.current !== action) anim.current.fadeOut(ONE_SHOT_FADE_IN);
+  anim.current = null; // the base clip resumes via the mixer's finished handler
+  anim.oneShot = { action, kind };
+}
+
+/** Body language for a dispatched action: the acting player's token plays the
+ *  matching one-shot. Called for humans (act) and bots (driveBots) alike —
+ *  monsters stay procedural figures and never route through here. */
+function reactToAction(action) {
+  if (action.type === "investigate") playOneShot(tokenCache.get(action.playerId), "interact");
+  else if (action.type === "attack") playOneShot(tokenCache.get(action.playerId), "attack");
+}
+
+/** The haunt reveal: every living explorer reels, each a random beat apart. */
+function triggerHauntStagger() {
+  for (const [id, tok] of tokenCache) {
+    if (tok.kind !== "p" || tok.dead) continue;
+    setTimeout(() => {
+      const tk = tokenCache.get(id); // re-look-up: a new game may have retired it
+      if (tk && !tk.dead) playOneShot(tk, "stagger");
+    }, Math.random() * STAGGER_MAX_DELAY_MS);
+  }
+}
+
+let cheeredGame = null; // the state object whose winners already cheered
+/** Game over: living explorers on the winning side celebrate, once each. */
+function triggerCheers() {
+  if (!state || cheeredGame === state || !state.winner) {
+    cheeredGame = state;
+    return;
+  }
+  cheeredGame = state;
+  for (const p of state.players) {
+    if (!p.alive || p.side !== state.winner) continue;
+    const id = p.id;
+    setTimeout(() => {
+      const tk = tokenCache.get(id);
+      if (tk && !tk.dead) playOneShot(tk, "cheer");
+    }, Math.random() * CHEER_MAX_DELAY_MS);
+  }
+}
 const SPECIAL_GLOW = {
   "heal-sanity": 0x6fb6b5, "heal-might": 0xe8a85a, "drain-speed": 0x5a6f9a,
   pit: 0x3a2a2a, "draw-extra-omen": 0x8c2f23, vault: 0xc8a23a,
@@ -1719,6 +1832,9 @@ function disposeToken(tok) {
 function spawnStatFloat(playerId, trait, d) {
   const tok = tokenCache.get(playerId);
   if (!tok) return;
+  // A wound reads on the body too: negative deltas flinch. Walkers skip — the
+  // stride owns the legs; the floating badge still tells the story.
+  if (d < 0 && !tok.walking && !tok.path) playOneShot(tok, "hit");
   const el = document.createElement("div");
   el.className = "stat-float";
   el.style.color = TRAIT_COLOR[trait];
@@ -1738,6 +1854,35 @@ function spawnStatFloat(playerId, trait, d) {
 // straight through the island centerpiece. Paths are planned once per move
 // (allocations here are fine); the frame loop only consumes them.
 const _walkV = new THREE.Vector3(); // scratch for the per-frame walker
+
+// ---- character motion (weighted walk / lean / gaze / idle variety) --------
+// All constants mirror the React client so both frontends move identically.
+const WALK_RAMP_IN = 0.45; // u — speed smoothsteps up over the first stretch
+const WALK_RAMP_OUT = 0.6; // u — and brakes over the last
+const WALK_PACE_FLOOR = 0.25; // never slower — arrival must always land
+const LEAN_PER_YAWRATE = 0.12; // body bank into a turn: -yawRate * this
+const LEAN_MAX = 0.09; // rad — a lean, not a capsize
+const LEAN_EASE = 8; // /s
+const GAZE_WALKER_R2 = 12 * 12; // a walker within 12u (same floor) draws eyes
+const GAZE_CHEST_Y = 1.2; // look at chests, not ankles
+const GAZE_LOOK_MIN = 3, GAZE_LOOK_VAR = 3; // dwell on a roommate 3–6s…
+const GAZE_REST_MIN = 2, GAZE_REST_VAR = 2; // …then look away 2–4s
+const IDLE_SWAP_MIN = 9, IDLE_SWAP_VAR = 7; // fidget check every 9–16s…
+const IDLE_SWAP_CHANCE = 0.35; // …35% chance to swap Idle ⇄ Idle_Neutral
+const IDLE_SWAP_FADE = 0.6;
+const _gazePoint = new THREE.Vector3(); // scratch — setGaze copies it
+const _tokList = []; // per-frame token snapshot (gaze scans are O(n²), n ≤ ~10)
+
+/** Clamped smoothstep of x into [0,1] — the walk envelope's easing brick. */
+function smooth01(x) {
+  const c = x < 0 ? 0 : x > 1 ? 1 : x;
+  return c * c * (3 - 2 * c);
+}
+
+/** Is this token visibly covering ground right now (walk or glide)? */
+function tokenMoving(tok) {
+  return !!tok.path || (tok.kind === "p" ? !!tok.walking : tok.group.position.distanceToSquared(tok.target) > 4e-4);
+}
 
 /** Does the ground segment a→b pass within `r` of the point (cx,cz)? */
 function segNearCenter(ax, az, bx, bz, cx, cz, r) {
@@ -1807,7 +1952,12 @@ function planTokenPath(tok, toKey) {
   tok.path = path;
   let rem = 0, px = tok.group.position.x, pz = tok.group.position.z;
   for (const w of path) { rem += Math.hypot(w.x - px, w.z - pz); px = w.x; pz = w.z; }
-  if (rem > TILE * 3) tok.path = null;
+  if (rem > TILE * 3) { tok.path = null; return; }
+  // Weighted-walk bookkeeping: total journey length feeds the speed envelope
+  // (ramp over the first stretch, brake over the last). An extended mid-walk
+  // path keeps its distance-covered so the pace doesn't re-ramp from a stand.
+  tok.walkDone = cont ? tok.walkDone || 0 : 0;
+  tok.walkTotal = tok.walkDone + rem;
 }
 
 /** Retarget a token; when the destination genuinely moved, plan the walk. */
@@ -1843,8 +1993,11 @@ function syncTokens(legal) {
         setTokenDest(tok, wx + ox, wy, wz + oz, key);
         const dead = !o.p.alive;
         if (dead && !tok.dead) {
-          // First frame of death: the body falls where it stood and stays.
+          // First frame of death: the body falls where it stood and stays —
+          // upright (any mid-walk lean zeroes out; the fall owns the pose).
           tok.dead = true;
+          tok.lean = 0;
+          if (tok.group.userData.avatar) tok.group.userData.avatar.rotation.z = 0;
           setAvatarClip(tok.group, "death", 0.3);
           if (tok.fig.visible) { tok.fig.rotation.x = -Math.PI / 2; tok.fig.position.y = 0.12; }
         }
@@ -2229,6 +2382,7 @@ function onClick(e) {
 function act(action) {
   const active = state.players.find((p) => p.id === state.activePlayerId);
   if (active && active.isBot) return; // bots are driven automatically
+  reactToAction(action); // before dispatch: a losing swing gets replaced by the flinch
   dispatch(action);
   render();
   driveBots();
@@ -2267,6 +2421,7 @@ function driveBots() {
     // NOT named `step`: that would shadow the function expression above and
     // put the beat-hold retry's `setTimeout(step, …)` in its temporal dead zone.
     const bot = DH.botStep(state, a.id);
+    reactToAction(bot.action);
     dispatch(bot.action);
     const stalled =
       !bot.endTurnAfter &&
@@ -2572,8 +2727,14 @@ function updateHUD(legal) {
   // overlays — the haunt reveal waits behind any queued cinematic beats (the
   // omen card that triggered it flips first, then the house turns).
   const ov = $("overlay");
+  // Game over: the winners' bodies celebrate once, as the result card appears.
+  if (ended && Beats.idle()) triggerCheers();
   if (haunt && state.haunt && state.phase === "haunt" && lastHauntShown !== state.haunt.id && Beats.idle()) {
-    if (lastStinger !== state.haunt.id) { Sound.sting("reveal"); lastStinger = state.haunt.id; }
+    if (lastStinger !== state.haunt.id) {
+      Sound.sting("reveal");
+      lastStinger = state.haunt.id;
+      triggerHauntStagger(); // the whole party reels as the house turns
+    }
     const amT = me?.side === "traitor";
     const noTraitor = state.haunt.traitorIds.length === 0;
     const tnames = state.haunt.traitorIds.map((id) => state.players.find((p) => p.id === id)?.name ?? "someone").join(", ");
@@ -2678,6 +2839,7 @@ function sceneBusy(nowMs) {
   for (const tok of tokenCache.values()) {
     if (tok.path || !tok.placed) return true; // waypoint walk in progress / spawn pending
     if (tok.group.position.distanceToSquared(tok.target) > 4e-4) return true; // gliding
+    if (tok.group.userData.anim?.oneShot) return true; // one-shot reaction mid-play
   }
   if (!xraySettled || !doorsSettled) return true; // eases still landing
   return false;
@@ -2843,22 +3005,28 @@ function animate() {
   }
   // Ease each token toward its target room/offset and turn it to face the way
   // it's travelling, so a move reads as walking rather than a teleport.
-  for (const tok of tokenCache.values()) {
+  // (Snapshot the registry once so the gaze pass can scan it allocation-free.)
+  _tokList.length = 0;
+  for (const tok of tokenCache.values()) _tokList.push(tok);
+  for (let ti = 0; ti < _tokList.length; ti++) {
+    const tok = _tokList[ti];
     const g = tok.group;
     if (!tok.placed) { g.position.copy(tok.target); tok.placed = true; tok.path = null; }
     const px = g.position.x, pz = g.position.z;
     if (tok.path) {
-      // Waypoint walk: consume the planned ring/door points at constant
-      // WALK_SPEED, easing out over the last stretch into the final slot.
-      let budget = WALK_SPEED * dt;
+      // Waypoint walk: consume the planned ring/door points at WALK_SPEED
+      // scaled by a distance-based envelope — smoothstep up over the first
+      // WALK_RAMP_IN units of the journey, brake over the last WALK_RAMP_OUT,
+      // floored so arrival always lands (deferred beats gate on tok.path).
+      const remain = Math.max(0, (tok.walkTotal || 0) - (tok.walkDone || 0));
+      const pace = Math.max(WALK_PACE_FLOOR, smooth01((tok.walkDone || 0) / WALK_RAMP_IN) * smooth01(remain / WALK_RAMP_OUT));
+      let budget = WALK_SPEED * dt * pace;
       while (budget > 1e-5 && tok.path.length) {
         const w = tok.path[0];
         _walkV.subVectors(w, g.position);
         const dist = _walkV.length();
-        const k = tok.path.length === 1 ? Math.max(0.35, Math.min(1, dist / 1.2)) : 1; // ease-out
-        const step = budget * k;
-        if (dist <= step) { g.position.copy(w); tok.path.shift(); budget -= dist / k; }
-        else { g.position.addScaledVector(_walkV.multiplyScalar(1 / dist), step); budget = 0; }
+        if (dist <= budget) { g.position.copy(w); tok.path.shift(); budget -= dist; tok.walkDone += dist; }
+        else { g.position.addScaledVector(_walkV.multiplyScalar(1 / dist), budget); tok.walkDone += budget; budget = 0; }
       }
       if (!tok.path.length) tok.path = null;
     } else {
@@ -2868,10 +3036,12 @@ function animate() {
       g.position.lerp(tok.target, 1 - Math.exp(-2.6 * dt));
     }
     const dx = g.position.x - px, dz = g.position.z - pz;
+    let yawStep = 0;
     if (dx * dx + dz * dz > 1e-6) {
       const desired = Math.atan2(dx, dz);
       const d = ((desired - tok.yaw + Math.PI) % (Math.PI * 2)) - Math.PI;
-      tok.yaw += d * (1 - Math.exp(-12 * dt));
+      yawStep = d * (1 - Math.exp(-12 * dt));
+      tok.yaw += yawStep;
     }
     g.rotation.y = tok.yaw;
     // Feet match the glide: the rigged body strides while covering ground and
@@ -2882,7 +3052,78 @@ function animate() {
       const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
       // Hysteresis so the clip can't flap right at the threshold.
       tok.walking = speed > (tok.walking ? 0.4 : 0.8);
-      setAvatarClip(g, tok.walking ? "walk" : "idle");
+      setAvatarClip(g, tok.walking ? "walk" : (tok.idleVariant || "idle"));
+      // Turn lean: the body banks into the turn (yaw-rate scaled) and eases
+      // back upright when the path straightens or the walk ends. On the model
+      // child under the yaw-rotating group, so it tilts about the travel axis.
+      const leanWant = Math.max(-LEAN_MAX, Math.min(LEAN_MAX, -(yawStep / dt) * LEAN_PER_YAWRATE));
+      tok.lean = (tok.lean || 0) + (leanWant - (tok.lean || 0)) * (1 - Math.exp(-LEAN_EASE * dt));
+      const mdl = g.userData.avatar;
+      if (mdl) mdl.rotation.z = tok.lean;
+      // Idle variety: a standing body occasionally shifts its weight — every
+      // 9–16s a 35% chance to crossfade between the two idle stances.
+      if (!tok.walking && !g.userData.anim?.oneShot) {
+        if (tok.idleAt === undefined) tok.idleAt = t + IDLE_SWAP_MIN + Math.random() * IDLE_SWAP_VAR;
+        else if (t >= tok.idleAt) {
+          tok.idleAt = t + IDLE_SWAP_MIN + Math.random() * IDLE_SWAP_VAR;
+          if (Math.random() < IDLE_SWAP_CHANCE) {
+            tok.idleVariant = tok.idleVariant === "idle2" ? "idle" : "idle2";
+            setAvatarClip(g, tok.idleVariant, IDLE_SWAP_FADE);
+          }
+        }
+      }
+      // Gaze targeting: idle explorers watch whoever is crossing the floor
+      // nearby, else trade glances with a roommate (dwell, look away, repeat).
+      // Walkers and the dead look at no one. Head motion is additive in the
+      // life layer — deliberately NOT scene-busy (it reads fine at 24fps).
+      const life = g.userData.life;
+      if (life) {
+        if (tok.walking || tok.path) {
+          life.setGaze(null);
+          tok.gazeUntil = 0;
+          tok.gazeLook = false;
+        } else {
+          // a) a living token walking within 12u on this floor — the nearest.
+          let watch = null, watchD = GAZE_WALKER_R2;
+          for (let i = 0; i < _tokList.length; i++) {
+            const o = _tokList[i];
+            if (o === tok || o.dead || !tokenMoving(o)) continue;
+            if (Math.abs(o.group.position.y - g.position.y) > 2) continue; // other floor
+            const wx = o.group.position.x - g.position.x, wz = o.group.position.z - g.position.z;
+            const d2 = wx * wx + wz * wz;
+            if (d2 < watchD) { watchD = d2; watch = o; }
+          }
+          if (watch) {
+            _gazePoint.copy(watch.group.position);
+            _gazePoint.y += GAZE_CHEST_Y;
+            life.setGaze(_gazePoint);
+            tok.gazeUntil = 0; // company passed: the idle dwell restarts fresh
+            tok.gazeLook = false;
+          } else {
+            // b) idle company: watch the nearest fellow explorer in this room
+            //    for a while, look away for a while — per-token random timers.
+            if (!tok.gazeUntil || t >= tok.gazeUntil) {
+              tok.gazeLook = !tok.gazeLook;
+              tok.gazeUntil = t + (tok.gazeLook
+                ? GAZE_LOOK_MIN + Math.random() * GAZE_LOOK_VAR
+                : GAZE_REST_MIN + Math.random() * GAZE_REST_VAR);
+            }
+            let mate = null, mateD = Infinity;
+            if (tok.gazeLook) for (let i = 0; i < _tokList.length; i++) {
+              const o = _tokList[i];
+              if (o === tok || o.kind !== "p" || o.dead || o.lastKey !== tok.lastKey) continue;
+              const wx = o.group.position.x - g.position.x, wz = o.group.position.z - g.position.z;
+              const d2 = wx * wx + wz * wz;
+              if (d2 < mateD) { mateD = d2; mate = o; }
+            }
+            if (mate) {
+              _gazePoint.copy(mate.group.position);
+              _gazePoint.y += GAZE_CHEST_Y;
+              life.setGaze(_gazePoint);
+            } else life.setGaze(null);
+          }
+        }
+      }
       // The active explorer feeds the follow camera — same walking signal as
       // the stride clip, so the swoop and the animation can never disagree.
       if (tok.active) {
@@ -3095,6 +3336,9 @@ Object.defineProperty(window, "__dh", {
   value: {
     get state() { return state; },
     render: () => render(),
+    /** Live token registry (entity id -> token) — headless probes assert gaze
+     *  head-turns and reaction clips through it. Read-only by convention. */
+    get tokens() { return tokenCache; },
     perf: {
       get frames() { return framesRendered; }, // GL frames actually rendered
       get avgMs() { return perfAvg; }, // rolling ACTIVE frame time (ms)

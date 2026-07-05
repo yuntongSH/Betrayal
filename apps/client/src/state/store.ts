@@ -3,6 +3,7 @@ import { CHARACTERS, type Action, type Difficulty, type Direction, type GameStat
 import { Connection, type ServerMessage } from "../net/connection";
 import { ambient } from "../audio/ambient";
 import { ingestBeats, resetBeats } from "./beats";
+import { playOneShotFor } from "../three/avatarRegistry";
 
 /** Bots added for a one-click solo game (1 human + this many bots). */
 const SOLO_BOTS = 3;
@@ -198,16 +199,26 @@ export const useStore = create<Store>((set, get) => {
     moveTo: (toKey) => act((playerId) => ({ type: "move-to", playerId, toKey })),
     explore: (door) => act((playerId) => ({ type: "explore", playerId, door })),
     attackMonster: (monsterId) =>
-      act((playerId) => ({ type: "attack", playerId, targetMonsterId: monsterId })),
+      act((playerId) => {
+        playOneShotFor(playerId, "attack");
+        return { type: "attack", playerId, targetMonsterId: monsterId };
+      }),
     attackPlayer: (targetPlayerId) =>
-      act((playerId) => ({ type: "attack", playerId, targetPlayerId })),
+      act((playerId) => {
+        playOneShotFor(playerId, "attack");
+        return { type: "attack", playerId, targetPlayerId };
+      }),
     pickupItem: (cardId) => act((playerId) => ({ type: "pickup-item", playerId, cardId })),
     giveItem: (toPlayerId, cardId) =>
       act((playerId) => ({ type: "give-item", playerId, toPlayerId, cardId })),
     useItem: (cardId) => act((playerId) => ({ type: "use-item", playerId, cardId })),
     rest: () => act((playerId) => ({ type: "rest", playerId })),
     barricade: (door) => act((playerId) => ({ type: "barricade", playerId, door })),
-    investigate: () => act((playerId) => ({ type: "investigate", playerId })),
+    investigate: () =>
+      act((playerId) => {
+        playOneShotFor(playerId, "interact");
+        return { type: "investigate", playerId };
+      }),
     endTurn: () => act((playerId) => ({ type: "end-turn", playerId })),
   };
 });
