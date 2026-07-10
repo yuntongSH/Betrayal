@@ -11,6 +11,11 @@ export const director = {
   until: 0,
 };
 
+/** A scripted timeline owns the stage: CameraDirector holds every framing
+ *  write and the tokens' ambient gaze pass stands down (the cinematic aims
+ *  heads itself). Set/cleared by HauntCinematic around the haunt reveal. */
+export const cinematic = { active: false };
+
 export function focusPulse(roomKey: string, ms = 1600): void {
   director.focusKey = roomKey;
   director.until = performance.now() + ms;

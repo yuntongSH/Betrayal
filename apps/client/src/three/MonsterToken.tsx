@@ -5,7 +5,7 @@ import { buildMonsterFigure, animateFigure } from "@dread-hollow/decor";
 import * as THREE from "three";
 import type { Group } from "three";
 import { registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
-import { followPath, setWalking, type WalkPoint } from "./walk";
+import { followPath, setWalking, type WalkPath } from "./walk";
 import { useBeats } from "../state/beats";
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -25,8 +25,10 @@ export function MonsterToken({
 }: {
   tokenId: string;
   position: [number, number, number];
-  /** Waypoints to walk through toward `position` (null = plain glide). */
-  path?: readonly WalkPoint[] | null;
+  /** Route to walk toward `position` (null = plain glide). Monsters keep the
+   *  prowling walk pace even across rooms — the procedural figures have no
+   *  run cycle, and a creeping monster is scarier anyway. */
+  path?: WalkPath | null;
   name: string;
   hp: number;
   attackable: boolean;
@@ -42,7 +44,7 @@ export function MonsterToken({
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
   // A fresh path prop restarts waypoint walking from wherever the body stands.
-  const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
+  const activePath = useRef<WalkPath | null | undefined>(undefined);
   const cursor = useRef({ i: 0, traveled: 0 });
   const wasWalking = useRef(false);
   if (activePath.current !== path) {
@@ -69,14 +71,16 @@ export function MonsterToken({
     const dt = Math.min(MAX_FRAME_DT, rawDt);
     if (!placed.current) {
       g.position.copy(target.current);
-      if (activePath.current) cursor.current.i = activePath.current.length; // never walk in from a stale path
+      if (activePath.current) cursor.current.i = activePath.current.points.length; // never walk in from a stale path
       placed.current = true;
     }
     // A modal beat owns the stage — hold position and pose until it drains.
     if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
     // Same waypoint walk as players; the glide remains for floor jumps.
-    const walking = activePath.current ? followPath(g.position, activePath.current, cursor.current, dt) : false;
+    const walking = activePath.current
+      ? followPath(g.position, activePath.current.points, cursor.current, dt)
+      : false;
     if (!walking) g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;

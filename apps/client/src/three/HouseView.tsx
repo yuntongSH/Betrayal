@@ -15,15 +15,15 @@ import { Doors } from "./Doors";
 import { PlayerToken } from "./PlayerToken";
 import { MonsterToken } from "./MonsterToken";
 import { TILE, occupantsAt, ringOffset, roomWorld } from "./layout";
-import { buildWalkPath, type WalkPoint } from "./walk";
+import { buildWalkPath, type WalkPath, type WalkPoint } from "./walk";
 
 const HALF = TILE / 2;
 
-/** A token's last assigned slot and the walking path that led to it. */
+/** A token's last assigned slot and the walking route that led to it. */
 interface WalkEntry {
   key: string;
   slot: WalkPoint;
-  path: WalkPoint[] | null;
+  path: WalkPath | null;
 }
 
 /** Cache a token's slot and (re)build its path only when the slot actually
@@ -36,7 +36,7 @@ function updateWalk(
   roomKey: string,
   slot: WalkPoint,
   walker: boolean,
-): WalkPoint[] | null {
+): WalkPath | null {
   const prev = cache.get(id);
   if (!prev) {
     cache.set(id, { key: roomKey, slot, path: null });

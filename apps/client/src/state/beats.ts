@@ -101,6 +101,9 @@ interface BeatsState {
   /** Haunt id whose reveal banner this player has dismissed — while the
    *  current haunt's banner is still up (or gated), auto-end must not fire. */
   hauntSeen: string | null;
+  /** The haunt cinematic holds the banner back until its reveal point (the
+   *  camera has landed on the traitor), then drops it over the close-up. */
+  hauntCinematicHold: boolean;
 }
 
 export const useBeats = create<BeatsState>(() => ({
@@ -114,6 +117,7 @@ export const useBeats = create<BeatsState>(() => ({
   worldFrozen: false,
   diceTray: null,
   hauntSeen: null,
+  hauntCinematicHold: false,
 }));
 
 export function markHauntSeen(id: string): void {
@@ -288,6 +292,7 @@ export function resetBeats(): void {
     worldFrozen: false,
     diceTray: null,
     hauntSeen: null,
+    hauntCinematicHold: false,
   });
 }
 

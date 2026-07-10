@@ -4,6 +4,7 @@ import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { HouseView } from "./HouseView";
 import { Atmosphere } from "./Atmosphere";
 import { CameraDirector } from "./CameraDirector";
+import { HauntCinematic } from "./HauntCinematic";
 import { XrayWalls } from "./XrayWalls";
 import { BeatFX } from "./BeatFX";
 import { KeyboardMover } from "./KeyboardMover";
@@ -60,6 +61,7 @@ export function Scene() {
 
       <Atmosphere />
       <CameraDirector />
+      <HauntCinematic />
       <XrayWalls />
       <BeatFX />
       <KeyboardMover />

@@ -9,13 +9,16 @@ export function HauntBanner() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
   const beatsBusy = useBeats((s) => !!s.active || s.queue.length > 0);
+  const cinematicHold = useBeats((s) => s.hauntCinematicHold);
   const dismissed = useBeats((s) => s.hauntSeen);
   const setDismissed = markHauntSeen;
 
   const haunt = game.haunt;
 
-  // Let the beat that triggered the haunt (usually an omen card) finish first.
-  if (beatsBusy) return null;
+  // Let the beat that triggered the haunt (usually an omen card) finish first,
+  // then the cinematic push-in on the traitor — the banner drops over the
+  // held close-up at the reveal point.
+  if (beatsBusy || cinematicHold) return null;
   if (!haunt || game.phase !== "haunt") return null;
   if (dismissed === haunt.id) return null;
 

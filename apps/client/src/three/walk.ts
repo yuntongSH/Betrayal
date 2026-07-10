@@ -12,21 +12,21 @@ import { FLOOR_Y, TILE, WALK_RING_R } from "./layout";
 
 export type WalkPoint = [number, number, number];
 
+/** A built walking route. `crossing` is true when it passes into another
+ *  room — those read as "going somewhere" and the body jogs; in-room
+ *  re-shuffles keep the unhurried walk. (A length heuristic can't split the
+ *  two: the door corridor between adjacent rooms can be SHORTER than a long
+ *  arc around one room's ring.) */
+export interface WalkPath {
+  points: WalkPoint[];
+  crossing: boolean;
+}
+
 /** Peak stride speed (u/s), tuned to the Walk clip cadence at TILE = 7. */
 export const WALK_SPEED = 2.7;
 
-/** Jog speed (u/s), tuned to the Run clip cadence — used for the long hauls. */
+/** Jog speed (u/s), tuned to the Run clip cadence — used for room changes. */
 export const RUN_SPEED = 4.6;
-
-/** Paths at least this long read as "going somewhere" — the body jogs.
- *  Room-to-room travel (ring arcs + door corridor) runs 8–11 u; in-room
- *  re-shuffles stay under ~5 u and keep the unhurried walk. */
-const RUN_DIST = 6;
-
-/** Peak speed for a path of total length `len`. */
-export function peakSpeedFor(len: number): number {
-  return len >= RUN_DIST ? RUN_SPEED : WALK_SPEED;
-}
 
 /** Live planar ground speed (u/s) per token, written by the token's frame
  *  pass and read by its Avatar to drive the locomotion blend — the same
@@ -89,11 +89,12 @@ function segDistToCenter(ax: number, az: number, bx: number, bz: number, cx: num
 }
 
 /**
- * Waypoints from the token's old slot to its new one, or null where the direct
- * glide stays correct (first placement, floor changes, non-adjacent jumps, and
- * within-room shuffles whose straight line already clears the island).
+ * The route from the token's old slot to its new one, or null where the
+ * direct glide stays correct (first placement, floor changes, non-adjacent
+ * jumps, and within-room shuffles whose straight line already clears the
+ * island).
  */
-export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, to: WalkPoint): WalkPoint[] | null {
+export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, to: WalkPoint): WalkPath | null {
   const a = parseKey(fromKey);
   const b = parseKey(toKey);
   if (a.floor !== b.floor) return null; // stairs/elevator/falls keep today's glide
@@ -109,7 +110,7 @@ export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, t
     const out: WalkPoint[] = [];
     pushArc(out, ax, y, az, Math.atan2(from[2] - az, from[0] - ax), Math.atan2(to[2] - az, to[0] - ax));
     out.push(to);
-    return out;
+    return { points: out, crossing: false };
   }
 
   // Only orthogonally adjacent rooms share a walkable door corridor.
@@ -128,7 +129,7 @@ export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, t
   out.push([bx - dirx * WALK_RING_R, y, bz - dirz * WALK_RING_R]); // ring entry
   pushArc(out, bx, y, bz, Math.atan2(-dirz, -dirx), Math.atan2(to[2] - bz, to[0] - bx));
   out.push(to);
-  return out;
+  return { points: out, crossing: true };
 }
 
 // Scratch vector shared across tokens — useFrame callbacks run sequentially.

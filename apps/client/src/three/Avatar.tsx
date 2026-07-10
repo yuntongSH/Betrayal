@@ -9,7 +9,7 @@ import { MAX_FRAME_DT } from "./followCam";
 import { markActive } from "./governor";
 import { avatarHandles, type OneShotKind } from "./avatarRegistry";
 import { Locomotion } from "./locomotion";
-import { tokenSpeeds, WALK_SPEED } from "./walk";
+import { tokenSpeeds } from "./walk";
 import type { AvatarEntry } from "./avatars";
 
 /** One-shot reactions that may interrupt a softer one already playing. */
@@ -31,22 +31,22 @@ const PERSON_MATS = /skin|hair|eyebrow|eye|beard|teeth/i;
  * gently tinted toward its identity colour, shadow-casting, carrying the
  * character's signature keepsake on a bone (Thorne's camera, Tobias's lantern…).
  *
- * The body acts the story out: Idle at rest, Walk while the parent token glides
- * between rooms, and Death — played once, frozen on the floor — when the house
- * takes them. The parent PlayerToken group still handles glide and facing.
+ * The body acts the story out: a live speed-driven idle/walk/run blend while
+ * the parent token covers ground (stride rate matched, so feet grip), and
+ * Death — played once, frozen on the floor — when the house takes them. The
+ * parent PlayerToken group still handles glide and facing.
  */
 export function Avatar({
   entry,
   archetype,
-  moving,
   dead,
   tokenId,
 }: {
   entry: AvatarEntry;
   archetype?: string;
-  moving?: boolean;
   dead?: boolean;
-  /** Player id — this avatar publishes its gaze/reaction controls here. */
+  /** Player id — this avatar publishes its gaze/reaction controls here and
+   *  reads its live ground speed from the walk registry under it. */
   tokenId?: string;
 }) {
   const { scene, animations } = useGLTF(entry.url);
@@ -141,23 +141,35 @@ export function Avatar({
   // The body's continuous story: a 1D locomotion blend (idle ↔ walk ↔ run)
   // driven by LIVE ground speed published by the parent token — the envelope's
   // ramps play out through the blend and stride rate, so feet grip the floor
-  // instead of skating. Death and one-shot reactions "hold" the blend down
-  // while they own the body; it recovers on its own when they let go.
+  // instead of skating. Construction only resolves the actions; ownership
+  // (playing them) is effect-shaped so StrictMode's dev remount — where drei's
+  // useAnimations cleanup stops every action — revives them on re-mount.
   const loco = useMemo(() => new Locomotion(actions), [actions]);
+  useEffect(() => loco.own(), [loco]);
   const oneShotRef = useRef<THREE.AnimationAction | null>(null);
-  const oneShotKindRef = useRef<OneShotKind | null>(null);
+  // Whichever clip owns the body instead of the blend (a reaction or Death),
+  // playing or still fading out — locomotion complements its LIVE weight, so
+  // total mixer weight stays ~1 and the rig never dips toward the bind pose.
+  const overrideRef = useRef<THREE.AnimationAction | null>(null);
 
-  // Death wins over everything: played once, frozen on the floor.
+  // Death wins over everything: played once, frozen on the floor. An
+  // in-flight reaction hands the body over instead of diluting the fall.
   useEffect(() => {
     if (!dead) return;
     const death = actions["Death"];
     if (!death) return;
+    if (oneShotRef.current) {
+      oneShotRef.current.fadeOut(0.15);
+      oneShotRef.current = null;
+    }
     death.reset();
     death.setLoop(THREE.LoopOnce, 1);
     death.clampWhenFinished = true;
     death.fadeIn(0.25).play();
+    overrideRef.current = death;
     return () => {
       death.fadeOut(0.2);
+      if (overrideRef.current === death) overrideRef.current = null;
     };
   }, [actions, dead]);
 
@@ -166,20 +178,18 @@ export function Avatar({
   useFrame((_, dt) => {
     if (useBeats.getState().worldFrozen) return; // hold the pose with the mixer
     const d = Math.min(MAX_FRAME_DT, dt);
-    const speed = tokenId != null
-      ? (tokenSpeeds.get(tokenId) ?? 0)
-      : moving ? WALK_SPEED : 0; // registry-less preview fallback
-    loco.update(d, dead ? 0 : speed, idleClip, !!dead || oneShotRef.current != null);
+    const speed = tokenId != null ? (tokenSpeeds.get(tokenId) ?? 0) : 0;
+    loco.update(d, dead ? 0 : speed, idleClip, overrideRef.current);
     life.update(d);
   });
 
-  // A reaction clip finished → let the locomotion blend take the body back.
+  // A reaction clip finished → clamped on its end pose (still enabled), it
+  // fades out while the blend recovers in exact complement underneath.
   useEffect(() => {
     const onFinished = (e: { action: THREE.AnimationAction }) => {
       if (e.action !== oneShotRef.current) return; // Death also fires 'finished'
       oneShotRef.current = null;
-      oneShotKindRef.current = null;
-      e.action.fadeOut(0.25);
+      e.action.fadeOut(0.35);
     };
     mixer.addEventListener("finished", onFinished);
     return () => mixer.removeEventListener("finished", onFinished);
@@ -194,15 +204,19 @@ export function Avatar({
     if (oneShotRef.current && !OVERRIDE.has(kind)) return; // softer beat can't cut in
     const action = actions[reactionClip(kind)];
     if (!action) return;
-    // The locomotion blend sees oneShotRef and ducks itself — only a previous
+    // Locomotion complements overrideRef's live weight — only a previous
     // reaction needs fading out by hand.
     if (oneShotRef.current && oneShotRef.current !== action) oneShotRef.current.fadeOut(0.1);
     action.reset();
     action.setLoop(THREE.LoopOnce, 1);
-    action.clampWhenFinished = false;
+    // Clamp on the end pose: a finished non-clamped action disables itself
+    // BEFORE 'finished' fires, turning the fade-out into a no-op and popping
+    // the rig toward the bind pose. Clamped, it holds the pose and the fade
+    // genuinely blends back. (reset() unpauses it for the next trigger.)
+    action.clampWhenFinished = true;
     action.fadeIn(0.15).play();
     oneShotRef.current = action;
-    oneShotKindRef.current = kind;
+    overrideRef.current = action;
     markActive(1400); // new motion — render at full rate, not the idle cadence
   };
 

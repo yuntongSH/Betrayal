@@ -12,9 +12,17 @@
  *    (WALK_SPEED / RUN_SPEED — the exact constants the path-follower uses),
  *    so feet grip the floor during the ramps instead of skating.
  *
- * The blend never *owns* the whole body: a master `hold` envelope ducks all
- * four actions while a one-shot reaction or the Death clip has the stage
- * (down fast, back gently), replacing the old fadeIn/fadeOut juggling.
+ * The blend never *owns* the whole body: while an override clip (a one-shot
+ * reaction or Death) has the stage, the master `hold` envelope is the exact
+ * COMPLEMENT of that clip's live effective weight — total mixer weight stays
+ * ~1 through both edges of the fade, so the rig never dips toward the bind
+ * pose at a death or reaction boundary.
+ *
+ * Lifecycle: constructing this class only RESOLVES the actions — nothing
+ * plays until `own()`, which the owner calls from an effect. StrictMode's
+ * dev remount (R3F v9 inherits it into the Canvas) makes drei's useAnimations
+ * stop every action in its cleanup; re-running `own()` on the second mount
+ * revives them. Playing from a render-phase constructor left them dead.
  *
  * This deliberately goes further than @pmndrs/viverse's movement state (a
  * hard idle/walk/run switch with cross-fades): a board-game token spends
@@ -28,10 +36,6 @@ import { RUN_SPEED, WALK_SPEED } from "./walk";
 const REST_EPS = 0.12;
 /** 1/s — how fast blend weights chase their targets. */
 const BLEND_RATE = 10;
-/** 1/s — the hold envelope: duck fast when a reaction/Death takes the body… */
-const HOLD_IN_RATE = 14;
-/** …and hand it back gently. */
-const HOLD_OUT_RATE = 5;
 
 type Slot = "idleA" | "idleB" | "walk" | "run";
 const CLIP_FOR: Record<Slot, string> = {
@@ -40,32 +44,48 @@ const CLIP_FOR: Record<Slot, string> = {
   walk: "Walk",
   run: "Run",
 };
+const SLOTS = Object.keys(CLIP_FOR) as Slot[];
 
 export class Locomotion {
   private readonly acts: Partial<Record<Slot, THREE.AnimationAction>> = {};
   private readonly w: Record<Slot, number> = { idleA: 1, idleB: 0, walk: 0, run: 0 };
-  private hold = 1;
 
   constructor(actions: Record<string, THREE.AnimationAction | null>) {
-    for (const slot of Object.keys(CLIP_FOR) as Slot[]) {
+    for (const slot of SLOTS) {
       const a = actions[CLIP_FOR[slot]];
+      if (a) this.acts[slot] = a;
+    }
+  }
+
+  /** Take ownership of the four clips: play them at their current weights.
+   *  Returns the release that stops them — effect-shaped, so a StrictMode
+   *  remount (drei's cleanup stops every action) re-plays them cleanly. */
+  own(): () => void {
+    for (const slot of SLOTS) {
+      const a = this.acts[slot];
       if (!a) continue;
-      this.acts[slot] = a;
-      // All four run forever; this class owns their weights exclusively.
       a.reset().play();
       a.setEffectiveWeight(this.w[slot]);
     }
+    return () => {
+      for (const slot of SLOTS) this.acts[slot]?.stop();
+    };
   }
 
   /**
    * One frame. `speed` is live planar ground speed (u/s); `restIdle` names
-   * which idle owns the standing pose (the idle-variety timer); `held` is
-   * true while a one-shot reaction or Death should have the body to itself.
+   * which idle owns the standing pose (the idle-variety timer); `override`
+   * is whichever clip owns the body instead — a one-shot reaction or Death,
+   * playing OR still fading out. The blend weights complement its live
+   * weight exactly.
    */
-  update(dt: number, speed: number, restIdle: "Idle" | "Idle_Neutral", held: boolean): void {
-    const holdTarget = held ? 0 : 1;
-    const rate = holdTarget < this.hold ? HOLD_IN_RATE : HOLD_OUT_RATE;
-    this.hold += (holdTarget - this.hold) * (1 - Math.exp(-rate * dt));
+  update(
+    dt: number,
+    speed: number,
+    restIdle: "Idle" | "Idle_Neutral",
+    override: THREE.AnimationAction | null,
+  ): void {
+    const hold = 1 - THREE.MathUtils.clamp(override ? override.getEffectiveWeight() : 0, 0, 1);
 
     // 1D blend-tree targets: rest → walk over (REST_EPS, WALK_SPEED],
     // walk → run over (WALK_SPEED, RUN_SPEED]. One segment is active at a
@@ -85,9 +105,9 @@ export class Locomotion {
     }
 
     const k = 1 - Math.exp(-BLEND_RATE * dt);
-    for (const slot of Object.keys(CLIP_FOR) as Slot[]) {
+    for (const slot of SLOTS) {
       this.w[slot] += (t[slot] - this.w[slot]) * k;
-      this.acts[slot]?.setEffectiveWeight(this.w[slot] * this.hold);
+      this.acts[slot]?.setEffectiveWeight(this.w[slot] * hold);
     }
 
     // Stride-rate matching — feet cover exactly the ground the body does.

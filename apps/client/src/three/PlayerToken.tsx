@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { buildExplorerFigure, animateFigure } from "@dread-hollow/decor";
@@ -9,15 +9,16 @@ import { Avatar } from "./Avatar";
 import { followTarget, registerToken, unregisterToken, trackedTokens, MAX_FRAME_DT } from "./followCam";
 import {
   followPath,
-  peakSpeedFor,
+  RUN_SPEED,
   setWalking,
   sweep,
   tokenSpeeds,
   walkingTokens,
   WALK_SPEED,
-  type WalkPoint,
+  type WalkPath,
 } from "./walk";
 import { avatarHandles, playOneShotFor } from "./avatarRegistry";
+import { cinematic } from "./director";
 import { useBeats } from "../state/beats";
 import { useStore } from "../state/store";
 import { TRAIT_COLOR } from "../ui/icons";
@@ -53,8 +54,8 @@ export function PlayerToken({
 }: {
   tokenId: string;
   position: [number, number, number];
-  /** Waypoints to walk through toward `position` (null = plain glide). */
-  path?: readonly WalkPoint[] | null;
+  /** Route to walk toward `position` (null = plain glide). */
+  path?: WalkPath | null;
   color: string;
   archetype?: string;
   name: string;
@@ -80,16 +81,16 @@ export function PlayerToken({
   target.current.set(position[0], position[1], position[2]);
   const prev = useRef(new THREE.Vector3());
   // A fresh path prop restarts waypoint walking from wherever the body stands.
-  const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
+  // Crossing into another room reads as "going somewhere" — the body jogs;
+  // in-room re-shuffles keep the unhurried walk.
+  const activePath = useRef<WalkPath | null | undefined>(undefined);
   const cursor = useRef({ i: 0, traveled: 0 });
-  // Peak speed for the current path — 0 until the first frame measures the
-  // path's real length from wherever the body actually stands.
-  const peak = useRef(0);
+  const peak = useRef(WALK_SPEED);
   if (activePath.current !== path) {
     activePath.current = path;
     cursor.current.i = 0;
     cursor.current.traveled = 0;
-    peak.current = 0;
+    peak.current = path?.crossing ? RUN_SPEED : WALK_SPEED;
   }
   // Turn lean (body banks into a turn) and its slew rate, applied to an inner
   // group so it composes cleanly under the yaw the outer group carries.
@@ -102,10 +103,9 @@ export function PlayerToken({
   const traitDeltas = useBeats((s) => s.traitDeltas);
   const myDeltas = traitDeltas.filter((d) => d.playerId === tokenId);
   const lastHitDelta = useRef<number | null>(null);
-  // Feet match the glide: `moving` flips only on transitions (with hysteresis),
-  // so the rigged body strides while covering ground and idles on arrival.
+  // Hysteresis flag for the camera/gaze/glow systems; the avatar's stride
+  // now follows the live speed published to tokenSpeeds instead.
   const movingRef = useRef(false);
-  const [moving, setMoving] = useState(false);
   // Movement readability: the walker's candle pool brightens while striding.
   const glow = useRef(0);
   const activeLight = useRef<THREE.PointLight>(null);
@@ -148,14 +148,14 @@ export function PlayerToken({
     }
   });
 
-  // The whole party reels when the house turns; the survivors' side celebrates
-  // when the night is won. Staggered so they don't move as one machine.
+  // The survivors' side celebrates when the night is won. (The haunt's
+  // stagger ripple moved into HauntCinematic — it radiates from the traitor
+  // in distance order instead of a random shuffle.)
   const gamePhase = useStore((s) => s.game?.phase);
   const winner = useStore((s) => s.game?.winner ?? null);
   const prevPhase = useRef(gamePhase);
   useEffect(() => {
     if (gamePhase !== prevPhase.current) {
-      if (gamePhase === "haunt" && alive) playOneShotFor(tokenId, "stagger", Math.random() * 450);
       if (gamePhase === "ended" && alive && side && side === winner) {
         playOneShotFor(tokenId, "cheer", Math.random() * 600);
       }
@@ -174,46 +174,37 @@ export function PlayerToken({
     // travel thereafter, so a move between rooms reads as walking.
     if (!placed.current) {
       g.position.copy(target.current);
-      if (activePath.current) cursor.current.i = activePath.current.length;
+      if (activePath.current) cursor.current.i = activePath.current.points.length;
       placed.current = true;
     }
     // A modal beat owns the stage — hold this walker exactly where it stands
     // (dt-based systems resume seamlessly when the card dismisses).
     if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
-    // Size up a fresh path from where the body actually stands: long hauls
-    // (room to room) jog, short in-room shuffles keep the unhurried walk.
     const p = alive ? activePath.current : null;
     let gate = 1;
-    if (p && cursor.current.i < p.length) {
-      if (peak.current === 0) {
-        let len = 0;
-        let px = g.position.x, py = g.position.y, pz = g.position.z;
-        for (let k = cursor.current.i; k < p.length; k++) {
-          const w = p[k]!;
-          len += Math.hypot(w[0] - px, w[1] - py, w[2] - pz);
-          px = w[0]; py = w[1]; pz = w[2];
-        }
-        peak.current = peakSpeedFor(len);
-      }
+    if (p && cursor.current.i < p.points.length) {
       // Facing gate: while the body still points away from the next waypoint
       // it barely covers ground — the yaw ease below brings it around first,
       // so setting off reads as turn-then-go instead of a sideways moonwalk.
-      const wp = p[cursor.current.i]!;
+      const wp = p.points[cursor.current.i]!;
       const err = Math.abs(sweep(yaw.current, Math.atan2(wp[0] - g.position.x, wp[2] - g.position.z)));
       gate = Math.max(0.12, Math.min(1, 1.3 - (err / Math.PI) * 2));
     }
     // Waypoint walking around the furniture when a path is set; otherwise the
     // exponential glide (floor changes, elevator jumps, clear straight lines).
     const walking = p
-      ? followPath(g.position, p, cursor.current, dt, peak.current || WALK_SPEED, gate)
+      ? followPath(g.position, p.points, cursor.current, dt, peak.current, gate)
       : false;
     if (!walking) g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
 
-    // Turn to face the direction of travel while actually moving.
+    // Turn to face the direction of travel. While a path is live the step
+    // always points at the next waypoint, so the yaw eases even when the
+    // facing gate shrinks the displacement below the epsilon (a per-frame
+    // threshold would deadlock turn-then-go on high-refresh displays).
     const dx = g.position.x - prev.current.x;
     const dz = g.position.z - prev.current.z;
-    if (alive && dx * dx + dz * dz > 1e-6) {
+    if (alive && (walking || dx * dx + dz * dz > 1e-6)) {
       yaw.current = lerpAngle(yaw.current, Math.atan2(dx, dz), 1 - Math.exp(-12 * dt));
     }
     g.rotation.y = yaw.current;
@@ -221,12 +212,13 @@ export function PlayerToken({
     // Following a path IS walking; otherwise fall back to measured speed so a
     // plain glide still strides. Hysteresis keeps the clip from flapping.
     const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
-    // Publish live ground speed for the avatar's locomotion blend.
-    tokenSpeeds.set(tokenId, alive ? speed : 0);
+    // Publish live ground speed for the avatar's locomotion blend. Glides are
+    // clamped to walk cadence — a cross-floor teleport glide covers ground at
+    // tens of u/s and would otherwise flash a maxed-out sprint.
+    tokenSpeeds.set(tokenId, alive ? (walking ? speed : Math.min(speed, WALK_SPEED)) : 0);
     const isMoving = alive && (walking || speed > (movingRef.current ? 0.4 : 0.8));
     if (isMoving !== movingRef.current) {
       movingRef.current = isMoving;
-      setMoving(isMoving);
       setWalking(tokenId, isMoving); // gaze pass reads this to spot passers-by
     }
 
@@ -242,7 +234,8 @@ export function PlayerToken({
 
     // Gaze: a rigged avatar turns its head toward the most interesting thing —
     // a figure walking past wins, else a roommate to glance at, else it drifts.
-    const life = alive ? avatarHandles.get(tokenId)?.life : undefined;
+    // A scripted cinematic owns every head (the traitor's stare must hold).
+    const life = alive && !cinematic.active ? avatarHandles.get(tokenId)?.life : undefined;
     if (life) {
       if (movingRef.current) {
         life.setGaze(null); // eyes lead the walk on their own
@@ -306,7 +299,7 @@ export function PlayerToken({
         {figure && <primitive object={figure} />}
         {entry && (
           <Suspense fallback={null}>
-            <Avatar entry={entry} archetype={archetype} moving={moving} dead={!alive} tokenId={tokenId} />
+            <Avatar entry={entry} archetype={archetype} dead={!alive} tokenId={tokenId} />
           </Suspense>
         )}
       </group>
