@@ -9,6 +9,6 @@
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit" },
-  "peerDependencies": { "three": "^0.169.0" },
-  "devDependencies": { "@types/three": "^0.169.0", "three": "^0.169.0", "typescript": "^5.6.3" }
+  "peerDependencies": { "three": "^0.184.0" },
+  "devDependencies": { "@types/three": "^0.184.0", "three": "^0.184.0", "typescript": "^5.6.3" }
 }

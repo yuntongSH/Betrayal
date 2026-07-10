@@ -10,8 +10,13 @@ import { LOG_ICON } from "./icons";
  * scrolling panel. Entry age survives re-renders through a first-seen map fed
  * to a negative animation-delay, so animations resume mid-flight.
  */
+/** Stable empty log so the selector returns the same reference pre-game —
+ *  zustand v5 re-runs selectors on every snapshot read and a fresh `[]`
+ *  would loop the render. */
+const NO_LOG: never[] = [];
+
 export function EventLog() {
-  const log = useStore((s) => s.game?.log ?? []);
+  const log = useStore((s) => s.game?.log ?? NO_LOG);
   const [open, setOpen] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   const logSeen = useRef(new Map<number, number>());
