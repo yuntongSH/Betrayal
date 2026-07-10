@@ -26,6 +26,9 @@ importers:
       '@dread-hollow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@pixiv/three-vrm':
+        specifier: ^3.4.2
+        version: 3.5.5(three@0.184.0)
       '@pmndrs/timeline':
         specifier: ^0.3.10
         version: 0.3.10(three@0.184.0)

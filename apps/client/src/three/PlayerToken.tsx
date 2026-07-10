@@ -6,6 +6,8 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
+import { VrmAvatar } from "./VrmAvatar";
+import { myVrmUrl } from "./vrmConfig";
 import { followTarget, registerToken, unregisterToken, trackedTokens, MAX_FRAME_DT } from "./followCam";
 import {
   followPath,
@@ -64,12 +66,14 @@ export function PlayerToken({
   side: "heroes" | "traitor" | null;
   alive?: boolean;
 }) {
-  // Prefer a real rigged model when one is mapped for this character; otherwise
-  // fall back to the procedural figure (also the Suspense fallback while loading).
+  // Body priority: the player's own opt-in VRM avatar (`?vrm=` — realistic
+  // custom bodies via @pmndrs/viverse), else the rigged model mapped for the
+  // character, else the procedural figure (also the loading fallback).
+  const vrmUrl = useMemo(() => (isMe ? myVrmUrl() : null), [isMe]);
   const entry = archetype ? AVATARS[archetype] : undefined;
   const figure = useMemo(
-    () => (entry ? null : buildExplorerFigure(color, { archetype })),
-    [entry, color, archetype],
+    () => (entry || vrmUrl ? null : buildExplorerFigure(color, { archetype })),
+    [entry, vrmUrl, color, archetype],
   );
   const group = useRef<Group>(null);
   // a stable per-figure phase so identical figures don't bob in lockstep
@@ -297,10 +301,14 @@ export function PlayerToken({
       {/* inner group carries the turn-lean so the outer group's yaw stays clean */}
       <group ref={lean}>
         {figure && <primitive object={figure} />}
-        {entry && (
-          <Suspense fallback={null}>
-            <Avatar entry={entry} archetype={archetype} dead={!alive} tokenId={tokenId} />
-          </Suspense>
+        {vrmUrl ? (
+          <VrmAvatar url={vrmUrl} h={entry?.h ?? 1.7} tokenId={tokenId} dead={!alive} />
+        ) : (
+          entry && (
+            <Suspense fallback={null}>
+              <Avatar entry={entry} archetype={archetype} dead={!alive} tokenId={tokenId} />
+            </Suspense>
+          )
         )}
       </group>
 

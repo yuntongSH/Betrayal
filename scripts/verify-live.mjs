@@ -25,7 +25,8 @@ mkdirSync(outDir, { recursive: true });
 // fresh duplicate (fresh zustand stores, empty registries — everything lies).
 const LIVE_IMPORT = `(path) => {
   const hit = performance.getEntriesByType("resource").map((e) => e.name)
-    .filter((n) => n.includes(path)).sort((a, b) => b.length - a.length)[0];
+    .filter((n) => n.includes(path) && n.includes("?t="))
+    .sort((a, b) => b.length - a.length)[0];
   return import(hit || path);
 }`;
 

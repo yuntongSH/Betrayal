@@ -14,6 +14,7 @@
   "dependencies": {
     "@dread-hollow/decor": "workspace:*",
     "@dread-hollow/shared": "workspace:*",
+    "@pixiv/three-vrm": "^3.4.2",
     "@pmndrs/timeline": "^0.3.10",
     "@pmndrs/viverse": "^0.2.28",
     "@react-three/drei": "^10.7.7",
