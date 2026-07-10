@@ -15,6 +15,24 @@ export type WalkPoint = [number, number, number];
 /** Peak stride speed (u/s), tuned to the Walk clip cadence at TILE = 7. */
 export const WALK_SPEED = 2.7;
 
+/** Jog speed (u/s), tuned to the Run clip cadence — used for the long hauls. */
+export const RUN_SPEED = 4.6;
+
+/** Paths at least this long read as "going somewhere" — the body jogs.
+ *  Room-to-room travel (ring arcs + door corridor) runs 8–11 u; in-room
+ *  re-shuffles stay under ~5 u and keep the unhurried walk. */
+const RUN_DIST = 6;
+
+/** Peak speed for a path of total length `len`. */
+export function peakSpeedFor(len: number): number {
+  return len >= RUN_DIST ? RUN_SPEED : WALK_SPEED;
+}
+
+/** Live planar ground speed (u/s) per token, written by the token's frame
+ *  pass and read by its Avatar to drive the locomotion blend — the same
+ *  module-registry pattern as walkingTokens, so nothing touches React state. */
+export const tokenSpeeds = new Map<string, number>();
+
 /** Speed envelope, distance-based so frame rate cannot change the shape:
  *  smoothstep up over the first ACCEL_DIST of the path, smoothstep down over
  *  the last SETTLE_DIST, floored so a short hop still covers ground. */
@@ -43,7 +61,7 @@ export function setWalking(id: string, on: boolean): void {
 const ARC_STEP = Math.PI / 3;
 
 /** Shortest signed sweep from angle `a` to angle `b`. */
-function sweep(a: number, b: number): number {
+export function sweep(a: number, b: number): number {
   let d = (b - a) % (Math.PI * 2);
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
@@ -126,17 +144,23 @@ export interface WalkCursor {
 
 /**
  * Advance `pos` one frame along `path` under an accelerate/settle speed
- * envelope: it ramps up over the first ACCEL_DIST of ground covered and eases
- * down over the last SETTLE_DIST to the end, floored at ENVELOPE_FLOOR so a
- * short hop still moves — bodies gain weight instead of a constant glide.
- * Returns true while the path still owns the motion (the caller falls back to
- * its glide-to-target once the path is spent). Allocation-free.
+ * envelope: it ramps up over the first stretch of ground covered and eases
+ * down toward the end, floored at ENVELOPE_FLOOR so a short hop still moves —
+ * bodies gain weight instead of a constant glide. Both envelope distances
+ * scale with `peakSpeed` (a jog needs more room to wind up and to brake), so
+ * walking paths keep today's tuned shape exactly. `speedScale` throttles the
+ * frame from outside — the caller gates it by facing so a body still turning
+ * toward the path doesn't moonwalk sideways. Returns true while the path
+ * still owns the motion (the caller falls back to its glide-to-target once
+ * the path is spent). Allocation-free.
  */
 export function followPath(
   pos: THREE.Vector3,
   path: readonly WalkPoint[],
   cursor: WalkCursor,
   dt: number,
+  peakSpeed: number = WALK_SPEED,
+  speedScale = 1,
 ): boolean {
   if (cursor.i >= path.length) return false;
 
@@ -149,11 +173,13 @@ export function followPath(
     distToEnd += Math.hypot(w[0] - px, w[1] - py, w[2] - pz);
     px = w[0]; py = w[1]; pz = w[2];
   }
+  const ratio = peakSpeed / WALK_SPEED;
+  const settle = Math.min(2, SETTLE_DIST * ratio * ratio);
   const envelope = Math.max(
     ENVELOPE_FLOOR,
-    Math.min(smooth01(cursor.traveled / ACCEL_DIST), smooth01(distToEnd / SETTLE_DIST)),
+    Math.min(smooth01(cursor.traveled / (ACCEL_DIST * ratio)), smooth01(distToEnd / settle)),
   );
-  let budget = WALK_SPEED * envelope * dt;
+  let budget = peakSpeed * envelope * Math.max(0, Math.min(1, speedScale)) * dt;
 
   // Spend the frame's travel budget across waypoints (a fast frame may cross
   // more than one), accumulating ground covered for the accelerate ramp.

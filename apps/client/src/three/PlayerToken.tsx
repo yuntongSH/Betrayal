@@ -7,7 +7,16 @@ import type { Group } from "three";
 import { AVATARS } from "./avatars";
 import { Avatar } from "./Avatar";
 import { followTarget, registerToken, unregisterToken, trackedTokens, MAX_FRAME_DT } from "./followCam";
-import { followPath, setWalking, walkingTokens, type WalkPoint } from "./walk";
+import {
+  followPath,
+  peakSpeedFor,
+  setWalking,
+  sweep,
+  tokenSpeeds,
+  walkingTokens,
+  WALK_SPEED,
+  type WalkPoint,
+} from "./walk";
 import { avatarHandles, playOneShotFor } from "./avatarRegistry";
 import { useBeats } from "../state/beats";
 import { useStore } from "../state/store";
@@ -73,10 +82,14 @@ export function PlayerToken({
   // A fresh path prop restarts waypoint walking from wherever the body stands.
   const activePath = useRef<readonly WalkPoint[] | null | undefined>(undefined);
   const cursor = useRef({ i: 0, traveled: 0 });
+  // Peak speed for the current path — 0 until the first frame measures the
+  // path's real length from wherever the body actually stands.
+  const peak = useRef(0);
   if (activePath.current !== path) {
     activePath.current = path;
     cursor.current.i = 0;
     cursor.current.traveled = 0;
+    peak.current = 0;
   }
   // Turn lean (body banks into a turn) and its slew rate, applied to an inner
   // group so it composes cleanly under the yaw the outer group carries.
@@ -112,8 +125,15 @@ export function PlayerToken({
     return () => unregisterToken(tokenId);
   }, [tokenId, alive]);
 
-  // Free the walking flag when this token unmounts (dies/leaves mid-stride).
-  useEffect(() => () => setWalking(tokenId, false), [tokenId]);
+  // Free the walking flag and live speed when this token unmounts
+  // (dies/leaves mid-stride).
+  useEffect(
+    () => () => {
+      setWalking(tokenId, false);
+      tokenSpeeds.delete(tokenId);
+    },
+    [tokenId],
+  );
 
   // A fresh negative trait delta makes the body flinch (rigged avatars only,
   // and not mid-stride — a walk keeps its footing).
@@ -161,10 +181,32 @@ export function PlayerToken({
     // (dt-based systems resume seamlessly when the card dismisses).
     if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
+    // Size up a fresh path from where the body actually stands: long hauls
+    // (room to room) jog, short in-room shuffles keep the unhurried walk.
+    const p = alive ? activePath.current : null;
+    let gate = 1;
+    if (p && cursor.current.i < p.length) {
+      if (peak.current === 0) {
+        let len = 0;
+        let px = g.position.x, py = g.position.y, pz = g.position.z;
+        for (let k = cursor.current.i; k < p.length; k++) {
+          const w = p[k]!;
+          len += Math.hypot(w[0] - px, w[1] - py, w[2] - pz);
+          px = w[0]; py = w[1]; pz = w[2];
+        }
+        peak.current = peakSpeedFor(len);
+      }
+      // Facing gate: while the body still points away from the next waypoint
+      // it barely covers ground — the yaw ease below brings it around first,
+      // so setting off reads as turn-then-go instead of a sideways moonwalk.
+      const wp = p[cursor.current.i]!;
+      const err = Math.abs(sweep(yaw.current, Math.atan2(wp[0] - g.position.x, wp[2] - g.position.z)));
+      gate = Math.max(0.12, Math.min(1, 1.3 - (err / Math.PI) * 2));
+    }
     // Waypoint walking around the furniture when a path is set; otherwise the
     // exponential glide (floor changes, elevator jumps, clear straight lines).
-    const walking = alive && activePath.current
-      ? followPath(g.position, activePath.current, cursor.current, dt)
+    const walking = p
+      ? followPath(g.position, p, cursor.current, dt, peak.current || WALK_SPEED, gate)
       : false;
     if (!walking) g.position.lerp(target.current, 1 - Math.exp(-2.6 * dt));
 
@@ -179,6 +221,8 @@ export function PlayerToken({
     // Following a path IS walking; otherwise fall back to measured speed so a
     // plain glide still strides. Hysteresis keeps the clip from flapping.
     const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(1e-4, dt);
+    // Publish live ground speed for the avatar's locomotion blend.
+    tokenSpeeds.set(tokenId, alive ? speed : 0);
     const isMoving = alive && (walking || speed > (movingRef.current ? 0.4 : 0.8));
     if (isMoving !== movingRef.current) {
       movingRef.current = isMoving;
