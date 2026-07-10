@@ -83,7 +83,7 @@ let sawWalkStop = false;
 let wasMoving = false;
 let walkShot = false;
 let phase = "lobby";
-const deadline = Date.now() + 5 * 60 * 1000;
+const deadline = Date.now() + 12 * 60 * 1000;
 
 while (Date.now() < deadline) {
   const s = await page.evaluate(async () => {
@@ -121,7 +121,7 @@ while (Date.now() < deadline) {
   await page.waitForTimeout(350);
 }
 console.log(`phase: ${phase} · top speed seen: ${maxSpeed.toFixed(2)} u/s`);
-if (phase !== "haunt" && phase !== "ended") fail("never reached the haunt in 5 min");
+if (phase !== "haunt" && phase !== "ended") fail("never reached the haunt in 12 min");
 // Jog pace itself is covered deterministically by verify-walk-math.mjs —
 // under SwiftShader the sim runs at a crawl and mostly frozen behind cards,
 // so the live probe only asserts that live speeds flow at all.
