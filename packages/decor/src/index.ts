@@ -151,6 +151,24 @@ function emissiveMat(color: number, intensity = 1.2): THREE.MeshStandardMaterial
   });
 }
 
+/** A candle-flame teardrop (lathe profile, center-anchored like ConeGeometry
+ *  so it drops in where cones used to sit). Bare cones read as "glowing
+ *  triangles" the moment a first-person eye gets close; this reads as flame
+ *  from any distance — same emissive material, no new shader programs. */
+function flameGeometry(r: number, h: number): THREE.LatheGeometry {
+  const pts = [
+    new THREE.Vector2(0.0001, 0),
+    new THREE.Vector2(r * 0.55, h * 0.06),
+    new THREE.Vector2(r, h * 0.28),
+    new THREE.Vector2(r * 0.62, h * 0.6),
+    new THREE.Vector2(r * 0.22, h * 0.86),
+    new THREE.Vector2(0.0001, h),
+  ];
+  const geo = new THREE.LatheGeometry(pts, 10);
+  geo.translate(0, -h / 2, 0); // center-anchored, drop-in for ConeGeometry
+  return geo;
+}
+
 /** Clamp a coordinate so the prop stays inside the walls. */
 function clampInner(v: number, tile: number): number {
   const limit = tile / 2 - WALL_MARGIN;
@@ -254,7 +272,7 @@ function candle(height = 0.22, color = 0xf2e9d0, flame = 0xffae3a): THREE.Group 
   const stick = cyl(0.025, 0.03, height, color, 8);
   stick.position.y = height / 2;
   g.add(stick);
-  const f = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 8), emissiveMat(flame, 1.6));
+  const f = new THREE.Mesh(flameGeometry(0.032, 0.1), emissiveMat(flame, 1.6));
   f.position.y = height + 0.05;
   g.add(f);
   return g;
@@ -451,7 +469,7 @@ function sconce(flame = 0xffae3a): THREE.Group {
   const cup = cyl(0.05, 0.03, 0.06, 0x5a4a30, 8, { metal: 0.5 });
   cup.position.set(0, 0.06, 0.06);
   g.add(cup);
-  const f = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 8), emissiveMat(flame, 1.5));
+  const f = new THREE.Mesh(flameGeometry(0.042, 0.12), emissiveMat(flame, 1.5));
   f.position.set(0, 0.16, 0.06);
   g.add(f);
   return g;
@@ -618,7 +636,7 @@ function chandelier(flame = 0xffae3a): THREE.Group {
     flameT.push({ pos: [cx, WALL_H - 0.45 + 0.17, cz] });
   }
   g.add(instanced(new THREE.CylinderGeometry(0.025, 0.03, 0.12, 8), mat(0xf2e9d0), stickT));
-  g.add(instanced(new THREE.ConeGeometry(0.03, 0.08, 8), emissiveMat(flame, 1.6), flameT));
+  g.add(instanced(flameGeometry(0.032, 0.1), emissiveMat(flame, 1.6), flameT));
   return g;
 }
 
@@ -819,7 +837,7 @@ function fireplace(accent = 0xff7a2a, opts: { light?: boolean } = {}): THREE.Gro
   g.add(embers);
   const flameM = emissiveMat(0xffb054, 1.5);
   for (const fx of [-0.16, 0.14]) {
-    const f = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 8), flameM);
+    const f = new THREE.Mesh(flameGeometry(0.06, 0.18), flameM);
     f.position.set(fx, 0.16, 0.28);
     g.add(f);
   }
@@ -1632,7 +1650,7 @@ const COMPOSERS: Record<string, Composer> = {
     const body = box(0.6, 0.7, 0.5, 0x35302c, { metal: 0.4, rough: 0.6 });
     body.position.y = 0.35;
     stove.add(body);
-    const fire = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.18, 10), emissiveMat(t.accent, 1.6));
+    const fire = new THREE.Mesh(flameGeometry(0.12, 0.22), emissiveMat(t.accent, 1.6));
     fire.position.y = 0.8;
     stove.add(fire);
     const pipe = cyl(0.06, 0.06, 1.5, 0x2a2622, 8, { metal: 0.4 });

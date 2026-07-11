@@ -44,7 +44,10 @@ const timeLeft = () => DEADLINE_MS - (Date.now() - t0);
 await page.addInitScript(
   `window.liveImport = ${LIVE_IMPORT};
    performance.setResourceTimingBufferSize(8000);
-   try { localStorage.setItem("dh:view", "first"); } catch {}`,
+   try {
+     localStorage.setItem("dh:view", "first");
+     localStorage.setItem("dh:welcomed", "1"); // no first-night overlay over the shots
+   } catch {}`,
 );
 await page.goto("http://localhost:5173/", { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(1500);

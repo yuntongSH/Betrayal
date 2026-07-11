@@ -44,6 +44,24 @@ function emissiveMat(color: number, intensity = 1.2): THREE.MeshStandardMaterial
   });
 }
 
+/** A candle-flame teardrop (lathe profile, center-anchored like ConeGeometry
+ *  so it drops in where cones used to sit). Bare cones read as "glowing
+ *  triangles" the moment a first-person eye gets close; this reads as flame
+ *  from any distance — same emissive material, no new shader programs. */
+function flameGeometry(r: number, h: number): THREE.LatheGeometry {
+  const pts = [
+    new THREE.Vector2(0.0001, 0),
+    new THREE.Vector2(r * 0.55, h * 0.06),
+    new THREE.Vector2(r, h * 0.28),
+    new THREE.Vector2(r * 0.62, h * 0.6),
+    new THREE.Vector2(r * 0.22, h * 0.86),
+    new THREE.Vector2(0.0001, h),
+  ];
+  const geo = new THREE.LatheGeometry(pts, 10);
+  geo.translate(0, -h / 2, 0); // center-anchored, drop-in for ConeGeometry
+  return geo;
+}
+
 function box(
   w: number,
   h: number,
@@ -468,7 +486,7 @@ export function drippingCandle(height = 0.2, color = 0xe8dcc0, flame = 0xffae3a)
   pool.rotation.x = -Math.PI / 2;
   pool.position.y = 0.004;
   g.add(pool);
-  const f = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.07, 8), emissiveMat(flame, 1.6));
+  const f = new THREE.Mesh(flameGeometry(0.03, 0.09), emissiveMat(flame, 1.6));
   f.position.y = height + 0.04;
   g.add(f);
   return g;
