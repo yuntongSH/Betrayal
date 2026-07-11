@@ -16,6 +16,7 @@ import type { CardDef, CardType, GameState, RoomDef, Trait } from "@dread-hollow
 import { ambient } from "../audio/ambient";
 import { focusPulse } from "../three/director";
 import { followTarget } from "../three/followCam";
+import { useView } from "./view";
 
 export { focusPulse };
 
@@ -199,6 +200,29 @@ function maybeActivate(): void {
     return;
   }
   const [beat, ...rest] = s.queue;
+
+  // First person, someone ELSE's card: you're IN the house — you don't get
+  // handed their card, you hear something happen elsewhere. The reveal
+  // becomes a whisper (toast + that room's embers + the sting) with no modal
+  // and no world-freeze, so the manor keeps living around you. Your own
+  // draws and every death still confront you directly.
+  if (
+    beat.kind === "card" &&
+    beat.playerId !== watched &&
+    useView.getState().mode === "first"
+  ) {
+    const look = CARD_TOAST[beat.cardType ?? "item"];
+    addToast(
+      look.glyph,
+      `${beat.playerName ?? "The house"} — ${beat.card?.name ?? beat.name ?? "a card"}`,
+      look.color,
+    );
+    if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type: beat.cardType ?? "item" });
+    ambient.sting(beat.cardType ?? "item");
+    useBeats.setState({ queue: rest });
+    maybeActivate(); // the queue shrank — recursion terminates
+    return;
+  }
 
   // Reveals wait for the walker: while the acting token is still covering
   // ground (or its walk hasn't visibly started yet — the state message lands

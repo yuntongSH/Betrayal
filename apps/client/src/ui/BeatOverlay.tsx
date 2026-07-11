@@ -17,7 +17,7 @@ const CARD_KICKER: Record<string, string> = {
   omen: "An Omen uncovered",
 };
 
-/** Full-screen beat presentation: card-flip reveals, death banners, toasts,
+/** Full-screen beat presentation: card reveals, death banners, toasts,
  *  and the type-colored vignette flash. Timing/queueing lives in beats.ts. */
 export function BeatOverlay() {
   const active = useBeats((s) => s.active);
@@ -68,36 +68,31 @@ export function BeatOverlay() {
     <>
       {active?.kind === "card" && active.cardType && (
         <div className="card-reveal" onClick={dismissActive}>
-          <div className="card-flip">
-            <div className={`draw-card t-${active.cardType}`} onClick={onInner}>
-              {/* engraved frame dressing — pure CSS, mirrored by the artifact */}
-              <span className="card-corner tl" />
-              <span className="card-corner tr" />
-              <span className="card-corner bl" />
-              <span className="card-corner br" />
-              <div className="card-ribbon">{active.cardType}</div>
-              <div className="card-art">
-                <div
-                  className="dc-icon"
-                  dangerouslySetInnerHTML={{ __html: CARD_ICON[active.cardType] ?? "" }}
-                />
-              </div>
-              <div className="dc-kicker">{CARD_KICKER[active.cardType]}</div>
-              <div className="dc-name">{active.card?.name ?? active.name}</div>
-              <div className="card-rule" />
-              <div className="dc-text">{active.card?.text ?? active.rawText}</div>
-              <div className="dc-holder card-flavor">
-                {active.playerName ?? "The house"} draws
-              </div>
-              <button className="btn primary dc-continue" onClick={dismissActive}>
-                Continue ▸
-              </button>
-              {/* auto-advance made legible: drains over the hold duration
-                  (keyed so a dice-tray extension restarts the drain) */}
-              {!interactive && holdMs != null && (
-                <div key={holdMs} className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
-              )}
+          {/* a note by candlelight: the type speaks through one accent color
+              and a small sigil — no starburst, no ribbon, the world stays
+              visible behind a light dim */}
+          <div className={`draw-card t-${active.cardType}`} onClick={onInner}>
+            <div className="dc-head">
+              <span
+                className="dc-sigil"
+                dangerouslySetInnerHTML={{ __html: CARD_ICON[active.cardType] ?? "" }}
+              />
+              <span className="dc-kicker">{CARD_KICKER[active.cardType]}</span>
             </div>
+            <div className="dc-name">{active.card?.name ?? active.name}</div>
+            <div className="card-rule" />
+            <div className="dc-text">{active.card?.text ?? active.rawText}</div>
+            <div className="dc-holder card-flavor">
+              {active.playerName ?? "The house"} draws
+            </div>
+            <button className="btn primary dc-continue" onClick={dismissActive}>
+              Continue ▸
+            </button>
+            {/* auto-advance made legible: drains over the hold duration
+                (keyed so a dice-tray extension restarts the drain) */}
+            {!interactive && holdMs != null && (
+              <div key={holdMs} className="card-timer" style={{ animationDuration: `${holdMs}ms` }} />
+            )}
           </div>
         </div>
       )}
