@@ -53,6 +53,11 @@ export interface DiceTray {
   settled: number;
   /** true during the closing fade (DICE_FADE_MS). */
   out: boolean;
+  /** The roll is YOURS and waits in your hand — nothing tumbles until you
+   *  throw it (click the tray / press R). The board game's ritual: you cast
+   *  your own dice. The faces are already server-rolled; the throw is the
+   *  reveal, so authority and bots lose nothing. */
+  held: boolean;
 }
 
 export interface BeatToast {
@@ -313,6 +318,10 @@ export const DICE_CARD_LINGER_MS = 1200; // an open card modal outlives the tray
 const DICE_QUEUE_MAX = 3; // showing + pending — presentation must not lag the game
 export const DIE_PIPS = ["", "•", "• •"]; // Betrayal d6 faces 0 / 1 / 2
 
+/** An unthrown roll waits in your hand at most this long — an AFK player
+ *  must never dam the presentation queue (or a card's auto-dismiss). */
+export const DICE_AUTO_THROW_MS = 10000;
+
 /** Full life of one tray, from mount to the gap before the next. */
 function trayDuration(n: number): number {
   return DICE_TUMBLE_MS + (n - 1) * DICE_STAGGER_MS + DICE_HOLD_MS + DICE_FADE_MS + DICE_GAP_MS;
@@ -322,6 +331,8 @@ interface TrayRequest {
   dice: number[];
   verdict: string;
   outcome: "ok" | "bad" | "";
+  /** The watched player's own roll — it waits for their throw. */
+  mine: boolean;
 }
 
 let trayQueue: TrayRequest[] = [];
@@ -372,10 +383,10 @@ function diceVerdict(text: string, total: number): { verdict: string; outcome: "
   return { verdict: `${text.replace(/\.\s*$/, "")} · rolled ${total}`, outcome: "" };
 }
 
-function enqueueDiceTray(dice: number[], text: string): void {
+function enqueueDiceTray(dice: number[], text: string, mine: boolean): void {
   if (dice.length === 0) return;
   const total = dice.reduce((a, b) => a + b, 0);
-  trayQueue.push({ dice: [...dice], ...diceVerdict(text, total) });
+  trayQueue.push({ dice: [...dice], mine, ...diceVerdict(text, total) });
   // Never two at once — and never an unbounded backlog (a monster phase can
   // log several combats in one dispatch): oldest pending rolls drop.
   while (trayQueue.length > DICE_QUEUE_MAX) trayQueue.shift();
@@ -394,7 +405,34 @@ function maybeShowTray(): void {
   }
   const id = ++traySeq;
   const n = next.dice.length;
-  useBeats.setState({ diceTray: { id, ...next, settled: 0, out: false } });
+  useBeats.setState({ diceTray: { id, ...next, settled: 0, out: false, held: next.mine } });
+  if (next.mine) {
+    // Your roll waits in your hand. Budget the worst case (full hold + the
+    // tumble) so a card's auto-dismiss can't cut the reveal short, and
+    // auto-throw as a dam-break if you walk away.
+    trayCurEndsAt = Date.now() + DICE_AUTO_THROW_MS + trayDuration(n);
+    recomputeTrayEnd();
+    extendModalForDice();
+    trayTimers.push(setTimeout(() => throwDice(id), DICE_AUTO_THROW_MS));
+  } else {
+    beginTumble(id, n);
+  }
+}
+
+/** Cast the held roll — the tray's click / R key. Safe to call when nothing
+ *  is held (the auto-throw timer races the player's own hand). */
+export function throwDice(onlyId?: number): void {
+  const s = useBeats.getState();
+  const tray = s.diceTray;
+  if (!tray || !tray.held) return;
+  if (onlyId != null && tray.id !== onlyId) return;
+  useBeats.setState({ diceTray: { ...tray, held: false } });
+  // beginTumble re-tightens trayCurEndsAt from the worst-case hold budget.
+  beginTumble(tray.id, tray.dice.length);
+}
+
+/** The tumble→settle→verdict→fade clock for the tray with `id`. */
+function beginTumble(id: number, n: number): void {
   // Faces flicker while the dice tumble (CSS), then each settles on its real
   // value in stagger order; the verdict fades in once all have landed.
   for (let i = 0; i < n; i++) {
@@ -578,10 +616,15 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
   }
 
   const fresh = next.log.filter((e) => e.id >= snap.nextLogId); // log ids are monotonic (state.ts:96)
+  // The watched player's own rolls wait for their hand (log lines lead with
+  // the actor's name — engine formats frozen); everyone else's auto-tumble.
+  const myName = watchedId ? next.players.find((p) => p.id === watchedId)?.name : undefined;
   for (const e of fresh) {
     // Every roll the engine made becomes a visible dice tray (trait tests,
     // the haunt roll, combat) — the board game's soul, not a tiny log chip.
-    if (e.dice && e.dice.length > 0) enqueueDiceTray(e.dice, e.text);
+    if (e.dice && e.dice.length > 0) {
+      enqueueDiceTray(e.dice, e.text, !!myName && e.text.startsWith(`${myName} `));
+    }
     let m: RegExpMatchArray | null = null;
     if (e.kind === "move" && (m = e.text.match(/^(.+) discovers the (.+)\.$/))) {
       const p = byName(next, m[1]!);

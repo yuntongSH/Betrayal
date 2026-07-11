@@ -1351,6 +1351,15 @@ kbd {
 .dice-verdict{font-size:.95rem;font-style:italic;color:#e8dcc9;opacity:0;transition:opacity .3s ease .05s}
 .dice-verdict.show{opacity:1}
 .dice-verdict.ok{color:#8fd08f}.dice-verdict.bad{color:#e88f7e}
+/* Your own roll waits in your hand: bone dice face-down (a "?" where pips
+   will land), no tumble until thrown. The whole tray is the throw button —
+   the layer around it is pointer-events:none, so re-enable here. */
+.dice-tray.held{cursor:pointer;pointer-events:auto;border-color:var(--flame);
+  box-shadow:0 12px 44px rgba(0,0,0,.6),0 0 26px rgba(232,168,90,.4)}
+.dice-tray.held .die{animation:none}
+.dice-tray.held .die::before{content:"?";color:#8a7a5e;font-size:15px;animation:none}
+.dice-throw{font-size:.95rem;color:#e8dcc9}
+.dice-throw strong{color:var(--flame)}
 .minimap-tip.walk{border-color:var(--flame)}
 
 /* ===== Quality floor — visible keyboard focus + reduced motion ===== */

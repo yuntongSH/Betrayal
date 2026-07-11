@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { CHARACTERS_BY_ID } from "@dread-hollow/shared";
 import type { CSSProperties } from "react";
-import { DICE_STAGGER_MS, DIE_PIPS, dismissActive, useBeats } from "../state/beats";
+import { DICE_STAGGER_MS, DIE_PIPS, dismissActive, throwDice, useBeats } from "../state/beats";
 import { Portrait } from "./Portrait";
 
 /** Card-type icons — exact inline SVGs shared verbatim with the artifact. */
@@ -41,6 +41,20 @@ export function BeatOverlay() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active]);
+
+  // Your roll waits in your hand — R casts it (so does clicking the tray).
+  const heldRoll = !!tray?.held;
+  useEffect(() => {
+    if (!heldRoll) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key === "r" || e.key === "R") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        throwDice();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [heldRoll]);
 
   // A click inside the card only skips auto-dismissed (bot/remote) beats.
   const onInner = (e: React.MouseEvent) => {
@@ -119,11 +133,15 @@ export function BeatOverlay() {
           order, then the verdict fades in; hold, fade, next queued tray. */}
       {tray && (
         <div className="dice-layer">
-          <div className={`dice-tray${tray.out ? " out" : ""}`}>
+          <div
+            className={`dice-tray${tray.out ? " out" : ""}${tray.held ? " held" : ""}`}
+            onClick={tray.held ? () => throwDice() : undefined}
+            title={tray.held ? "Throw the dice (R)" : undefined}
+          >
             <div className="dice-row">
               {tray.dice.map((v, i) => (
                 <span
-                  key={`${tray.id}:${i}`}
+                  key={`${tray.id}:${i}:${tray.held ? "h" : "t"}`}
                   className={i < tray.settled ? `die die-${v}` : "die"}
                   style={{ animationDelay: `${i * DICE_STAGGER_MS}ms` } as CSSProperties}
                 >
@@ -131,11 +149,17 @@ export function BeatOverlay() {
                 </span>
               ))}
             </div>
-            <div
-              className={`dice-verdict${tray.settled >= tray.dice.length ? " show" : ""}${tray.outcome ? ` ${tray.outcome}` : ""}`}
-            >
-              {tray.verdict}
-            </div>
+            {tray.held ? (
+              <div className="dice-throw">
+                🎲 Your roll — <strong>throw the dice</strong> <span className="muted">(click · R)</span>
+              </div>
+            ) : (
+              <div
+                className={`dice-verdict${tray.settled >= tray.dice.length ? " show" : ""}${tray.outcome ? ` ${tray.outcome}` : ""}`}
+              >
+                {tray.verdict}
+              </div>
+            )}
           </div>
         </div>
       )}
