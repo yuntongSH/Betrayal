@@ -100,7 +100,8 @@ export function MonsterToken({
     <group ref={group}>
       <primitive
         object={figure}
-        onClick={(e: { stopPropagation: () => void }) => {
+        onClick={(e: { stopPropagation: () => void; delta: number }) => {
+          if (e.delta > 3) return; // drag release, not a strike
           e.stopPropagation();
           if (attackable) onClick();
         }}

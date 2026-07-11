@@ -71,10 +71,12 @@ export function PlayerToken({
   // the camera IS your head. Everything else about the token keeps running
   // (walks, speeds, the follow target, lights), only the visuals hide. Other
   // explorers' name tags shrink to conversational size — the bird's-eye
-  // distanceFactor balloons at arm's length.
-  const fpView = useView((s) => s.mode === "first");
-  const hideSelf = fpView && isMe && alive;
-  const labelFactor = fpView ? 7 : 21;
+  // distanceFactor balloons at arm's length. Keyed to the rig ACTUALLY
+  // driving, never the persisted mode: when the haunt cinematic borrows the
+  // camera, the traitor's own reveal close-up must show a body.
+  const fpDriving = useView((s) => s.driving);
+  const hideSelf = fpDriving && isMe && alive;
+  const labelFactor = fpDriving ? 7 : 21;
 
   // Body priority: the player's own opt-in VRM avatar (`?vrm=` — realistic
   // custom bodies via @pmndrs/viverse), else the rigged model mapped for the

@@ -138,6 +138,7 @@ function DoorMarker({
     <group
       position={pos}
       onClick={(e) => {
+        if (e.delta > 3) return; // drag release, not a door choice
         e.stopPropagation();
         onClick();
       }}

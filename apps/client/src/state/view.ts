@@ -17,7 +17,14 @@ function initialMode(): ViewMode {
   }
 }
 
-export const useView = create<{ mode: ViewMode }>(() => ({ mode: initialMode() }));
+export const useView = create<{
+  mode: ViewMode;
+  /** The rig ACTUALLY owns the camera right now — false while the haunt
+   *  cinematic outranks it, after death, or with no token to ride. Visual
+   *  consumers (own-body hiding, label sizing) key off this, never off the
+   *  persisted mode: the traitor's own reveal close-up must show a body. */
+  driving: boolean;
+}>(() => ({ mode: initialMode(), driving: false }));
 
 export function toggleView(): void {
   const mode: ViewMode = useView.getState().mode === "first" ? "overview" : "first";

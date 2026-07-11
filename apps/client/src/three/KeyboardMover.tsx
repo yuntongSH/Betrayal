@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
-import { useView, toggleView } from "../state/view";
+import { toggleView } from "../state/view";
+import { firstPerson } from "./director";
 import { facingDirection } from "./FirstPersonRig";
 
 const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
@@ -37,10 +38,11 @@ const TURN: Record<"up" | "right" | "down" | "left", number> = {
   left: 3,
 };
 
-/** The Direction a key means right now: camera-relative through the eyes in
- *  first person, map-absolute from the bird's eye. */
+/** The Direction a key means right now: camera-relative while the rig is
+ *  ACTUALLY driving the eyes; map-absolute whenever a bird's-eye framing is
+ *  what's on screen (overview, the haunt cinematic, dead-and-spectating). */
 function keyDirection(which: "up" | "down" | "left" | "right"): Direction {
-  if (useView.getState().mode !== "first") return KEY_DIR[which];
+  if (!firstPerson.driving) return KEY_DIR[which];
   const i = CLOCKWISE.indexOf(facingDirection());
   return CLOCKWISE[(i + TURN[which]) % 4]!;
 }
@@ -58,11 +60,17 @@ export function KeyboardMover() {
       // A full-screen overlay (haunt reveal / help / beat card) is open — don't
       // let arrows or E act on the board hidden behind it.
       if (document.querySelector(".haunt-reveal, .help-overlay, .card-reveal")) return;
+      // One-shot shortcuts must not fire from key auto-repeat or chorded
+      // browser shortcuts (⌘V paste, ctrl+E…); arrows keep auto-repeat —
+      // holding a key to keep walking depends on it.
+      const chorded = e.metaKey || e.ctrlKey || e.altKey;
       if (e.key === "e" || e.key === "E") {
+        if (e.repeat || chorded) return;
         if (game.activePlayerId === myId && game.phase !== "ended") endTurn();
         return;
       }
       if (e.key === "v" || e.key === "V") {
+        if (e.repeat || chorded) return;
         toggleView();
         return;
       }
@@ -95,8 +103,10 @@ export function KeyboardMover() {
       }
       // Vertical fallback: stairs and the elevator have no compass direction, so
       // "up"/"down" also ascend/descend to a reachable landing on another floor
-      // when no same-floor move applies.
-      if (which === "up" || which === "down") {
+      // when no same-floor move applies. Bird's-eye only — in first person the
+      // raw key means "forward"/"back", not "up a floor" (click the stairs or
+      // press V for the board instead).
+      if ((which === "up" || which === "down") && !firstPerson.driving) {
         const RANK: Record<string, number> = { basement: 0, ground: 1, upper: 2 };
         const here = RANK[room.floor];
         const cross = legal.explored

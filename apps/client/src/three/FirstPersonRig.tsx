@@ -41,6 +41,9 @@ const BOB_SPEED_HZ = 0.55; // extra Hz per u/s of ground speed
  *  without touching React (same registry pattern as walk.ts/followCam.ts). */
 export const fpLook = { yaw: 0, pitch: -0.05 };
 
+/** Headless-verify probe: what the rig last wrote (NaN until it drives). */
+export const fpCamProbe = { y: NaN, fov: NaN };
+
 /** Nearest compass direction the first-person camera faces — the arrow keys
  *  walk relative to the eyes ("↑ walks where you look"). Camera forward at
  *  yaw 0 is -Z, which is the board's north. */
@@ -70,34 +73,42 @@ export function FirstPersonRig() {
   const lamp = useRef<THREE.PointLight>(null);
 
   // Drag to look. Pointer capture keeps the turn alive when the cursor
-  // leaves the canvas mid-drag.
+  // leaves the canvas mid-drag. Deltas come from client coordinates, not
+  // movementX/Y — the latter is dead for touch pointers on iOS Safari.
   useEffect(() => {
     if (!active) return;
     const el = gl.domElement;
+    const last = { id: -1, x: 0, y: 0 };
     const down = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       dragging.current = true;
+      last.id = e.pointerId;
+      last.x = e.clientX;
+      last.y = e.clientY;
       el.setPointerCapture?.(e.pointerId);
     };
     const move = (e: PointerEvent) => {
-      if (!dragging.current) return;
-      look.yaw -= e.movementX * LOOK_SENS;
-      look.pitch = THREE.MathUtils.clamp(
-        look.pitch - e.movementY * LOOK_SENS,
-        -PITCH_LIMIT,
-        PITCH_LIMIT,
-      );
+      if (!dragging.current || e.pointerId !== last.id) return;
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      last.x = e.clientX;
+      last.y = e.clientY;
+      look.yaw -= dx * LOOK_SENS;
+      look.pitch = THREE.MathUtils.clamp(look.pitch - dy * LOOK_SENS, -PITCH_LIMIT, PITCH_LIMIT);
     };
     const up = () => {
       dragging.current = false;
+      last.id = -1;
     };
     el.addEventListener("pointerdown", down);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
     return () => {
       el.removeEventListener("pointerdown", down);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       dragging.current = false;
     };
   }, [active, gl]);
@@ -111,29 +122,55 @@ export function FirstPersonRig() {
     look.pitch = -0.05;
   }, [active, myId]);
 
+  // The driving flags are module/store singletons — if the whole Canvas
+  // unmounts mid-drive (leave to lobby), they must not leak true forever.
+  useEffect(
+    () => () => {
+      if (wasDriving.current) {
+        wasDriving.current = false;
+        firstPerson.driving = false;
+        useView.setState({ driving: false });
+      }
+    },
+    [],
+  );
+
   useFrame((_, rawDt) => {
-    const release = () => {
+    // `restoreControls: false` on the cinematic path — the cinematic just
+    // seized the stage and disabled orbit input itself; re-enabling here
+    // would hand the user drag/zoom over the scripted reveal and let drei's
+    // controls.update() fight the timeline for the camera every frame. Its
+    // scope cleanup hands the stage back when it ends.
+    const release = (restoreControls = true) => {
       if (!wasDriving.current) return;
       wasDriving.current = false;
       firstPerson.driving = false;
-      if (controls) controls.enabled = true;
+      useView.setState({ driving: false });
+      if (restoreControls && controls) controls.enabled = true;
       camera.fov = 48; // the tactical lens from Scene.tsx
       camera.updateProjectionMatrix();
+      fpCamProbe.fov = camera.fov;
       // OrbitControls re-derives its spherical from the camera each update,
       // so the director eases back out from wherever the eyes were.
     };
 
     if (!active) return release();
-    if (cinematic.active) return release(); // the house turning outranks the eyes
+    if (cinematic.active) return release(false); // the house turning outranks the eyes
     const tok = myId ? trackedTokens.get(myId) : undefined;
     if (!tok) return release();
 
     firstPerson.driving = true;
-    wasDriving.current = true;
+    if (!wasDriving.current) {
+      wasDriving.current = true;
+      useView.setState({ driving: true });
+    }
     if (controls?.enabled) controls.enabled = false; // re-asserted: the cinematic's cleanup re-enables blindly
-    if (useBeats.getState().worldFrozen) return; // hold the exact pose with the world
 
-    const dt = Math.min(MAX_FRAME_DT, rawDt);
+    // A world freeze runs the frame at dt 0 (the codebase's freeze contract):
+    // the pose writes below become idempotent holds — entering first person
+    // MID-freeze still puts the camera in the eyes instead of claiming the
+    // frame while leaving the tactical view (and the candle at the origin).
+    const dt = useBeats.getState().worldFrozen ? 0 : Math.min(MAX_FRAME_DT, rawDt);
     const speed = tokenSpeeds.get(myId!) ?? 0;
     bobT.current += dt * (BOB_BASE_HZ + speed * BOB_SPEED_HZ) * Math.PI * 2;
     const bob = Math.min(1, speed / WALK_SPEED) * BOB_AMP * Math.sin(bobT.current);
@@ -145,6 +182,8 @@ export function FirstPersonRig() {
       camera.fov = FP_FOV;
       camera.updateProjectionMatrix();
     }
+    fpCamProbe.y = camera.position.y;
+    fpCamProbe.fov = camera.fov;
 
     // The held candle rides slightly ahead and below the eyes, flickering the
     // way every other candle in the manor does — without it the room's own

@@ -86,21 +86,21 @@ const fp = await page.evaluate(async () => {
   const fc = await liveImport("/src/three/followCam.ts");
   const dir = await liveImport("/src/three/director.ts");
   const tok = fc.trackedTokens.get(st.playerId);
-  const cam = document.querySelector("canvas") ? null : null;
-  // read the camera through the rig's own effects: probe via three devtools-free
-  // route — the token knows its position; the camera state comes from R3F root.
-  // Simplest reliable read: the perf counters live on window, the camera does
-  // not — so assert via geometry: eye height means camera.y - token.y ≈ 1.52.
-  const camera = (await liveImport("/src/three/FirstPersonRig.tsx")) && null;
+  const rig = await liveImport("/src/three/FirstPersonRig.tsx");
   return {
     driving: dir.firstPerson.driving,
     tokenY: tok ? tok.obj.position.y : null,
+    camY: rig.fpCamProbe.y,
+    fov: rig.fpCamProbe.fov,
     bodyVisible: tok ? tok.obj.children.find((c) => c.type === "Group")?.visible : null,
   };
 });
 console.log("first person:", JSON.stringify(fp));
 if (!fp.driving) fail("rig never took the frame (firstPerson.driving stayed false)");
 if (fp.bodyVisible !== false) fail(`own body still visible in first person (visible=${fp.bodyVisible})`);
+if (fp.fov !== 68) fail(`first-person FOV not applied (fov=${fp.fov})`);
+if (fp.tokenY == null || Math.abs(fp.camY - fp.tokenY - 1.52) > 0.06)
+  fail(`camera not at eye height (camY=${fp.camY} tokenY=${fp.tokenY})`);
 
 for (let i = 0; i < 8; i++) {
   await page.evaluate(async () => {
@@ -121,12 +121,15 @@ const back = await page.evaluate(async () => {
   const fc = await liveImport("/src/three/followCam.ts");
   const dir = await liveImport("/src/three/director.ts");
   const tok = fc.trackedTokens.get(st.playerId);
+  const rig = await liveImport("/src/three/FirstPersonRig.tsx");
   return {
     driving: dir.firstPerson.driving,
+    fov: rig.fpCamProbe.fov,
     bodyVisible: tok ? tok.obj.children.find((c) => c.type === "Group")?.visible : null,
   };
 });
 console.log("back to overview:", JSON.stringify(back));
+if (back.fov !== 48) fail(`tactical FOV not restored (fov=${back.fov})`);
 if (back.driving) fail("rig failed to release the frame on toggle-back");
 if (back.bodyVisible !== true) fail("own body did not reappear after toggle-back");
 

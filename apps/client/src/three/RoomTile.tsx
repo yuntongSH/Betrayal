@@ -163,6 +163,7 @@ export function RoomTile({
         material={floorMat}
         userData={{ kind: "room", key: room.key }}
         onClick={(e) => {
+          if (e.delta > 3) return; // a look/orbit drag that ended here is not a move order
           e.stopPropagation();
           onClick();
         }}
