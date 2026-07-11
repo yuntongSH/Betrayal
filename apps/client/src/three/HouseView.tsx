@@ -151,11 +151,13 @@ function DoorMarker({
         document.body.style.cursor = "default";
       }}
     >
-      <mesh rotation={rot}>
-        <coneGeometry args={[0.4, 0.95, 4]} />
+      {/* a will-o'-wisp beckoning through the doorway — the old 4-segment
+          cone was a literal glowing pyramid at first-person eye height */}
+      <mesh rotation={rot} scale={[0.75, 1.5, 0.75]}>
+        <sphereGeometry args={[0.17, 12, 10]} />
         <meshStandardMaterial color="#e8a85a" emissive="#e8a85a" emissiveIntensity={1.2} />
       </mesh>
-      <pointLight color="#e8a85a" intensity={4} distance={3.5} />
+      <pointLight color="#e8a85a" intensity={3} distance={3.5} />
     </group>
   );
 }

@@ -262,27 +262,39 @@ function drawStoneColor(ctx: CanvasRenderingContext2D, size: number): void {
       const y = r * rh + 2;
       const w = cw - 4 + (rand() - 0.5) * 4;
       const h = rh - 4;
-      const shade = 0x5e5a52 + ((rand() * 0x1c1c18) | 0) - 0x0e0e0c;
+      // Close-up rule: blocks are the SAME stone — variation lives inside a
+      // block (grazing-light gradient), not between blocks. A wide per-block
+      // shade lottery read as a colored-brick patchwork at eye height.
+      const shade = 0x635e56 + ((rand() * 0x0e0e0c) | 0) - 0x070706;
       ctx.fillStyle = toCss(shade & 0xffffff);
+      ctx.fillRect(x, y, w, h);
+      const g = ctx.createLinearGradient(0, y, 0, y + h);
+      g.addColorStop(0, "rgba(255,255,255,0.05)");
+      g.addColorStop(0.55, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0.09)");
+      ctx.fillStyle = g;
       ctx.fillRect(x, y, w, h);
     }
   }
   // mortar darkening already shows through gaps; add grime + cracks
   mottle(ctx, size, 0x3a3630, 40, 4, 16, 0.22, 17);
   mottle(ctx, size, 0x8a857c, 24, 4, 14, 0.16, 23);
-  // cracks
+  // Cracks: real settling cracks keep a heading and sink downward — the old
+  // ±40px random walk at alpha .7 magnified into bold scribbles up close.
   const rc = rng(404);
-  ctx.strokeStyle = "rgba(28,24,20,0.7)";
-  for (let i = 0; i < 7; i++) {
-    ctx.lineWidth = 0.5 + rc() * 1.2;
+  ctx.strokeStyle = "rgba(28,24,20,0.35)";
+  for (let i = 0; i < 4; i++) {
+    ctx.lineWidth = 0.4 + rc() * 0.5;
     ctx.beginPath();
     let x = rc() * size;
-    let y = rc() * size;
+    let y = rc() * size * 0.5;
     ctx.moveTo(x, y);
-    const steps = 5 + ((rc() * 5) | 0);
+    let ang = Math.PI * (0.35 + rc() * 0.3); // headed broadly downward
+    const steps = 8 + ((rc() * 3) | 0);
     for (let s = 0; s < steps; s++) {
-      x += (rc() - 0.5) * 40;
-      y += (rc() - 0.5) * 40;
+      ang += (rc() - 0.5) * 0.5;
+      x += Math.cos(ang) * (8 + rc() * 6);
+      y += Math.sin(ang) * (8 + rc() * 6);
       ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -400,26 +412,29 @@ function drawPlasterColor(ctx: CanvasRenderingContext2D, size: number): void {
     const rad = size * (0.12 + rand() * 0.14);
     const stain = ctx.createRadialGradient(x, y, 0, x, y, rad);
     stain.addColorStop(0, "rgba(120,86,52,0.05)");
-    stain.addColorStop(0.78, "rgba(110,78,46,0.12)");
-    stain.addColorStop(0.92, "rgba(86,58,32,0.32)"); // tide ring
+    stain.addColorStop(0.78, "rgba(110,78,46,0.1)");
+    stain.addColorStop(0.92, "rgba(86,58,32,0.18)"); // tide ring — a whisper
     stain.addColorStop(1, "rgba(86,58,32,0)");
     ctx.fillStyle = stain;
     ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   }
   // mold specks
-  mottle(ctx, size, 0x46503a, 50, 1, 4, 0.5, 121);
-  // hairline cracks
+  mottle(ctx, size, 0x46503a, 50, 1, 4, 0.35, 121);
+  // Hairline cracks: persistent heading + downward settle (see drawStoneColor
+  // — the ±36px random walk read as pencil scribbles at eye height).
   const rc = rng(131);
-  ctx.strokeStyle = "rgba(90,82,70,0.55)";
-  for (let i = 0; i < 5; i++) {
-    ctx.lineWidth = 0.5 + rc() * 0.8;
+  ctx.strokeStyle = "rgba(90,82,70,0.3)";
+  for (let i = 0; i < 4; i++) {
+    ctx.lineWidth = 0.4 + rc() * 0.5;
     ctx.beginPath();
     let x = rc() * size;
-    let y = rc() * size;
+    let y = rc() * size * 0.5;
     ctx.moveTo(x, y);
-    for (let s = 0; s < 6; s++) {
-      x += (rc() - 0.5) * 36;
-      y += (rc() - 0.5) * 36;
+    let ang = Math.PI * (0.35 + rc() * 0.3);
+    for (let s = 0; s < 8; s++) {
+      ang += (rc() - 0.5) * 0.5;
+      x += Math.cos(ang) * (7 + rc() * 6);
+      y += Math.sin(ang) * (7 + rc() * 6);
       ctx.lineTo(x, y);
     }
     ctx.stroke();

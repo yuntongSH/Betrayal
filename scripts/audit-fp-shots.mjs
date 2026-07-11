@@ -89,6 +89,7 @@ async function readState() {
     if (!g || !st.playerId) return null;
     const me = g.players.find((p) => p.id === st.playerId);
     const legal = sh.legalMoves(g, st.playerId);
+    const view = (await liveImport("/src/state/view.ts")).useView.getState();
     const pos = me?.position ?? null;
     const grid = pos ? sh.parseKey(pos) : null;
     return {
@@ -106,16 +107,26 @@ async function readState() {
       tokenMoving: fc.followTarget.moving,
       cinematic: dir.cinematic.active,
       fpDriving: dir.firstPerson.driving,
+      viewMode: view.mode,
+      viewDriving: view.driving,
+      tokenTracked: !!fc.trackedTokens.get(st.playerId),
+      worldFrozen: beats.useBeats.getState().worldFrozen,
     };
   }, SHARED);
 }
 
-/** Dismiss the active modal beat and cast any dice waiting in our hand. */
+/** Dismiss the active modal beat, cast held dice, acknowledge a haunt banner. */
 async function unblockPresentation() {
   await page.evaluate(async () => {
     const beats = await liveImport("/src/state/beats.ts");
     if (beats.useBeats.getState().active) beats.dismissActive();
     beats.throwDice();
+    // The haunt reveal banner waits for the player's click — same as clicking it.
+    const st = (await liveImport("/src/state/store.ts")).useStore.getState();
+    const b = beats.useBeats.getState();
+    if (st.game?.haunt && b.hauntSeen !== st.game.haunt.id && !b.hauntCinematicHold) {
+      beats.markHauntSeen(st.game.haunt.id);
+    }
   });
 }
 
@@ -203,9 +214,13 @@ while (captured.size < TARGET_SHOTS && timeLeft() > 20000) {
   // First room of the game hasn't been photographed yet — start with it.
   s = await settle();
   if (s?.pos) visited.add(s.pos);
-  if (s && !captured.has(s.pos) && s.fpDriving) await captureHere(s);
+  if (s && !captured.has(s.pos)) {
+    if (s.fpDriving) await captureHere(s);
+    else console.log(`skip capture at ${s.roomId}:`, JSON.stringify(s));
+  }
 
   // Spend this turn's movement stepping into fresh rooms, shooting each one.
+  const steppedThisTurn = new Set();
   for (let step = 0; step < 5; step++) {
     s = await readState();
     if (!s || !s.myTurn || s.phase === "ended" || !s.alive) break;
@@ -219,8 +234,15 @@ while (captured.size < TARGET_SHOTS && timeLeft() > 20000) {
         (await liveImport("/src/state/store.ts")).useStore.getState().explore(d);
       }, door);
     } else if (s.explored.length > 0 && s.movementLeft > 0) {
-      const novel = s.explored.filter((k) => !visited.has(k));
-      const toKey = (novel.length ? novel : s.explored)[0];
+      // Only walk somewhere worth photographing — never ping-pong between
+      // two exhausted rooms (net-distance refunds make that loop infinite).
+      const worthIt = s.explored.filter(
+        (k) => !steppedThisTurn.has(k) && (!visited.has(k) || !captured.has(k)),
+      );
+      const novel = worthIt.filter((k) => !visited.has(k));
+      const toKey = (novel.length ? novel : worthIt)[0];
+      if (!toKey) break;
+      steppedThisTurn.add(toKey);
       console.log(`moveTo ${toKey} from ${s.roomId}`);
       await page.evaluate(async (k) => {
         (await liveImport("/src/state/store.ts")).useStore.getState().moveTo(k);
@@ -230,7 +252,10 @@ while (captured.size < TARGET_SHOTS && timeLeft() > 20000) {
     s = await settle(); // dismiss the draw's card, wait out the walk
     if (!s) break;
     if (s.pos) visited.add(s.pos);
-    if (s.alive && s.fpDriving && !captured.has(s.pos)) await captureHere(s);
+    if (s.alive && !captured.has(s.pos)) {
+      if (s.fpDriving) await captureHere(s);
+      else console.log(`skip capture at ${s.roomId}:`, JSON.stringify(s));
+    }
     if (captured.size >= TARGET_SHOTS || s.movementLeft <= 0) break;
   }
 

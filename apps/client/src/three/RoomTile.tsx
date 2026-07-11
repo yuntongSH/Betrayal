@@ -6,6 +6,7 @@ import type { Direction, PlacedRoom, RoomDef } from "@dread-hollow/shared";
 import { buildRoomDecor, roomTheme, materials, surfaceFor } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
 import { registerWall, unregisterWall } from "./followCam";
+import { useView } from "../state/view";
 
 const HALF = TILE / 2;
 
@@ -50,6 +51,7 @@ export function RoomTile({
   onClick: () => void;
 }) {
   const [wx, wy, wz] = roomWorld(room);
+  const fpCeiling = useView((s) => s.driving);
   const doors = useMemo(() => placedDoorways(room), [room]);
   const theme = useMemo(() => roomTheme(room.roomId), [room.roomId]);
   const surf = useMemo(() => surfaceFor(room.roomId), [room.roomId]);
@@ -183,6 +185,16 @@ export function RoomTile({
       >
         <boxGeometry args={[TILE, 0.3, TILE]} />
       </mesh>
+
+      {/* Ceiling — first person only: looking up must meet plaster, not the
+          void. The bird's eye needs to see INTO the rooms, so it only exists
+          while the rig drives (one shared flat material, no texture). */}
+      {fpCeiling && (
+        <mesh position={[0, WALL_H, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[TILE, TILE]} />
+          <meshStandardMaterial color="#181410" roughness={0.98} />
+        </mesh>
+      )}
 
       {/* walls on every edge that has no doorway — each tagged + registered for
           the x-ray fade (walls are static, so the world box is computed once) */}

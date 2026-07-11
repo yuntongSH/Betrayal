@@ -203,15 +203,23 @@ export function wallCrack(len = 0.9, seed = 1): THREE.InstancedMesh {
   const transforms: Array<{ pos: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number] }> = [];
   let x = -len / 2;
   let y = -len * 0.25;
+  // A real crack keeps a heading and thins as it runs — the old alternating
+  // ±0.5rad sawtooth at full width/opacity read as a bold zigzag scribble at
+  // first-person eye height (these hang at y≈1.4-1.6 on many walls).
+  let ang = (r() - 0.5) * 0.6 + 0.15;
   for (let i = 0; i < segs; i++) {
     const sl = (len / segs) * (0.7 + r() * 0.8);
-    const ang = (r() - 0.5) * 1.4 + (i % 2 === 0 ? 0.5 : -0.5);
-    transforms.push({ pos: [x + Math.cos(ang) * sl * 0.5, y + Math.sin(ang) * sl * 0.5, 0.01], rot: [0, 0, ang], scale: [sl, 1, 1] });
+    ang += (r() - 0.5) * 0.45;
+    transforms.push({
+      pos: [x + Math.cos(ang) * sl * 0.5, y + Math.sin(ang) * sl * 0.5, 0.01],
+      rot: [0, 0, ang],
+      scale: [sl, 1.4 - (i / segs) * 1.05, 1],
+    });
     x += Math.cos(ang) * sl;
     y += Math.sin(ang) * sl;
   }
   const geo = new THREE.PlaneGeometry(1, 0.012);
-  const m = decalMat(0x0a0806, 0.85);
+  const m = decalMat(0x0a0806, 0.5);
   return instanced(geo, m, transforms);
 }
 

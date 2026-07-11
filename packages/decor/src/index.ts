@@ -33,6 +33,7 @@ import {
 } from "./detail";
 
 export * from "./materials";
+import { materials } from "./materials";
 export { attachKeepsake } from "./props";
 export { refineExplorerAvatar, attachAvatarLife, makeStudioEnvTexture, REACTION_CLIPS } from "./refine";
 export type { AvatarLife } from "./refine";
@@ -254,15 +255,14 @@ function cyl(
 
 /** A floor rug / runner laid flat on the floor (y just above 0). */
 function rug(w: number, d: number, color: number, accent: number): THREE.Group {
+  // Directly under the player's feet in first person — the old two flat
+  // color planes read as painted floor. rugFabric bakes border bands, a
+  // medallion and weave hatch (cached; same material class, no new program).
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat(color, { rough: 1 }));
+  const base = new THREE.Mesh(new THREE.PlaneGeometry(w, d), materials.rugFabric(color, accent));
   base.rotation.x = -Math.PI / 2;
   base.position.y = 0.012;
   g.add(base);
-  const trim = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.78, d * 0.78), mat(accent, { rough: 1 }));
-  trim.rotation.x = -Math.PI / 2;
-  trim.position.y = 0.018;
-  g.add(trim);
   return g;
 }
 
@@ -390,21 +390,26 @@ function crib(color = 0xb8a0a8): THREE.Group {
 
 /** A wardrobe / cabinet. */
 function wardrobe(color = 0x3d2a1c): THREE.Group {
+  // Human-height — the old 1.1m carcass topped out below the first-person
+  // eye line and read as a bedside cabinet pretending to be a wardrobe.
   const g = new THREE.Group();
-  const body = box(0.6, 1.1, 0.4, color);
-  body.position.y = 0.55;
+  const body = box(0.7, 1.9, 0.45, color);
+  body.position.y = 0.95;
   g.add(body);
-  const doorL = box(0.27, 1.0, 0.04, 0x4a3424);
-  doorL.position.set(-0.14, 0.55, 0.2);
+  const cornice = box(0.78, 0.06, 0.5, color);
+  cornice.position.y = 1.93;
+  g.add(cornice);
+  const doorL = box(0.31, 1.7, 0.04, 0x4a3424);
+  doorL.position.set(-0.165, 0.95, 0.225);
   g.add(doorL);
   const doorR = doorL.clone();
-  doorR.position.x = 0.14;
+  doorR.position.x = 0.165;
   g.add(doorR);
   const knobL = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), mat(0xb8a060, { metal: 0.7, rough: 0.4 }));
-  knobL.position.set(-0.02, 0.55, 0.23);
+  knobL.position.set(-0.03, 0.95, 0.25);
   g.add(knobL);
   const knobR = knobL.clone();
-  knobR.position.x = 0.02;
+  knobR.position.x = 0.03;
   g.add(knobR);
   return g;
 }
@@ -424,7 +429,7 @@ function bookshelf(w = 0.8, h = 1.3, color = 0x3a2718): THREE.Group {
   sideR.position.x = w / 2 - 0.03;
   g.add(sideR);
   const shelves = 4;
-  const bookColors = [0x7a2222, 0x224a2a, 0x223a6a, 0x6a5a22, 0x4a2a5a, 0x6a3a1a];
+  const bookColors = [0x7a2222, 0x224a2a, 0x223a6a, 0x6a5a22, 0x4a2a5a, 0x6a3a1a, 0x5a4a3a, 0x2a4a4a];
   const rowT: Array<{ pos: [number, number, number]; scale: [number, number, number]; color: number }> = [];
   for (let s = 0; s <= shelves; s++) {
     const y = (s / shelves) * (h - 0.1) + 0.05;
@@ -432,16 +437,17 @@ function bookshelf(w = 0.8, h = 1.3, color = 0x3a2718): THREE.Group {
     plank.position.set(0, y, 0);
     g.add(plank);
     if (s < shelves) {
-      // three book-row slabs on this shelf, varied heights/tints
-      const rows = 3;
+      // seven narrow book-run slabs per shelf with height/depth jitter —
+      // three wide monochrome blocks read as painted boxes at arm's length
+      const rows = 7;
       const rw = (w - 0.16) / rows;
       for (let b = 0; b < rows; b++) {
         const bx = -w / 2 + 0.08 + rw * (b + 0.5);
-        const bh = 0.18 + ((b * 7 + s * 3) % 5) * 0.014;
+        const bh = 0.16 + ((b * 7 + s * 3) % 6) * 0.016;
         rowT.push({
-          pos: [bx, y + bh / 2 + 0.02, 0],
-          scale: [rw * 0.92, bh, 0.22],
-          color: bookColors[(b + s * 2) % bookColors.length],
+          pos: [bx, y + bh / 2 + 0.02, ((b * 5 + s * 3) % 3) * 0.016 - 0.016],
+          scale: [rw * 0.9, bh, 0.2],
+          color: bookColors[(b + s * 3) % bookColors.length],
         });
       }
     }
@@ -842,7 +848,9 @@ function fireplace(accent = 0xff7a2a, opts: { light?: boolean } = {}): THREE.Gro
     g.add(f);
   }
   if (opts.light) {
-    const l = new THREE.PointLight(accent, 0.9, 4.5, 2);
+    // physical light units (r155+): 0.9 candela was invisible next to the
+    // room pools at accentIntensity*20 — the hearth finally casts light
+    const l = new THREE.PointLight(accent, 8, 4.5, 2);
     l.position.set(0, 0.5, 0.4);
     g.add(l);
   }
@@ -1052,28 +1060,52 @@ function specimenShelf(glow = 0x6fd66a): THREE.Group {
   return g;
 }
 
-/** A weathered stone statue on a pedestal — a robed figure, head bowed, one
- *  arm raised as if warding something off. ~1.7 tall. */
+/** A weathered stone statue on a pedestal — a hooded, robed figure, head
+ *  bowed, one arm raised as if warding something off. ~1.7 tall. Reads as a
+ *  FIGURE at first-person distance: the hood and bowed head carry the
+ *  silhouette; a hand on the warding arm and a hanging off-arm break the
+ *  "cone with a ball" ambiguity. Same single stone material throughout. */
 function statue(color = 0x8a8478): THREE.Group {
   const g = new THREE.Group();
   const stone = mat(color, { rough: 0.95 });
   const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), stone);
   pedestal.position.y = 0.25;
   g.add(pedestal);
-  const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.22, 0.9, 10), stone);
-  robe.position.y = 0.95;
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.07, 0.58), stone);
+  cap.position.y = 0.53;
+  g.add(cap);
+  // robe in two tiers — the flare at the hem reads as cloth, not a cone
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.27, 0.34, 10), stone);
+  skirt.position.y = 0.74;
+  g.add(skirt);
+  const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.2, 0.62, 10), stone);
+  robe.position.y = 1.2;
   g.add(robe);
   const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), stone);
-  shoulders.scale.set(1.2, 0.6, 0.9);
-  shoulders.position.y = 1.42;
+  shoulders.scale.set(1.25, 0.6, 0.95);
+  shoulders.position.y = 1.47;
   g.add(shoulders);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), stone);
-  head.position.set(0, 1.55, 0.03);
+  // bowed head under a hood — the hood peak leans with the bow
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), stone);
+  head.position.set(0, 1.55, 0.07);
   g.add(head);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.07), stone);
-  arm.position.set(0.16, 1.38, 0.08);
-  arm.rotation.z = -0.7;
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.125, 0.26, 10), stone);
+  hood.position.set(0, 1.63, 0.02);
+  hood.rotation.x = 0.3;
+  g.add(hood);
+  // the warding arm, raised, with a hand; the off-arm hangs
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.36, 0.065), stone);
+  arm.position.set(0.17, 1.44, 0.12);
+  arm.rotation.z = -1.05;
+  arm.rotation.x = -0.3;
   g.add(arm);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), stone);
+  hand.position.set(0.33, 1.53, 0.21);
+  g.add(hand);
+  const offArm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.06), stone);
+  offArm.position.set(-0.16, 1.22, 0.02);
+  offArm.rotation.z = 0.14;
+  g.add(offArm);
   return g;
 }
 
@@ -1190,7 +1222,10 @@ function placeOnWall(
   y: number,
   tile: number
 ): void {
-  const edge = tile / 2 - 0.05;
+  // Walls are 0.2 thick centered on the tile edge — their inner FACE is at
+  // tile/2 - 0.1. The old 0.05 inset buried every wall prop 5cm INTO the
+  // masonry; at first-person distance sconce cups and frames visibly clipped.
+  const edge = tile / 2 - 0.11;
   switch (side) {
     case "n":
       child.position.set(clampInner(along, tile), y, -edge);
@@ -1650,8 +1685,13 @@ const COMPOSERS: Record<string, Composer> = {
     const body = box(0.6, 0.7, 0.5, 0x35302c, { metal: 0.4, rough: 0.6 });
     body.position.y = 0.35;
     stove.add(body);
-    const fire = new THREE.Mesh(flameGeometry(0.12, 0.22), emissiveMat(t.accent, 1.6));
-    fire.position.y = 0.8;
+    // ember light through the firebox slot on the front face — the old cone
+    // hovered in the open air above the closed stove, impaled by its own pipe
+    const slot = box(0.24, 0.18, 0.02, 0x0a0908);
+    slot.position.set(0, 0.32, 0.25);
+    stove.add(slot);
+    const fire = new THREE.Mesh(new THREE.CircleGeometry(0.1, 12), emissiveMat(t.accent, 1.4));
+    fire.position.set(0, 0.32, 0.262);
     stove.add(fire);
     const pipe = cyl(0.06, 0.06, 1.5, 0x2a2622, 8, { metal: 0.4 });
     pipe.position.y = 1.5;
