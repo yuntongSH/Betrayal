@@ -23,6 +23,7 @@ import { avatarHandles, playOneShotFor } from "./avatarRegistry";
 import { cinematic } from "./director";
 import { useBeats } from "../state/beats";
 import { useStore } from "../state/store";
+import { useView } from "../state/view";
 import { TRAIT_COLOR } from "../ui/icons";
 
 /** Shortest-arc angle lerp so a turn never spins the long way round. */
@@ -66,6 +67,15 @@ export function PlayerToken({
   side: "heroes" | "traitor" | null;
   alive?: boolean;
 }) {
+  // First person: you don't see your own body (or read your own name tag) —
+  // the camera IS your head. Everything else about the token keeps running
+  // (walks, speeds, the follow target, lights), only the visuals hide. Other
+  // explorers' name tags shrink to conversational size — the bird's-eye
+  // distanceFactor balloons at arm's length.
+  const fpView = useView((s) => s.mode === "first");
+  const hideSelf = fpView && isMe && alive;
+  const labelFactor = fpView ? 7 : 21;
+
   // Body priority: the player's own opt-in VRM avatar (`?vrm=` — realistic
   // custom bodies via @pmndrs/viverse), else the rigged model mapped for the
   // character, else the procedural figure (also the loading fallback).
@@ -299,7 +309,7 @@ export function PlayerToken({
   return (
     <group ref={group}>
       {/* inner group carries the turn-lean so the outer group's yaw stays clean */}
-      <group ref={lean}>
+      <group ref={lean} visible={!hideSelf}>
         {figure && <primitive object={figure} />}
         {vrmUrl ? (
           <VrmAvatar url={vrmUrl} h={entry?.h ?? 1.7} tokenId={tokenId} dead={!alive} />
@@ -313,8 +323,8 @@ export function PlayerToken({
       </group>
 
 
-      {/* a bright pillar of light marks whoever is up */}
-      {isActive && alive && (
+      {/* a bright pillar of light marks whoever is up (not in your own eyes) */}
+      {isActive && alive && !hideSelf && (
         <>
           <pointLight ref={activeLight} position={[0, 1.6, 0]} color="#e8a85a" intensity={5} distance={6} />
           <mesh position={[0, 1.9, 0]}>
@@ -327,19 +337,21 @@ export function PlayerToken({
         <pointLight position={[0, 1, 0]} color="#c2412f" intensity={4} distance={4} />
       )}
 
-      <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={21} occlude={false}>
-        <div
-          className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
-        >
-          {alive ? name : `✝ ${name}`}
-          {alive && side === "traitor" ? " ☠" : ""}
-        </div>
-      </Html>
+      {!hideSelf && (
+        <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={labelFactor} occlude={false}>
+          <div
+            className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
+          >
+            {alive ? name : `✝ ${name}`}
+            {alive && side === "traitor" ? " ☠" : ""}
+          </div>
+        </Html>
+      )}
 
       {/* transient trait-change floats — each rises and fades, then beats.ts
           expires the delta and the node unmounts */}
       {myDeltas.map((d, i) => (
-        <Html key={d.id} position={[0, 2.5 + i * 0.35, 0]} center distanceFactor={21} occlude={false}>
+        <Html key={d.id} position={[0, 2.5 + i * 0.35, 0]} center distanceFactor={labelFactor} occlude={false}>
           <div className="stat-float" style={{ color: TRAIT_COLOR[d.trait] }}>
             {d.delta > 0 ? `+${d.delta}` : `−${-d.delta}`}{" "}
             {d.trait.charAt(0).toUpperCase() + d.trait.slice(1)}

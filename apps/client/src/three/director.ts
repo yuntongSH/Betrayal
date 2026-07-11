@@ -16,6 +16,11 @@ export const director = {
  *  heads itself). Set/cleared by HauntCinematic around the haunt reveal. */
 export const cinematic = { active: false };
 
+/** First-person view is driving the camera this frame (written every frame
+ *  by FirstPersonRig at priority -1, read by CameraDirector and the x-ray
+ *  pass at priority 0). The cinematic still outranks it. */
+export const firstPerson = { driving: false };
+
 export function focusPulse(roomKey: string, ms = 1600): void {
   director.focusKey = roomKey;
   director.until = performance.now() + ms;

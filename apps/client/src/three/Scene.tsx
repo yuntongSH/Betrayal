@@ -4,6 +4,7 @@ import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { HouseView } from "./HouseView";
 import { Atmosphere } from "./Atmosphere";
 import { CameraDirector } from "./CameraDirector";
+import { FirstPersonRig } from "./FirstPersonRig";
 import { HauntCinematic } from "./HauntCinematic";
 import { XrayWalls } from "./XrayWalls";
 import { BeatFX } from "./BeatFX";
@@ -61,6 +62,7 @@ export function Scene() {
 
       <Atmosphere />
       <CameraDirector />
+      <FirstPersonRig />
       <HauntCinematic />
       <XrayWalls />
       <BeatFX />

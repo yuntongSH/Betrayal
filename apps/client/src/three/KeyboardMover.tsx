@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { legalMoves, neighborKey, parseKey, type Direction } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { useView, toggleView } from "../state/view";
+import { facingDirection } from "./FirstPersonRig";
 
 const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowUp: "up", w: "up", W: "up",
@@ -10,12 +12,14 @@ const ARROW: Record<string, "up" | "down" | "left" | "right"> = {
 };
 
 /**
- * Keyboard movement. Arrows/WASD are MAP-ABSOLUTE — ↑ is always north on the
- * minimap, ← always west — so the keys agree with the bird's-eye map no matter
- * how the camera orbits or which way the hero stands. (Hero-relative keys were
- * tried and inverted against the map whenever the hero faced south.) E ends
- * the turn. When a press can't do anything we flash a one-line reason instead
- * of silently ignoring it.
+ * Keyboard movement. In the bird's-eye view arrows/WASD are MAP-ABSOLUTE —
+ * ↑ is always north on the minimap, ← always west — so the keys agree with
+ * the map no matter how the camera orbits or which way the hero stands.
+ * (Hero-relative keys were tried there and inverted against the map whenever
+ * the hero faced south.) In FIRST PERSON the map is out of sight and the
+ * eyes are the frame of reference: ↑ walks where you look, ← strafes left.
+ * E ends the turn, V swaps the view. When a press can't do anything we flash
+ * a one-line reason instead of silently ignoring it.
  */
 const KEY_DIR: Record<"up" | "down" | "left" | "right", Direction> = {
   up: "north",
@@ -23,6 +27,23 @@ const KEY_DIR: Record<"up" | "down" | "left" | "right", Direction> = {
   left: "west",
   right: "east",
 };
+
+/** Compass ring, clockwise — index math turns "left of me" into a Direction. */
+const CLOCKWISE: Direction[] = ["north", "east", "south", "west"];
+const TURN: Record<"up" | "right" | "down" | "left", number> = {
+  up: 0,
+  right: 1,
+  down: 2,
+  left: 3,
+};
+
+/** The Direction a key means right now: camera-relative through the eyes in
+ *  first person, map-absolute from the bird's eye. */
+function keyDirection(which: "up" | "down" | "left" | "right"): Direction {
+  if (useView.getState().mode !== "first") return KEY_DIR[which];
+  const i = CLOCKWISE.indexOf(facingDirection());
+  return CLOCKWISE[(i + TURN[which]) % 4]!;
+}
 export function KeyboardMover() {
   const game = useStore((s) => s.game);
   const myId = useStore((s) => s.playerId);
@@ -41,6 +62,10 @@ export function KeyboardMover() {
         if (game.activePlayerId === myId && game.phase !== "ended") endTurn();
         return;
       }
+      if (e.key === "v" || e.key === "V") {
+        toggleView();
+        return;
+      }
       const which = ARROW[e.key];
       if (!which) return;
       if (game.phase === "ended") return;
@@ -52,8 +77,9 @@ export function KeyboardMover() {
       const room = me?.position ? game.house[me.position] : undefined;
       if (!room) return;
 
-      // Map-absolute: the key IS the compass direction, same as the minimap.
-      const dir = KEY_DIR[which];
+      // Bird's eye: the key IS the compass direction, same as the minimap.
+      // First person: relative to wherever the eyes point.
+      const dir = keyDirection(which);
 
       const legal = legalMoves(game, myId);
       if (legal.doors.includes(dir)) {

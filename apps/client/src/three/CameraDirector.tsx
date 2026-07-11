@@ -5,7 +5,7 @@ import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
 import { roomWorld } from "./layout";
 import { followTarget, MAX_FRAME_DT } from "./followCam";
-import { cinematic, director } from "./director";
+import { cinematic, director, firstPerson } from "./director";
 
 /** Tactical orbit distance while whoever is up stands still (bots framed a
  *  touch tighter — spectating, not driving). */
@@ -86,9 +86,9 @@ export function CameraDirector() {
     // Modal beat up: the framing holds dead still (manual orbit stays live via
     // OrbitControls); all easing state resumes from here when the card drains.
     if (useBeats.getState().worldFrozen) return;
-    // A scripted cinematic owns the camera — consume the follow target so a
-    // stale pose can't flash when control returns, then stand down.
-    if (cinematic.active) {
+    // A scripted cinematic or the first-person rig owns the camera — consume
+    // the follow target so a stale pose can't flash when control returns.
+    if (cinematic.active || firstPerson.driving) {
       followTarget.valid = false;
       return;
     }

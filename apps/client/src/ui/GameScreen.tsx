@@ -13,8 +13,10 @@ import { HauntBanner } from "./HauntBanner";
 import { BeatOverlay } from "./BeatOverlay";
 import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
+import { ViewToggle } from "./ViewToggle";
 import { Minimap } from "./Minimap";
 import { TRAIT_ICON, tagIcon } from "./icons";
+import { useView } from "../state/view";
 
 /** When strictly nothing remains this turn, End turn shines and a visible
  *  countdown auto-ends it after this long (matches the .et-timer CSS drain). */
@@ -23,6 +25,7 @@ const AUTO_END_MS = 5000;
 export function GameScreen() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
+  const firstPersonView = useView((s) => s.mode === "first");
   const endTurn = useStore((s) => s.endTurn);
   const attackPlayer = useStore((s) => s.attackPlayer);
   const pickupItem = useStore((s) => s.pickupItem);
@@ -141,6 +144,7 @@ export function GameScreen() {
               )}
             </div>
           )}
+          <ViewToggle />
           <AudioToggle />
           <HelpButton />
         </div>
@@ -280,8 +284,9 @@ export function GameScreen() {
       )}
 
       <div className="hud-hint">
-        Drag to orbit · arrows walk by the map — ↑ north, ← west · click a
-        glowing room, a flame arrow or the map · E ends your turn
+        {firstPersonView
+          ? "Drag to look around · ↑ walks where you look, ←→ sidestep · click a flame arrow or the map · V for the bird's eye · E ends your turn"
+          : "Drag to orbit · arrows walk by the map — ↑ north, ← west · click a glowing room, a flame arrow or the map · V sees through your explorer's eyes · E ends your turn"}
         {game.phase === "haunt" ? " · click a monster to strike · ✦ spectral foes are fought with the mind" : ""}
       </div>
     </div>

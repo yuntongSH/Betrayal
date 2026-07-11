@@ -2,6 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
+import { firstPerson } from "./director";
 import { roomWorld } from "./layout";
 import { trackedTokens, xrayWalls, MAX_FRAME_DT, type XrayData } from "./followCam";
 
@@ -38,6 +39,14 @@ export function XrayWalls() {
     if (useBeats.getState().worldFrozen) return;
     const dt = Math.min(MAX_FRAME_DT, rawDt);
     const now = performance.now();
+
+    // First-person: walls stay walls — seeing figures through masonry breaks
+    // the dread (and hands out information the eyes shouldn't have). Passes
+    // A/B stop marking, pass C below keeps running so ghosts fade back solid.
+    if (firstPerson.driving) {
+      applyFades(dt, now);
+      return;
+    }
 
     // A. raycast camera -> every living character's chest; occluders go ghost.
     for (const { obj, chestY } of trackedTokens.values()) {
@@ -76,21 +85,27 @@ export function XrayWalls() {
       }
     }
 
-    // C. apply the fades: smooth per-material opacity, opaque pass when solid
-    //    (no z-sorting shimmer), shadows keep casting so light pools are stable.
-    for (const w of xrayWalls) {
-      const m = w.material as THREE.MeshStandardMaterial;
-      const ghost = now < (w.userData.xray as XrayData).until;
-      const target = ghost ? XRAY_OPACITY : 1;
-      m.opacity +=
-        (target - m.opacity) *
-        (1 - Math.exp(-(target < m.opacity ? XRAY_GHOST_RATE : XRAY_SOLID_RATE) * dt));
-      const solid = m.opacity > 0.985;
-      m.transparent = !solid;
-      m.depthWrite = solid;
-      if (solid) m.opacity = 1;
-    }
+    // C. apply the fades.
+    applyFades(dt, now);
   });
 
   return null;
+}
+
+/** Pass C — smooth per-material opacity, opaque pass when solid (no z-sorting
+ *  shimmer), shadows keep casting so light pools are stable. Runs even while
+ *  first-person suppresses the marking passes, so ghosts fade back solid. */
+function applyFades(dt: number, now: number): void {
+  for (const w of xrayWalls) {
+    const m = w.material as THREE.MeshStandardMaterial;
+    const ghost = now < (w.userData.xray as XrayData).until;
+    const target = ghost ? XRAY_OPACITY : 1;
+    m.opacity +=
+      (target - m.opacity) *
+      (1 - Math.exp(-(target < m.opacity ? XRAY_GHOST_RATE : XRAY_SOLID_RATE) * dt));
+    const solid = m.opacity > 0.985;
+    m.transparent = !solid;
+    m.depthWrite = solid;
+    if (solid) m.opacity = 1;
+  }
 }
