@@ -1281,6 +1281,11 @@ kbd {
 @keyframes mm-you-pulse{
   0%,100%{box-shadow:0 0 0 0 rgba(232,168,90,.55)}
   50%{box-shadow:0 0 0 5px rgba(232,168,90,0)}}
+/* First person: the pin grows a facing needle; the rig rotates the whole pin
+   from a rAF loop (transform), so the needle points where the eyes point. */
+.mm-you.facing::after{content:"";position:absolute;left:50%;top:-7px;
+  transform:translateX(-50%);border:4px solid transparent;
+  border-bottom:7px solid var(--pc,#e8a85a);border-top:none}
 /* locate-flash: expanding ring over a roster-clicked player's dot (~1.8s) */
 .mm-flash{position:absolute;pointer-events:none;border-radius:50%;
   border:2px solid var(--flame);animation:mm-flash-ring 1.8s ease-out both}

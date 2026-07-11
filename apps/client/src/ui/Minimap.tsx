@@ -9,12 +9,15 @@ import {
   legalMoves,
   parseKey,
   placedDoorways,
+  type Direction,
   type Floor,
   type GameState,
   type PlacedRoom,
 } from "@dread-hollow/shared";
 import { roomTheme } from "@dread-hollow/decor";
 import { useStore } from "../state/store";
+import { useView } from "../state/view";
+import { fpLook } from "../three/FirstPersonRig";
 
 /** Logical canvas size (CSS px); the backing store is scaled by devicePixelRatio. */
 const MAP_W = 264;
@@ -32,6 +35,15 @@ interface MapView {
   cell: number;
   ox: number;
   oy: number;
+}
+
+/** A clickable explore pip: the flame arrow at one of MY room's unexplored
+ *  doorways, in canvas coordinates. */
+interface ExplorePip {
+  dir: Direction;
+  x: number;
+  y: number;
+  r: number;
 }
 
 /** Locate-flash pub/sub: the roster calls `flashOnMap`, the mounted map jumps
@@ -99,8 +111,10 @@ function drawMap(
   floor: Floor,
   myId: string | null,
   reach: ReadonlySet<string>,
+  exploreDoors: ReadonlySet<Direction>,
   view: MapView,
   dotAt: Map<string, { x: number; y: number }>,
+  pips: ExplorePip[],
 ): void {
   ctx.clearRect(0, 0, MAP_W, MAP_H);
   drawCompass(ctx);
@@ -210,6 +224,31 @@ function drawMap(
       ctx.lineWidth = 2.5;
       roundedRect(ctx, x0 - 1.5, y0 - 1.5, s + 3, s + 3, Math.max(3, cell * 0.14));
       ctx.stroke();
+
+      // Explore pips: a flame arrow just OUTSIDE each doorway that leads into
+      // the undiscovered dark — the map twin of the 3D flame arrows, and
+      // clickable the same way. (Turn-gated: exploreDoors is empty otherwise.)
+      for (const dir of exploreDoors) {
+        const { dx, dy } = DIR_DELTA[dir];
+        const px = ox + (room.x + 0.5 + dx * 0.62) * cell;
+        const py = oy + (room.y + 0.5 + dy * 0.62) * cell;
+        const r = Math.max(4, cell * 0.15);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(Math.atan2(dy, dx) + Math.PI / 2); // triangle points outward
+        ctx.beginPath();
+        ctx.moveTo(0, -r);
+        ctx.lineTo(r * 0.85, r * 0.7);
+        ctx.lineTo(-r * 0.85, r * 0.7);
+        ctx.closePath();
+        ctx.fillStyle = "#e8a85a";
+        ctx.shadowColor = "#e8a85a";
+        ctx.shadowBlur = 7;
+        ctx.fill();
+        ctx.restore();
+        ctx.shadowBlur = 0;
+        pips.push({ dir, x: px, y: py, r: r * 1.7 });
+      }
     }
 
     // Markers: aura in the top-left, stairs/elevator glyph in the bottom-right.
@@ -293,14 +332,17 @@ export function Minimap() {
   const game = useStore((s) => s.game);
   const myId = useStore((s) => s.playerId);
   const moveTo = useStore((s) => s.moveTo);
+  const explore = useStore((s) => s.explore);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pinRef = useRef<HTMLSpanElement>(null);
   const flashRef = useRef<HTMLSpanElement>(null);
   const view = useRef<MapView>({ cell: 0, ox: 0, oy: 0 });
+  const pips = useRef<ExplorePip[]>([]);
   const [floor, setFloor] = useState<Floor>("ground");
   const [hover, setHover] = useState<{ name: string; reachable: boolean } | null>(null);
   const [flash, setFlash] = useState<{ playerId: string; seq: number } | null>(null);
   const flashSeq = useRef(0);
+  const fpDriving = useView((s) => s.driving);
 
   // Auto-follow the watched player across floors (manual tab choice holds
   // until they climb or descend again).
@@ -329,12 +371,11 @@ export function Minimap() {
     return () => clearTimeout(t);
   }, [flash]);
 
-  // Same source of truth as the lit 3D tiles: legalMoves' explored list
-  // (empty when it isn't your turn, so off-turn clicks are naturally no-ops).
-  const reach = useMemo(
-    () => new Set(game && myId ? legalMoves(game, myId).explored : []),
-    [game, myId],
-  );
+  // Same source of truth as the lit 3D tiles and flame arrows: legalMoves
+  // (all empty when it isn't your turn, so off-turn clicks are no-ops).
+  const legal = useMemo(() => (game && myId ? legalMoves(game, myId) : null), [game, myId]);
+  const reach = useMemo(() => new Set(legal?.explored ?? []), [legal]);
+  const doors = useMemo(() => new Set(legal?.doors ?? []), [legal]);
 
   // Per-floor occupancy (≤4 identity-colored dots per tab): "who is on which
   // floor" is answered without switching tabs.
@@ -359,7 +400,8 @@ export function Minimap() {
     canvas.height = Math.round(MAP_H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const dotAt = new Map<string, { x: number; y: number }>();
-    drawMap(ctx, game, floor, myId, reach, view.current, dotAt);
+    pips.current = [];
+    drawMap(ctx, game, floor, myId, reach, doors, view.current, dotAt, pips.current);
 
     // DOM overlays (you-pin + locate-flash) reuse the draw's grid→px mapping;
     // offsets are relative to .minimap (position:absolute → offsetParent).
@@ -382,21 +424,55 @@ export function Minimap() {
     };
     place(pinRef.current, myId, 3);
     place(flashRef.current, flash?.playerId, 6);
-  }, [game, floor, myId, reach, flash]);
+  }, [game, floor, myId, reach, doors, flash]);
+
+  // First person: your pin grows a facing needle — "which way am I looking"
+  // is THE navigation question when all you can see is one candle-lit room.
+  // The look yaw changes per-frame without state churn, so a light rAF loop
+  // rotates the pin's DOM transform directly (map-up is north = -Z = yaw 0).
+  useEffect(() => {
+    const pin = pinRef.current;
+    if (!fpDriving || !pin) return;
+    pin.classList.add("facing");
+    let raf = 0;
+    const spin = () => {
+      pin.style.transform = `rotate(${(-fpLook.yaw * 180) / Math.PI}deg)`;
+      raf = requestAnimationFrame(spin);
+    };
+    raf = requestAnimationFrame(spin);
+    return () => {
+      cancelAnimationFrame(raf);
+      pin.classList.remove("facing");
+      pin.style.transform = "";
+    };
+  }, [fpDriving]);
 
   if (!game) return null;
+
+  /** Pointer event → canvas-space coordinates of the last draw. */
+  const canvasXY = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return [
+      ((e.clientX - rect.left) * MAP_W) / rect.width,
+      ((e.clientY - rect.top) * MAP_H) / rect.height,
+    ];
+  };
 
   /** Map a pointer event to the room key under the cursor (or null). */
   const roomAt = (e: React.MouseEvent<HTMLCanvasElement>): string | null => {
     const { cell, ox, oy } = view.current;
     if (cell <= 0) return null;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const lx = ((e.clientX - rect.left) * MAP_W) / rect.width;
-    const ly = ((e.clientY - rect.top) * MAP_H) / rect.height;
+    const [lx, ly] = canvasXY(e);
     const gx = Math.floor((lx - ox) / cell);
     const gy = Math.floor((ly - oy) / cell);
     const key = `${floor}:${gx}:${gy}`;
     return game.house[key] ? key : null;
+  };
+
+  /** Map a pointer event to an explore pip under the cursor (or null). */
+  const pipAt = (e: React.MouseEvent<HTMLCanvasElement>): ExplorePip | null => {
+    const [lx, ly] = canvasXY(e);
+    return pips.current.find((p) => Math.hypot(p.x - lx, p.y - ly) <= p.r) ?? null;
   };
 
   // Header strip: where the watched player stands, and whose move it is.
@@ -414,20 +490,31 @@ export function Minimap() {
         {myRoom && <span className="mm-here-floor"> · {FLOOR_TITLE[myRoom.floor]}</span>}
       </div>
       <div className={`mm-turn${myTurn && !ended ? " yours" : ""}`}>
-        {ended ? "concluded" : myTurn ? "Your move" : `${activeName} is exploring…`}
+        {ended
+          ? "concluded"
+          : myTurn
+            ? `Your move · ${game.movementLeft} step${game.movementLeft === 1 ? "" : "s"} left`
+            : `${activeName} is exploring…`}
       </div>
       <canvas
         ref={canvasRef}
         className="minimap-canvas"
         style={{ cursor: hover?.reachable ? "pointer" : "default" }}
         onClick={(e) => {
+          const pip = pipAt(e);
+          if (pip) return explore(pip.dir); // the map twin of the flame arrow
           const key = roomAt(e);
           if (key && reach.has(key)) moveTo(key); // same action as the lit 3D room
         }}
         onMouseMove={(e) => {
-          const key = roomAt(e);
+          const pip = pipAt(e);
+          const key = pip ? null : roomAt(e);
           const def = key ? ROOMS_BY_ID[game.house[key]!.roomId] : undefined;
-          const next = def ? { name: def.name, reachable: reach.has(key!) } : null;
+          const next = pip
+            ? { name: `Explore ${pip.dir} — into the unknown`, reachable: true }
+            : def
+              ? { name: def.name, reachable: reach.has(key!) }
+              : null;
           setHover((h) =>
             h?.name === next?.name && h?.reachable === next?.reachable ? h : next,
           );
