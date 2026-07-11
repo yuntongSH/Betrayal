@@ -10,6 +10,7 @@ import {
   type GameState,
 } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { useView } from "../state/view";
 import { RoomTile } from "./RoomTile";
 import { Doors } from "./Doors";
 import { PlayerToken } from "./PlayerToken";
@@ -192,6 +193,30 @@ export function HouseView() {
   const me = game.players.find((p) => p.id === myId);
   const myRoom = me?.position ? game.house[me.position] : undefined;
 
+  // First person: floating room names become door plaques. Only rooms
+  // connected to YOURS get a label — hung over the shared door (the side
+  // facing you); your own room and every distant room go unlabeled (the
+  // minimap header names where you stand). Cross-floor connections have no
+  // shared wall to hang a plaque on, so they stay unlabeled too.
+  const fpDriving = useView((s) => s.driving);
+  const fpLabelFor = useMemo(() => {
+    if (!fpDriving) return () => null as null;
+    const map = new Map<string, Direction | "hide">();
+    if (myRoom) {
+      for (const nb of connections(game, myRoom.key)) {
+        const room = game.house[nb];
+        if (!room || room.floor !== myRoom.floor) continue;
+        // the neighbor's door back toward my room
+        const dx = myRoom.x - room.x;
+        const dy = myRoom.y - room.y;
+        const dir: Direction | null =
+          dx === 1 ? "east" : dx === -1 ? "west" : dy === 1 ? "south" : dy === -1 ? "north" : null;
+        if (dir) map.set(nb, dir);
+      }
+    }
+    return (key: string): Direction | "hide" => map.get(key) ?? "hide";
+  }, [fpDriving, game, myRoom]);
+
   // Per-token slot/path memory across state updates (see updateWalk).
   const walkCache = useRef(new Map<string, WalkEntry>());
 
@@ -208,6 +233,7 @@ export function HouseView() {
             highlighted={highlightSet.has(room.key)}
             litFactor={litFactorFor(visibility.get(room.key))}
             lightOn={litRooms.has(room.key)}
+            fpLabel={fpLabelFor(room.key)}
             onClick={() => highlightSet.has(room.key) && moveTo(room.key)}
           />
         );
@@ -232,6 +258,9 @@ export function HouseView() {
         const occ = occupantsAt(game, key);
         const room = game.house[key]!;
         const [wx, wy, wz] = roomWorld(room);
+        // First person: name tags only for company you can SEE — your own
+        // room. Text floating through walls reads as chrome, not a house.
+        const labelVisible = !fpDriving || key === myRoom?.key;
         return occ.map((o, i) => {
           const [ox, oz] = ringOffset(i, occ.length);
           const slot: WalkPoint = [wx + ox, wy, wz + oz];
@@ -251,6 +280,7 @@ export function HouseView() {
                 isMe={p.id === myId}
                 side={p.side}
                 alive={p.alive}
+                labelVisible={labelVisible}
               />
             );
           }
@@ -266,6 +296,7 @@ export function HouseView() {
               hp={m.hp}
               attackable={attackable.has(m.id)}
               mental={m.attackType === "mental"}
+              labelVisible={labelVisible}
               onClick={() => attackMonster(m.id)}
             />
           );

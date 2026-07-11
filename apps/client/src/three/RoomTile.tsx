@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
-import { DIRECTIONS, placedDoorways } from "@dread-hollow/shared";
+import { DIRECTIONS, DIR_DELTA, placedDoorways } from "@dread-hollow/shared";
 import type { Direction, PlacedRoom, RoomDef } from "@dread-hollow/shared";
 import { buildRoomDecor, roomTheme, materials, surfaceFor } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
@@ -31,6 +31,7 @@ export function RoomTile({
   highlighted,
   litFactor = 1,
   lightOn = true,
+  fpLabel = null,
   onClick,
 }: {
   room: PlacedRoom;
@@ -41,6 +42,11 @@ export function RoomTile({
   /** Light budget (HouseView): only the ~10 best-lit rooms keep their accent
    *  pointLight visible — an invisible light frees the shader entirely. */
   lightOn?: boolean;
+  /** First-person label treatment (null = the bird's-eye floating name):
+   *  "hide" drops the label entirely; a Direction hangs it as a small plaque
+   *  over the door on that side — the side facing the player's room — so
+   *  names live where signage would, not floating mid-air through walls. */
+  fpLabel?: Direction | "hide" | null;
   onClick: () => void;
 }) {
   const [wx, wy, wz] = roomWorld(room);
@@ -240,12 +246,27 @@ export function RoomTile({
         decay={2.2}
       />
 
-      <Html position={[0, WALL_H + 0.4, 0]} center distanceFactor={24} occlude={false}>
-        <div className={`room-label ${highlighted ? "lit" : ""}`}>
-          {def.name}
-          {def.aura ? (def.aura > 0 ? " ✦" : " ☓") : ""}
-        </div>
-      </Html>
+      {fpLabel !== "hide" && (
+        <Html
+          position={
+            fpLabel
+              ? [
+                  DIR_DELTA[fpLabel].dx * (HALF - 0.12),
+                  2.55, // just above the door lintel
+                  DIR_DELTA[fpLabel].dy * (HALF - 0.12),
+                ]
+              : [0, WALL_H + 0.4, 0]
+          }
+          center
+          distanceFactor={fpLabel ? 8 : 24}
+          occlude={false}
+        >
+          <div className={`room-label ${highlighted ? "lit" : ""}${fpLabel ? " plaque" : ""}`}>
+            {def.name}
+            {def.aura ? (def.aura > 0 ? " ✦" : " ☓") : ""}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }

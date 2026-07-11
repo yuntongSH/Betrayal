@@ -21,6 +21,7 @@ export function MonsterToken({
   hp,
   attackable,
   mental,
+  labelVisible = true,
   onClick,
 }: {
   tokenId: string;
@@ -33,6 +34,8 @@ export function MonsterToken({
   hp: number;
   attackable: boolean;
   mental?: boolean;
+  /** First person hides tags for monsters outside your room. */
+  labelVisible?: boolean;
   onClick: () => void;
 }) {
   const figure = useMemo(() => buildMonsterFigure(name), [name]);
@@ -114,12 +117,14 @@ export function MonsterToken({
         }}
       />
       <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={5} decay={2} />
+      {labelVisible && (
       <Html position={[0, 1.9, 0]} center distanceFactor={21} occlude={false}>
         <div className="token-label monster">
           {name}
           {mental ? " ✦" : ""} · {hp}♥{attackable ? " — strike" : ""}
         </div>
       </Html>
+      )}
     </group>
   );
 }

@@ -54,6 +54,7 @@ export function PlayerToken({
   isMe,
   side,
   alive = true,
+  labelVisible = true,
 }: {
   tokenId: string;
   position: [number, number, number];
@@ -66,6 +67,9 @@ export function PlayerToken({
   isMe: boolean;
   side: "heroes" | "traitor" | null;
   alive?: boolean;
+  /** First person hides tags for tokens outside your room — no text through
+   *  walls (HouseView decides; bird's-eye always true). */
+  labelVisible?: boolean;
 }) {
   // First person: you don't see your own body (or read your own name tag) —
   // the camera IS your head. Everything else about the token keeps running
@@ -339,7 +343,7 @@ export function PlayerToken({
         <pointLight position={[0, 1, 0]} color="#c2412f" intensity={4} distance={4} />
       )}
 
-      {!hideSelf && (
+      {!hideSelf && labelVisible && (
         <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={labelFactor} occlude={false}>
           <div
             className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
@@ -352,7 +356,7 @@ export function PlayerToken({
 
       {/* transient trait-change floats — each rises and fades, then beats.ts
           expires the delta and the node unmounts */}
-      {myDeltas.map((d, i) => (
+      {labelVisible && myDeltas.map((d, i) => (
         <Html key={d.id} position={[0, 2.5 + i * 0.35, 0]} center distanceFactor={labelFactor} occlude={false}>
           <div className="stat-float" style={{ color: TRAIT_COLOR[d.trait] }}>
             {d.delta > 0 ? `+${d.delta}` : `−${-d.delta}`}{" "}

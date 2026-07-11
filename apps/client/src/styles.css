@@ -596,6 +596,22 @@ input:focus {
 .room-label.lit {
   color: var(--good);
 }
+/* First person: the name hangs over the door like signage — a small brass
+   plate, not sky-writing. Inherits .lit's green when the room is walkable. */
+.room-label.plaque {
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+  color: #cbb98f;
+  background: linear-gradient(180deg, rgba(46, 36, 24, 0.92), rgba(28, 22, 15, 0.92));
+  border: 1px solid rgba(203, 185, 143, 0.35);
+  border-radius: 2px;
+  padding: 0.14em 0.6em;
+  text-shadow: 0 1px 1px #000;
+}
+.room-label.plaque.lit {
+  border-color: rgba(111, 174, 111, 0.55);
+}
 .token-label {
   font-size: 11px;
   white-space: nowrap;
