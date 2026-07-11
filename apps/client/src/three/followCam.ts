@@ -34,7 +34,13 @@ export function registerToken(id: string, obj: THREE.Object3D, chestY: number): 
   trackedTokens.set(id, { obj, chestY });
 }
 
-export function unregisterToken(id: string): void {
+/** Remove a token's registration — but ONLY if it still belongs to `obj`.
+ *  A remount races its own unmount cleanup (StrictMode, Suspense swaps, the
+ *  haunt re-keying occupants): new instance registers, THEN the old one's
+ *  cleanup runs — an unconditional delete wiped the fresh registration and
+ *  the first-person rig lost its token forever. */
+export function unregisterToken(id: string, obj?: THREE.Object3D): void {
+  if (obj && trackedTokens.get(id)?.obj !== obj) return;
   trackedTokens.delete(id);
 }
 

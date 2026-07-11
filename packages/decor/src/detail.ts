@@ -495,6 +495,7 @@ export function drippingCandle(height = 0.2, color = 0xe8dcc0, flame = 0xffae3a)
   pool.position.y = 0.004;
   g.add(pool);
   const f = new THREE.Mesh(flameGeometry(0.03, 0.09), emissiveMat(flame, 1.6));
+    f.userData.flame = Math.random() * Math.PI * 2;
   f.position.y = height + 0.04;
   g.add(f);
   return g;

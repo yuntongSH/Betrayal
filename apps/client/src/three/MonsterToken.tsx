@@ -58,10 +58,11 @@ export function MonsterToken({
 
   // Monsters only mount while hp > 0 — track them for the x-ray raycast.
   useEffect(() => {
-    if (!group.current) return;
-    registerToken(tokenId, group.current, 1.0);
+    const obj = group.current;
+    if (!obj) return;
+    registerToken(tokenId, obj, 1.0);
     return () => {
-      unregisterToken(tokenId);
+      unregisterToken(tokenId, obj); // obj-matched: survives remount races
       setWalking(tokenId, false);
     };
   }, [tokenId]);

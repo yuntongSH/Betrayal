@@ -155,7 +155,19 @@ function DoorMarker({
           cone was a literal glowing pyramid at first-person eye height */}
       <mesh rotation={rot} scale={[0.75, 1.5, 0.75]}>
         <sphereGeometry args={[0.17, 12, 10]} />
-        <meshStandardMaterial color="#e8a85a" emissive="#e8a85a" emissiveIntensity={1.2} />
+        <meshStandardMaterial
+          color="#e8a85a"
+          emissive="#e8a85a"
+          emissiveIntensity={1.2}
+          transparent
+          opacity={0.55}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* a hot core keeps the wisp readable through its soft shell */}
+      <mesh scale={[0.35, 0.6, 0.35]}>
+        <sphereGeometry args={[0.17, 10, 8]} />
+        <meshStandardMaterial color="#ffe9c0" emissive="#ffdf9e" emissiveIntensity={2.2} />
       </mesh>
       <pointLight color="#e8a85a" intensity={3} distance={3.5} />
     </group>

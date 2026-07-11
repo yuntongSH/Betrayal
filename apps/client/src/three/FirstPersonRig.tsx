@@ -71,6 +71,7 @@ export function FirstPersonRig() {
   const dragging = useRef(false);
   const wasDriving = useRef(false);
   const lamp = useRef<THREE.PointLight>(null);
+  const fill = useRef<THREE.PointLight>(null);
 
   // Drag to look. Pointer capture keeps the turn alive when the cursor
   // leaves the canvas mid-drag. Deltas come from client coordinates, not
@@ -197,9 +198,17 @@ export function FirstPersonRig() {
         camera.position.z - Math.cos(look.yaw) * 0.45,
       );
     }
+    fill.current?.position.copy(camera.position);
   }, -1); // before CameraDirector/XrayWalls at 0 — they read firstPerson.driving
 
   // The candle exists only through your own eyes — everyone else keeps seeing
   // your token's usual pool from PlayerToken.
-  return active ? <pointLight ref={lamp} color="#e8a85a" intensity={9} distance={8} decay={2} /> : null;
+  return active ? (
+    <>
+      <pointLight ref={lamp} color="#e8a85a" intensity={9} distance={8} decay={2} />
+      {/* a whisper of fill riding the candle — walls you face must never be
+          a pure black rectangle, however far the nearest pool */}
+      <pointLight ref={fill} color="#8a7455" intensity={1.1} distance={13} decay={1.6} />
+    </>
+  ) : null;
 }

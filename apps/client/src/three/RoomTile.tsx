@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { DIRECTIONS, DIR_DELTA, placedDoorways } from "@dread-hollow/shared";
 import type { Direction, PlacedRoom, RoomDef } from "@dread-hollow/shared";
-import { buildRoomDecor, roomTheme, materials, surfaceFor } from "@dread-hollow/decor";
+import { buildRoomDecor, roomTheme, materials, surfaceFor, tickFlames } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
 import { registerWall, unregisterWall } from "./followCam";
+import { useBeats } from "../state/beats";
 import { useView } from "../state/view";
 
 const HALF = TILE / 2;
@@ -57,6 +59,15 @@ export function RoomTile({
   const surf = useMemo(() => surfaceFor(room.roomId), [room.roomId]);
   // The decorations are vanilla three Groups, memoized for the tile's lifetime.
   const decor = useMemo(() => buildRoomDecor(room.roomId, TILE, { doors }), [room.roomId, doors]);
+
+  // Candlelight breathes: gutter this room's tagged flames while its decor is
+  // visible (deep-fog culling hides the decor anyway; a modal freeze holds
+  // every flame). decorHidden is the same hysteresis ref the visibility uses.
+  const decorHidden = useRef(false);
+  useFrame(({ clock }) => {
+    if (decorHidden.current || useBeats.getState().worldFrozen) return;
+    tickFlames(decor, clock.elapsedTime);
+  });
 
   // Wall-height trim (cornice, beams, pilasters — tagged `userData.xrayTrim`
   // by the decor package) must ghost with the room's walls, or faded walls
@@ -141,7 +152,6 @@ export function RoomTile({
   }, [trim, room.key, wx, wy, wz]);
 
   // Deep-fog culling with hysteresis (see DECOR_HIDE_LIT/DECOR_SHOW_LIT).
-  const decorHidden = useRef(false);
   if (litFactor < DECOR_HIDE_LIT) decorHidden.current = true;
   else if (litFactor >= DECOR_SHOW_LIT) decorHidden.current = false;
   const dimmed = decorHidden.current;

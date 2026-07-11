@@ -273,6 +273,7 @@ function candle(height = 0.22, color = 0xf2e9d0, flame = 0xffae3a): THREE.Group 
   stick.position.y = height / 2;
   g.add(stick);
   const f = new THREE.Mesh(flameGeometry(0.032, 0.1), emissiveMat(flame, 1.6));
+    f.userData.flame = Math.random() * Math.PI * 2;
   f.position.y = height + 0.05;
   g.add(f);
   return g;
@@ -473,9 +474,12 @@ function sconce(flame = 0xffae3a): THREE.Group {
   const bracket = box(0.06, 0.18, 0.06, 0x4a4038, { metal: 0.5, rough: 0.5 });
   g.add(bracket);
   const cup = cyl(0.05, 0.03, 0.06, 0x5a4a30, 8, { metal: 0.5 });
+  (cup.material as THREE.MeshStandardMaterial).emissive.setHex(0x3a2410);
+  (cup.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.35;
   cup.position.set(0, 0.06, 0.06);
   g.add(cup);
   const f = new THREE.Mesh(flameGeometry(0.042, 0.12), emissiveMat(flame, 1.5));
+    f.userData.flame = Math.random() * Math.PI * 2;
   f.position.set(0, 0.16, 0.06);
   g.add(f);
   return g;
@@ -844,6 +848,7 @@ function fireplace(accent = 0xff7a2a, opts: { light?: boolean } = {}): THREE.Gro
   const flameM = emissiveMat(0xffb054, 1.5);
   for (const fx of [-0.16, 0.14]) {
     const f = new THREE.Mesh(flameGeometry(0.06, 0.18), flameM);
+    f.userData.flame = Math.random() * Math.PI * 2;
     f.position.set(fx, 0.16, 0.28);
     g.add(f);
   }
@@ -1505,7 +1510,7 @@ const COMPOSERS: Record<string, Composer> = {
     placeFloorStain(g, "water", 0.6, 0, tile / 2 - 1.4, tile, 11);
     placeOnWall(g, wallCrack(1.0, 3) as unknown as THREE.Object3D, "w", 0.2, 1.5, tile);
     placeOnWall(g, peelingWallpaper(0.5, 0.8, t.wall, t.floor), "w", tile / 2 - 0.7, 1.3, tile);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 5.5 : 4.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 5.5 : 4.0, 2);
     light.position.set(0, 1.3, big ? 0 : -(tile / 2 - 0.7));
     g.add(light);
   },
@@ -1700,7 +1705,7 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, barrel(), -(tile / 2 - 0.6), tile / 2 - 0.6, tile);
     place(g, barrel(), -(tile / 2 - 0.6), tile / 2 - 1.1, tile);
     placeFloorStain(g, "soot", 0.5, tile / 2 - 0.7, -(tile / 2 - 0.7) + 0.5, tile, 85);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 5 : 3.5, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 5 : 3.5, 2);
     light.position.set(tile / 2 - 0.7, 0.9, -(tile / 2 - 0.7));
     g.add(light);
   },
@@ -1935,7 +1940,7 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, dustPile(0.16, 0x4a443c), -(tile / 2 - 0.8), -(tile / 2 - 0.9), tile);
     placeOnWall(g, wallCrack(1.1, 7) as unknown as THREE.Object3D, "e", 0, 1.4, tile);
     g.add(rats(scaleN(3, tile), scaleSpread(1.2, tile), 4));
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 4.5 : 3.5, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 4.5 : 3.5, 2);
     light.position.set(0, 0.9, 0);
     g.add(light);
   },
@@ -1986,7 +1991,7 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, dustPile(0.15, 0x4a443c), -(tile / 2 - 0.9), tile / 2 - 0.9, tile);
     if (big) place(g, dustPile(0.13, 0x4a443c), tile / 2 - 1.0, -(tile / 2 - 0.9), tile);
     g.add(rats(scaleN(4, tile), scaleSpread(1.5, tile), 6));
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 4.0 : 3.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 4.0 : 3.0, 2);
     light.position.set(0, 0.8, 0.3);
     g.add(light);
   },
@@ -2024,7 +2029,7 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, skull(1.1), -(tile / 2 - 0.8), tile / 2 - 0.7, tile, 0.8);
     g.add(scatteredPaper(scaleFlat(7, tile), scaleSpread(1.6, tile), 23));
     placeOnWall(g, clawMarks(0.6, 4, 25) as unknown as THREE.Object3D, "n", tile * 0.32, 1.3, tile);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 5.5 : 4.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 5.5 : 4.0, 2);
     light.position.set(0, 0.6, 0);
     g.add(light);
   },
@@ -2090,7 +2095,7 @@ const COMPOSERS: Record<string, Composer> = {
     place(g, barrel(0x4a3a2a), tile / 2 - 0.6, tile / 2 - 0.6, tile);
     g.add(rats(scaleN(3, tile), scaleSpread(1.4, tile), 115));
     placeOnWall(g, moldPatch(0.6, 117) as unknown as THREE.Object3D, "s", -0.4, 0.7, tile);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 5.5 : 4.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 5.5 : 4.0, 2);
     if (big) light.position.set(0, 1.0, 0.9);
     else light.position.set(-(tile / 2 - 0.8), 0.7, -(tile / 2 - 0.8) + 0.4);
     g.add(light);
@@ -2214,7 +2219,7 @@ const COMPOSERS: Record<string, Composer> = {
     placeOnWall(g, chain(0.7, 0x3a342c), "e", -tile * 0.3, WALL_H - 0.05, tile);
     if (big) placeOnWall(g, chain(0.9, 0x3a342c), "w", tile * 0.28, WALL_H - 0.05, tile);
     placeFloorStain(g, "blood", 0.45, 0, big ? -1.6 : -0.2, tile, 137);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 4.5 : 3.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 4.5 : 3.0, 2);
     light.position.set(0, 0.5, big ? 0.4 : tile / 2 - 0.7);
     g.add(light);
   },
@@ -2715,7 +2720,7 @@ const COMPOSERS: Record<string, Composer> = {
     placeOnWall(g, cobwebFunnel(0.6), "w", -(tile / 2 - 0.6), WALL_H - 0.4, tile);
     placeOnWall(g, cobwebFunnel(0.5), "e", tile / 2 - 0.6, WALL_H - 0.4, tile);
     placeOnWall(g, wallCrack(0.9, 173) as unknown as THREE.Object3D, "w", 0.2, 1.4, tile);
-    const light = new THREE.PointLight(t.accent, t.accentIntensity, big ? 4.0 : 3.0, 2);
+    const light = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 4.0 : 3.0, 2);
     light.position.set(0, big ? 2.0 : 1.6, 0);
     g.add(light);
   },
@@ -4151,4 +4156,31 @@ function flickerOpacity(fig: THREE.Object3D, t: number, phase: number): void {
     if (Array.isArray(mat)) mat.forEach(apply);
     else apply(mat);
   });
+}
+
+/** Every flame mesh is tagged `userData.flame = <phase>` at build time; this
+ *  guttering pass (call per frame with elapsed seconds, skip while the world
+ *  is frozen) sways scale and emissive intensity per flame. Meshes are
+ *  collected lazily ONCE per root and cached — a static room costs one array
+ *  walk. Motion is half of what makes a primitive flame pass at close range.
+ */
+export function tickFlames(root: THREE.Object3D, t: number): void {
+  let flames = root.userData._flames as THREE.Mesh[] | undefined;
+  if (!flames) {
+    flames = [];
+    root.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.userData.flame != null) flames!.push(o as THREE.Mesh);
+    });
+    root.userData._flames = flames;
+  }
+  for (const f of flames) {
+    const phase = f.userData.flame as number;
+    f.scale.y = 1 + 0.1 * Math.sin(t * 11 + phase) + 0.05 * Math.sin(t * 17 + phase * 2);
+    f.scale.x = f.scale.z = 1 - 0.04 * Math.sin(t * 13 + phase);
+    const m = f.material as THREE.MeshStandardMaterial;
+    if (m.emissiveIntensity !== undefined) {
+      const base = (f.userData.flameBase ??= m.emissiveIntensity) as number;
+      m.emissiveIntensity = base * (1 + 0.14 * Math.sin(t * 13 + phase * 2) + 0.06 * Math.sin(t * 23 + phase));
+    }
+  }
 }

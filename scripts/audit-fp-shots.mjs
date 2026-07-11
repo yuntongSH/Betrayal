@@ -142,6 +142,39 @@ async function settle(maxMs = 18000) {
   return readState();
 }
 
+/** The rig dropped (haunt cinematic aftermath / lost token). Try, in order:
+ *  re-toggle the view (re-seeds and re-drives), then a full scene remount
+ *  (game -> null -> back re-registers every token). Returns fresh state. */
+async function recoverFirstPerson() {
+  console.log("recovering first person: re-toggling view");
+  await page.evaluate(async () => {
+    const v = await liveImport("/src/state/view.ts");
+    if (v.useView.getState().mode === "first") v.toggleView();
+    v.toggleView(); // back to "first" — re-runs the rig's entering effect
+  });
+  await page.waitForTimeout(2500);
+  let s = await readState();
+  if (s?.fpDriving) return s;
+
+  console.log("recovering first person: remounting the scene");
+  await page.evaluate(async () => {
+    const store = (await liveImport("/src/state/store.ts")).useStore;
+    const g = store.getState().game;
+    store.setState({ game: null });
+    await new Promise((r) => setTimeout(r, 300));
+    store.setState({ game: g });
+  });
+  await page.waitForTimeout(8000); // models re-stream under SwiftShader
+  await page.evaluate(async () => {
+    const v = await liveImport("/src/state/view.ts");
+    if (v.useView.getState().mode !== "first") v.toggleView();
+  });
+  await page.waitForTimeout(2500);
+  s = await readState();
+  console.log("recovery result:", JSON.stringify({ fpDriving: s?.fpDriving, tokenTracked: s?.tokenTracked }));
+  return s;
+}
+
 /** Aim the eyes: absolute yaw in radians (camera forward at yaw 0 = -Z = north). */
 async function aim(yaw, pitch = -0.05) {
   await page.evaluate(
@@ -215,8 +248,11 @@ while (captured.size < TARGET_SHOTS && timeLeft() > 20000) {
   s = await settle();
   if (s?.pos) visited.add(s.pos);
   if (s && !captured.has(s.pos)) {
-    if (s.fpDriving) await captureHere(s);
-    else console.log(`skip capture at ${s.roomId}:`, JSON.stringify(s));
+    if (!s.fpDriving) {
+      console.log(`rig not driving at ${s.roomId}:`, JSON.stringify(s));
+      s = await recoverFirstPerson();
+    }
+    if (s?.fpDriving) await captureHere(s);
   }
 
   // Spend this turn's movement stepping into fresh rooms, shooting each one.
@@ -253,10 +289,13 @@ while (captured.size < TARGET_SHOTS && timeLeft() > 20000) {
     if (!s) break;
     if (s.pos) visited.add(s.pos);
     if (s.alive && !captured.has(s.pos)) {
-      if (s.fpDriving) await captureHere(s);
-      else console.log(`skip capture at ${s.roomId}:`, JSON.stringify(s));
+      if (!s.fpDriving) {
+        console.log(`rig not driving at ${s.roomId}:`, JSON.stringify(s));
+        s = await recoverFirstPerson();
+      }
+      if (s?.fpDriving) await captureHere(s);
     }
-    if (captured.size >= TARGET_SHOTS || s.movementLeft <= 0) break;
+    if (!s || captured.size >= TARGET_SHOTS || s.movementLeft <= 0) break;
   }
 
   s = await readState();

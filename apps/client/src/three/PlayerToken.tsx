@@ -140,9 +140,10 @@ export function PlayerToken({
 
   // The x-ray raycast tracks living explorers' lerped positions via this registry.
   useEffect(() => {
-    if (!alive || !group.current) return;
-    registerToken(tokenId, group.current, 1.2);
-    return () => unregisterToken(tokenId);
+    const obj = group.current;
+    if (!alive || !obj) return;
+    registerToken(tokenId, obj, 1.2);
+    return () => unregisterToken(tokenId, obj); // obj-matched: survives remount races
   }, [tokenId, alive]);
 
   // Free the walking flag and live speed when this token unmounts
