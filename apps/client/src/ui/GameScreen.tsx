@@ -14,6 +14,8 @@ import { BeatOverlay } from "./BeatOverlay";
 import { AudioToggle } from "./AudioToggle";
 import { HelpButton } from "./HelpButton";
 import { ViewToggle } from "./ViewToggle";
+import { GuideStrip } from "./GuideStrip";
+import { WelcomeCard } from "./WelcomeCard";
 import { Minimap } from "./Minimap";
 import { TRAIT_ICON, tagIcon } from "./icons";
 import { useView } from "../state/view";
@@ -105,6 +107,7 @@ export function GameScreen() {
   return (
     <div className="game-shell">
       <Scene />
+      <WelcomeCard />
 
       <div className={`hud-top ${haunt ? "haunt" : ""}`}>
         <div className="hud-turn">
@@ -128,6 +131,7 @@ export function GameScreen() {
           {!myTurn && !ended && active?.isBot && (
             <span className="muted"> is taking their turn…</span>
           )}
+          <GuideStrip />
         </div>
         <div className="hud-top-right">
           {!ended && (

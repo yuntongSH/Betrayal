@@ -637,6 +637,20 @@ input:focus {
 .hud-top.haunt .hud-turn {
   color: var(--blood-bright);
 }
+/* The guide strip — the one line that always answers "what do I do now?".
+   Sits under the turn banner; quiet gold, urgent red when a fight wants you. */
+.guide-strip {
+  margin-top: 0.3rem;
+  font-size: 0.86rem;
+  font-style: italic;
+  color: rgba(232, 199, 138, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  max-width: min(620px, 60vw);
+  line-height: 1.35;
+}
+.guide-strip.urgent {
+  color: #e88f7e;
+}
 .haunt-tag {
   color: var(--blood-bright);
   letter-spacing: 0.1em;
@@ -705,6 +719,14 @@ input:focus {
 }
 .help-card h2 {
   margin-top: 0;
+}
+/* first-night welcome: the help card's little sibling, one-time */
+.welcome-card {
+  width: min(480px, 94vw);
+  text-align: left;
+}
+.welcome-card .btn {
+  margin-top: 0.6rem;
 }
 .help-list {
   display: flex;
