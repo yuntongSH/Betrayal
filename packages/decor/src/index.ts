@@ -1070,7 +1070,7 @@ function specimenShelf(glow = 0x6fd66a): THREE.Group {
  *  FIGURE at first-person distance: the hood and bowed head carry the
  *  silhouette; a hand on the warding arm and a hanging off-arm break the
  *  "cone with a ball" ambiguity. Same single stone material throughout. */
-function statue(color = 0x8a8478): THREE.Group {
+function statue(color = 0x615c54): THREE.Group {
   const g = new THREE.Group();
   const stone = mat(color, { rough: 0.95 });
   const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), stone);
@@ -1091,12 +1091,12 @@ function statue(color = 0x8a8478): THREE.Group {
   shoulders.position.y = 1.47;
   g.add(shoulders);
   // bowed head under a hood — the hood peak leans with the bow
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), stone);
-  head.position.set(0, 1.55, 0.07);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), stone);
+  head.position.set(0, 1.52, 0.05);
   g.add(head);
-  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.125, 0.26, 10), stone);
-  hood.position.set(0, 1.63, 0.02);
-  hood.rotation.x = 0.3;
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.145, 0.3, 10), stone);
+  hood.position.set(0, 1.62, 0.02);
+  hood.rotation.x = 0.22;
   g.add(hood);
   // the warding arm, raised, with a hand; the off-arm hangs
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.36, 0.065), stone);
