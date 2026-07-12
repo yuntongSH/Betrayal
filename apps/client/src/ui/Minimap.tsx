@@ -6,6 +6,7 @@ import {
   DIR_DELTA,
   FLOORS,
   ROOMS_BY_ID,
+  connections,
   legalMoves,
   parseKey,
   placedDoorways,
@@ -172,10 +173,13 @@ function drawMap(
       ctx.fill();
     }
 
-    // Edges: bone walls, notched open where the tile has a doorway. Reachable
-    // rooms stroke amber under a soft glow — shadow is reset right after so
-    // nothing else blurs.
+    // Edges: bone walls, notched open where the tile has a WORKING doorway.
+    // A door facing a discovered neighbor's blank wall is sealed for the rest
+    // of the night, so it draws solid: the map must answer "can I walk there?"
+    // not "does my tile have a door printed on it?". Reachable rooms stroke
+    // amber under a soft glow — shadow is reset right after so nothing blurs.
     const doors = placedDoorways(room);
+    const linked = new Set(connections(game, room.key));
     if (reachable) {
       ctx.strokeStyle = "#e8a85a";
       ctx.shadowColor = "#e8a85a";
@@ -187,13 +191,19 @@ function drawMap(
     ctx.lineCap = "round";
     for (const dir of DIRECTIONS) {
       const { dx, dy } = DIR_DELTA[dir];
+      const nKey = `${room.floor}:${room.x + dx}:${room.y + dy}`;
+      const neighbor = game.house[nKey];
+      // Open = my door leads somewhere: an undiscovered doorway (explorable)
+      // or a live passage. Discovered neighbor without the matching door (or
+      // a barricade) draws as the wall it effectively is.
+      const open = doors.has(dir) && (!neighbor || linked.has(nKey));
       // Edge endpoints in room-local space (north = top).
       const horizontal = dy !== 0;
       const ex = dx === 1 ? x0 + s : x0; // east edge at right, west at left
       const ey = dy === 1 ? y0 + s : y0; // south edge at bottom, north at top
       ctx.beginPath();
       if (horizontal) {
-        if (doors.has(dir)) {
+        if (open) {
           ctx.moveTo(x0, ey);
           ctx.lineTo(x0 + (s - gap) / 2, ey);
           ctx.moveTo(x0 + (s + gap) / 2, ey);
@@ -203,7 +213,7 @@ function drawMap(
           ctx.lineTo(x0 + s, ey);
         }
       } else {
-        if (doors.has(dir)) {
+        if (open) {
           ctx.moveTo(ex, y0);
           ctx.lineTo(ex, y0 + (s - gap) / 2);
           ctx.moveTo(ex, y0 + (s + gap) / 2);
@@ -216,6 +226,24 @@ function drawMap(
       ctx.stroke();
     }
     ctx.shadowBlur = 0;
+
+    // Passage ticks: a short bar across the gutter wherever you can actually
+    // walk between two discovered rooms — the map's answer to "are these two
+    // connected, or just touching?". Drawn once per pair (east/south only).
+    ctx.strokeStyle = "rgba(216,207,196,.55)";
+    ctx.lineWidth = Math.max(2, cell * 0.1);
+    for (const dir of ["east", "south"] as const) {
+      const { dx, dy } = DIR_DELTA[dir];
+      const nKey = `${room.floor}:${room.x + dx}:${room.y + dy}`;
+      if (!game.house[nKey] || !linked.has(nKey)) continue;
+      const cx = ox + (room.x + 0.5 + dx * 0.5) * cell;
+      const cy = oy + (room.y + 0.5 + dy * 0.5) * cell;
+      const half = inset * 1.4;
+      ctx.beginPath();
+      ctx.moveTo(cx - dx * half, cy - dy * half);
+      ctx.lineTo(cx + dx * half, cy + dy * half);
+      ctx.stroke();
+    }
 
     // The watched player's current room gets an extra bone ring so "where am
     // I" has a room-level answer before you even spot your pin.
