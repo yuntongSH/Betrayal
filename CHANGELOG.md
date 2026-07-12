@@ -53,6 +53,16 @@ feature landing alongside its own headless verification script.
 - **The card is a note by candlelight** (`e6af387`): one accent color, a
   small sigil, serif title over a hairline rule, light backdrop dim.
 
+### Character select: the pinned evidence board
+
+- **Intake slips instead of UI cards** (`5990bce`): each explorer is an aged
+  paper record pinned to the board — sepia cabinet-card photograph, engraved
+  name, typewritten measurements, a brass pin with a ribbon in the explorer's
+  color, every slip hung at its own slight angle. Your pick is pressed with a
+  wax seal; slips other players hold are rubber-stamped CLAIMED. The dossier
+  below is the matching full intake sheet with the bond as a red-ink margin
+  note. `scripts/shot-charselect.mjs` screenshots the states headlessly.
+
 ### Legibility & onboarding
 
 - **Guide strip** (`ec50082`): one line under the turn banner that always
