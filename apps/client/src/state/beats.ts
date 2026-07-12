@@ -67,6 +67,10 @@ export interface BeatToast {
   text: string;
   color: string;
   out: boolean;
+  /** Wall-clock birth: toasts expire by AGE, not only by setTimeout — Chrome
+   *  throttles background-tab timers to once a minute, so a tab you switch
+   *  back to would otherwise greet you with a minutes-old stale note. */
+  at: number;
 }
 
 /** In-3D side-effect request (light pulse + ember burst) drained by <BeatFX/>. */
@@ -546,7 +550,7 @@ function addToast(glyph: string, text: string, color: string): void {
   }
   const id = ++toastSeq;
   useBeats.setState((s) => {
-    const toasts = [...s.toasts, { id, glyph, text, color, out: false }];
+    const toasts = [...s.toasts, { id, glyph, text, color, out: false, at: Date.now() }];
     while (toasts.length > 2) toasts.shift();
     return { toasts };
   });
@@ -558,6 +562,25 @@ function addToast(glyph: string, text: string, color: string): void {
   setTimeout(() => {
     useBeats.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   }, 2900);
+}
+
+// The moment the tab is seen again, cull anything past its natural life —
+// the throttled setTimeouts will fire eventually, but "eventually" must not
+// be the first thing a returning player reads. A slow sweep catches the
+// same staleness while the tab stays visible but the timers hiccup.
+function cullStaleToasts(): void {
+  const now = Date.now();
+  useBeats.setState((s) =>
+    s.toasts.some((t) => now - t.at > 3200)
+      ? { toasts: s.toasts.filter((t) => now - t.at <= 3200) }
+      : s,
+  );
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") cullStaleToasts();
+  });
+  setInterval(cullStaleToasts, 2000);
 }
 
 /** At most one special-room note per action; a room's aura outranks its special. */
