@@ -83,10 +83,19 @@ export function MonsterToken({
       if (activePath.current) cursor.current.i = activePath.current.points.length; // never walk in from a stale path
       placed.current = true;
     }
-    // In first person a point-blank monster tag would fill the screen — the
-    // creature itself is the information at that range. Slightly tighter
-    // fade than name tags: the HP readout matters in melee.
-    fadeLabelByDistance(labelEl.current, state.camera, g.position.x, g.position.y + 1.9, g.position.z, 1.3, 2.2);
+    // In first person a point-blank monster tag would fill the screen (the
+    // creature itself is the information at that range; tighter fade since
+    // the HP readout matters in melee). Overhead, the director's chase dives
+    // to ~4u where distanceFactor 21 would banner the tag: fade first.
+    fadeLabelByDistance(
+      labelEl.current,
+      state.camera,
+      g.position.x,
+      g.position.y + 1.9,
+      g.position.z,
+      fpDriving ? 1.3 : 10,
+      fpDriving ? 2.2 : 14,
+    );
     // A modal beat owns the stage — hold position and pose until it drains.
     if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);

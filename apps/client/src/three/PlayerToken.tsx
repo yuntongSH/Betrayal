@@ -210,10 +210,21 @@ export function PlayerToken({
       if (activePath.current) cursor.current.i = activePath.current.points.length;
       placed.current = true;
     }
-    // Nose-to-nose in first person a name tag would fill the screen — fade
-    // it out as the camera closes in (runs even during a freeze so entering
-    // first person mid-beat never flashes a giant label).
-    fadeLabelByDistance(labelEl.current, state.camera, g.position.x, g.position.y + 1.9, g.position.z);
+    // A close camera makes a name tag fill the screen: nose-to-nose in first
+    // person, or the director's chase (CHASE_DIST 7, pulsing to ~4) with the
+    // overhead distanceFactor 21. Fade the tag out before either gets there
+    // (runs even during a freeze so entering first person mid-beat never
+    // flashes a giant label). During a chase you're watching the figure and
+    // the turn banner names them anyway.
+    fadeLabelByDistance(
+      labelEl.current,
+      state.camera,
+      g.position.x,
+      g.position.y + 1.9,
+      g.position.z,
+      fpDriving ? 1.6 : 10,
+      fpDriving ? 2.8 : 14,
+    );
 
     // A modal beat owns the stage — hold this walker exactly where it stands
     // (dt-based systems resume seamlessly when the card dismisses).

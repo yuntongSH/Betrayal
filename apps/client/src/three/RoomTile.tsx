@@ -80,6 +80,10 @@ export function RoomTile({
         1.5,
         2.4,
       );
+    } else if (!fpLabel) {
+      // The overhead floating room name (distanceFactor 24) balloons the
+      // same way when the director's chase dives close: fade it too.
+      fadeLabelByDistance(plaqueEl.current, camera, wx, wy + WALL_H + 0.4, wz, 10, 14);
     }
     if (decorHidden.current || useBeats.getState().worldFrozen) return;
     tickFlames(decor, clock.elapsedTime);
