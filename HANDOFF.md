@@ -7,7 +7,12 @@ with concrete file pointers.
 
 - **Live build:** https://yuntongsh.github.io/Betrayal/
 - **Active branch:** `claude/wizardly-darwin-l5087u` (all recent work is here)
-- **Snapshot:** 13 haunts · 6 characters · 27 rooms · 15 items / 12 events / 8 omens · **106 passing tests**
+- **Snapshot:** 13 haunts · 6 characters · 27 rooms · 15 items / 12 events / 8 omens · **121 passing tests**
+- **What changed recently:** see [CHANGELOG.md](CHANGELOG.md) — the 2026-07
+  sessions added the React 19 / R3F 9 migration, pmndrs character locomotion +
+  haunt cinematic + VRM avatars, a full first-person mode (V), player-thrown
+  dice, onboarding, and a room-detail quality pass, each with a headless
+  verify script under `scripts/verify-*.mjs`.
 
 ---
 
@@ -22,7 +27,7 @@ pnpm install
 Day-to-day commands (Node 20+, pnpm):
 
 ```bash
-pnpm test            # rules-engine test suite (vitest) — 106 tests
+pnpm test            # rules-engine test suite (vitest) — 121 tests
 pnpm typecheck       # type-check every package
 pnpm build           # production build of the React client
 pnpm build:artifact  # regenerate the single-file artifact/dread-hollow.html
@@ -141,7 +146,7 @@ snapshot pruning, monster tuning), and the lobby/scroll fixes.
 
 ## 4. How it's verified
 
-- **Unit/regression:** `pnpm test` (vitest, 106 tests in `packages/shared/src/__tests__`).
+- **Unit/regression:** `pnpm test` (vitest, 121 tests in `packages/shared/src/__tests__`).
 - **Balance & termination soaks:** ad-hoc Node scripts that bundle the engine to
   ESM and run hundreds/thousands of all-bot games, checking every game ends and
   measuring per-haunt and per-difficulty win rates. (Re-create under
