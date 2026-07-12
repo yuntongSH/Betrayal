@@ -1,0 +1,33 @@
+# Fly.io config for the multiplayer server. One-time setup:
+#   fly launch --copy-config --no-deploy   (accept the app name or pick one)
+#   fly deploy
+# Then build the client against it:
+#   VITE_SERVER_URL=wss://<app-name>.fly.dev pnpm --filter @dread-hollow/client build
+app = "dread-hollow"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile.server"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when nobody is playing; a WebSocket keeps the machine
+  # alive for the whole game, and the first visitor wakes it in ~1s.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

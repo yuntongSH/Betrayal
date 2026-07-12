@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { DuskScene } from "./DuskScene";
 import { HelpButton } from "./HelpButton";
+import { crazy } from "../net/crazygames";
 
 export function Lobby() {
   const name = useStore((s) => s.name);
@@ -10,7 +11,17 @@ export function Lobby() {
   const joinRoom = useStore((s) => s.joinRoom);
   const playSolo = useStore((s) => s.playSolo);
   const status = useStore((s) => s.status);
-  const [code, setCode] = useState("");
+  // An invite can carry a room code in: `?join=CODE` on any host, or the
+  // CrazyGames invite parameter on the portal. Prefill — never auto-join;
+  // the guest still needs to give the manor a name.
+  const [code, setCode] = useState(
+    () => new URLSearchParams(location.search).get("join")?.toUpperCase().slice(0, 4) ?? "",
+  );
+  useEffect(() => {
+    void crazy.inviteCode().then((c) => {
+      if (c) setCode(c.toUpperCase().slice(0, 4));
+    });
+  }, []);
 
   const trimmed = name.trim();
   const canPlay = trimmed.length > 0;

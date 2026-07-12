@@ -352,6 +352,12 @@ input:focus {
 .room-code {
   text-align: right;
 }
+.room-code .invite-btn {
+  display: block;
+  margin: 0.3rem 0 0 auto;
+  font-size: 0.72rem;
+  padding: 0.35em 0.7em;
+}
 .room-code strong {
   display: block;
   font-size: 1.8rem;

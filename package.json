@@ -15,6 +15,7 @@
     "dev:client": "pnpm --filter @dread-hollow/client dev",
     "build": "pnpm -r build",
     "build:artifact": "node scripts/build-artifact.mjs",
+    "build:crazygames": "node scripts/build-crazygames.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @dread-hollow/shared test",
     "lint": "echo \"(lint placeholder)\""

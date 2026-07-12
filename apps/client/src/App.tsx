@@ -1,11 +1,16 @@
+import { useEffect } from "react";
 import { useStore } from "./state/store";
 import { Lobby } from "./ui/Lobby";
 import { RoomScreen } from "./ui/RoomScreen";
 import { GameScreen } from "./ui/GameScreen";
+import { crazy } from "./net/crazygames";
 
 export function App() {
   const game = useStore((s) => s.game);
   const error = useStore((s) => s.error);
+
+  // First screen painted: portal loading is over (no-op off CrazyGames).
+  useEffect(() => crazy.loadingDone(), []);
 
   let view;
   if (!game) view = <Lobby />;

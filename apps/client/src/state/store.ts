@@ -1,6 +1,15 @@
 import { create } from "zustand";
-import { CHARACTERS, type Action, type Difficulty, type Direction, type GameState } from "@dread-hollow/shared";
+import {
+  CHARACTERS,
+  type Action,
+  type Difficulty,
+  type Direction,
+  type GameState,
+  type Phase,
+  type Side,
+} from "@dread-hollow/shared";
 import { Connection, type ServerMessage } from "../net/connection";
+import { crazy } from "../net/crazygames";
 import { ambient } from "../audio/ambient";
 import { ingestBeats, resetBeats } from "./beats";
 import { playOneShotFor } from "../three/avatarRegistry";
@@ -13,6 +22,21 @@ const SERVER_URL =
   `ws://${location.hostname}:8787`;
 
 type Status = "idle" | "connecting" | "connected";
+
+/** Portal (CrazyGames) telemetry riding the same phase transitions as the
+ *  score. No-ops everywhere off-portal — see net/crazygames.ts. */
+function syncPortal(prev: Phase | undefined, next: Phase, winner: Side | null): void {
+  const playing = (p?: Phase) => p === "explore" || p === "haunt";
+  if (!playing(prev) && playing(next)) crazy.gameplayStart();
+  if (playing(prev) && next === "ended") {
+    crazy.gameplayStop();
+    if (winner === "heroes") crazy.happytime();
+    // A natural break: the results card is up and the world is at rest.
+    // Mute the score for the ad spot, then restore the player's own setting.
+    const wasMuted = ambient.isMuted;
+    crazy.midgameAd((quiet) => ambient.setMuted(quiet ? true : wasMuted));
+  }
+}
 
 interface Store {
   conn: Connection | null;
@@ -76,6 +100,8 @@ export const useStore = create<Store>((set, get) => {
           error: null,
         });
         ambient.setScene(msg.state.phase);
+        // Rejoining a game already underway (reconnect) counts as gameplay.
+        syncPortal(undefined, msg.state.phase, msg.state.winner);
         if (pendingSolo) {
           pendingSolo = false;
           const conn = get().conn;
@@ -95,7 +121,10 @@ export const useStore = create<Store>((set, get) => {
         // The outgoing state object is the pre-action snapshot for beat diffing.
         ingestBeats(get().game, msg.state, get().playerId);
         // Phase transitions steer the score (lobby → explore → haunt → ended).
-        if (get().game?.phase !== msg.state.phase) ambient.setScene(msg.state.phase);
+        if (get().game?.phase !== msg.state.phase) {
+          ambient.setScene(msg.state.phase);
+          syncPortal(get().game?.phase, msg.state.phase, msg.state.winner);
+        }
         set({ game: msg.state });
         break;
       case "error":
@@ -190,6 +219,7 @@ export const useStore = create<Store>((set, get) => {
     leave: () => {
       get().conn?.send({ t: "leave-room" });
       ambient.setScene("lobby");
+      crazy.gameplayStop();
       set({ game: null, roomCode: null, status: "idle" });
     },
 

@@ -5,3 +5,9 @@ node_modules
 *.log
 coverage
 .DS_Store
+# the server image only needs packages/shared + packages/server
+apps
+artifact
+docs
+scripts
+*.zip

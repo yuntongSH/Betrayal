@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { CHARACTERS, CHARACTERS_BY_ID, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
 import type { CharacterDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
+import { crazy } from "../net/crazygames";
 import { DuskScene } from "./DuskScene";
 import { Portrait } from "./Portrait";
 
@@ -71,6 +72,21 @@ export function RoomScreen() {
   const everyoneReady =
     game.players.length > 0 && game.players.every((p) => p.characterId);
 
+  // One-click invites: a CrazyGames invite link on the portal, otherwise a
+  // plain ?join=CODE URL to wherever this build is hosted.
+  const [copied, setCopied] = useState(false);
+  const copyInvite = () => {
+    if (!roomCode) return;
+    const url = new URL(location.href);
+    url.searchParams.set("join", roomCode);
+    const link = crazy.inviteLink(roomCode) ?? url.toString();
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    };
+    navigator.clipboard?.writeText(link).then(done, done);
+  };
+
   // The dossier follows the pointer, falling back to your pick.
   const [hovered, setHovered] = useState<string | null>(null);
   const shown =
@@ -89,6 +105,9 @@ export function RoomScreen() {
         <div className="room-code">
           <span className="muted">Room code</span>
           <strong>{roomCode}</strong>
+          <button className="btn invite-btn" onClick={copyInvite}>
+            {copied ? "Copied ✓" : "Copy invite link"}
+          </button>
         </div>
       </header>
 
