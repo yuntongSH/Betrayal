@@ -296,7 +296,9 @@ export function RoomTile({
               : [0, WALL_H + 0.4, 0]
           }
           center
-          distanceFactor={fpLabel ? 8 : 24}
+          // Door plaques hold a constant pixel size (fpLabel only exists in
+          // first person): distance scaling made near plaques banner-sized.
+          distanceFactor={fpLabel ? undefined : 24}
           occlude={false}
         >
           <div ref={plaqueEl} className={`room-label ${highlighted ? "lit" : ""}${fpLabel ? " plaque" : ""}`}>

@@ -82,7 +82,11 @@ export function PlayerToken({
   // camera, the traitor's own reveal close-up must show a body.
   const fpDriving = useView((s) => s.driving);
   const hideSelf = fpDriving && isMe && alive;
-  const labelFactor = fpDriving ? 7 : 21;
+  // Overhead, tags scale with the board (distanceFactor). In first person
+  // they hold a constant pixel size: distance scaling is what turned a
+  // same-room neighbor's tag into a screen-wide banner. The proximity fade
+  // (labelFade) still dissolves them entirely at conversation range.
+  const labelFactor = fpDriving ? undefined : 21;
 
   // Body priority: the player's own opt-in VRM avatar (`?vrm=` — realistic
   // custom bodies via @pmndrs/viverse), else the rigged model mapped for the

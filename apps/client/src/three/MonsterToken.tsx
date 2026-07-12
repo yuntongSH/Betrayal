@@ -8,6 +8,7 @@ import { registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
 import { followPath, setWalking, type WalkPath } from "./walk";
 import { fadeLabelByDistance } from "./labelFade";
 import { useBeats } from "../state/beats";
+import { useView } from "../state/view";
 
 function lerpAngle(a: number, b: number, t: number): number {
   const d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -42,6 +43,8 @@ export function MonsterToken({
   const figure = useMemo(() => buildMonsterFigure(name), [name]);
   const group = useRef<Group>(null);
   const labelEl = useRef<HTMLDivElement>(null);
+  // Constant pixel size in first person (see PlayerToken's labelFactor note).
+  const fpDriving = useView((s) => s.driving);
   const phase = useRef(Math.random() * 6);
   const yaw = useRef(0);
   const placed = useRef(false);
@@ -125,7 +128,7 @@ export function MonsterToken({
       />
       <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={5} decay={2} />
       {labelVisible && (
-      <Html position={[0, 1.9, 0]} center distanceFactor={21} occlude={false}>
+      <Html position={[0, 1.9, 0]} center distanceFactor={fpDriving ? undefined : 21} occlude={false}>
         <div ref={labelEl} className="token-label monster">
           {name}
           {mental ? " ✦" : ""} · {hp}♥{attackable ? " — strike" : ""}

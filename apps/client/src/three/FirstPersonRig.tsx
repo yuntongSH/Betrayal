@@ -88,11 +88,13 @@ function buildHands(charColor: string) {
   );
   candle.position.y = 0.09;
   const flame = new THREE.Mesh(
-    flameGeo(0.026, 0.085),
+    flameGeo(0.02, 0.065),
     new THREE.MeshStandardMaterial({
       color: 0xffe9c0,
       emissive: 0xe8a85a,
-      emissiveIntensity: 2.4,
+      // modest: the PostFX bloom multiplies this, and a hot held flame
+      // washes out the chronicle text in the lower-left of the frame
+      emissiveIntensity: 1.4,
     }),
   );
   flame.position.y = 0.165;
@@ -285,10 +287,12 @@ export function FirstPersonRig() {
     h.position.copy(camera.position);
     h.quaternion.copy(camera.quaternion);
     const stride = Math.min(1, speed / WALK_SPEED);
+    // low in the corner, half out of frame: torch framing, and its bloom
+    // stays clear of the chronicle text above it
     hands.left.position.set(
-      -0.26 + Math.sin(bobT.current * 0.5) * 0.01 * stride,
-      -0.35 + bob * 0.55,
-      -0.48,
+      -0.31 + Math.sin(bobT.current * 0.5) * 0.01 * stride,
+      -0.43 + bob * 0.55,
+      -0.46,
     );
     hands.left.rotation.z = 0.06 * Math.sin(bobT.current * 0.5) * stride;
     const fs = 1 + 0.13 * Math.sin(bobT.current * 3.1) + 0.07 * Math.sin(bobT.current * 7.7);

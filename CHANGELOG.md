@@ -53,6 +53,42 @@ feature landing alongside its own headless verification script.
 - **The card is a note by candlelight** (`e6af387`): one accent color, a
   small sigil, serif title over a hairline rule, light backdrop dim.
 
+### First person has a body (and crossings actually walk)
+
+- **Remount regression fixed** (`3e9bf21`): tokens rendered as nested
+  per-room arrays remounted on every room change, so room-to-room moves
+  teleported instead of walking. One flat keyed list restores the door
+  corridor walk, the swinging doors, and the follow-cam's stability.
+- **Your hands in the frame** (`3e9bf21`): the left hand holds the candle
+  that lights first person, guttering low in the corner and swaying with
+  your stride; the right hand rises and reaches ahead as a crossing walk
+  closes on its doorway, easing back once you are through. Sleeves tint to
+  your explorer's color.
+- **Labels behave at close range** (`97538a7`, follow-up): 3D name tags,
+  monster tags and door plaques fade out at conversation distance, and in
+  first person they hold a constant pixel size instead of distance-scaling
+  into screen-wide banners.
+
+### Copy: no em dashes anywhere players read (`bf67c9d`)
+
+Every player-facing em dash rewritten (bios, bonds, cards, haunts, log
+lines, both UIs) into commas, colons, periods, or the middle dot. The
+client's and the artifact's log-line parsers were updated in lockstep.
+
+### Publishing: the CrazyGames launch kit (`fb9fab3`)
+
+Guarded SDK v3 bridge (loading/gameplay events, happytime, one midgame ad
+on the results screen, invite links wired to room codes with a `?join=`
+fallback on every other host), Fly.io deploy config for the WebSocket
+server, and `pnpm build:crazygames` producing the submission zip with the
+portal's size limits enforced. Checklist: `docs/CRAZYGAMES.md`.
+
+### HUD: ink lines, not bubbles (`d2535cc`)
+
+The chronicle feed and the party roster lost their per-item card chrome:
+bare text over the scene, kind carried by the glyph color, age by the
+fade, the active player by a single flame rule.
+
 ### Character select: the pinned evidence board
 
 - **Intake slips instead of UI cards** (`5990bce`): each explorer is an aged
