@@ -62,6 +62,7 @@ export function Lobby() {
           onClick={() => createRoom(trimmed)}
         >
           Open a new manor
+          <span className="btn-sub">pick your explorer · invite friends by code · add bots</span>
         </button>
 
         <button
@@ -70,6 +71,7 @@ export function Lobby() {
           onClick={() => playSolo(trimmed)}
         >
           Play solo vs 3 bots
+          <span className="btn-sub">instant game — character assigned, straight into the hall</span>
         </button>
 
         <div className="divider">or join one</div>
