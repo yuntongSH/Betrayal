@@ -9,22 +9,22 @@ import { Portrait } from "./Portrait";
 /** Plain-language notes on what a room does — its standing aura and any
  *  one-time effect on discovery — so a player knows what they walked into. */
 const ROOM_SPECIAL_NOTE: Record<string, string> = {
-  "heal-might": "Steadies your nerve — +1 Might the first time it's found.",
-  "heal-sanity": "A small mercy — +1 Sanity the first time it's found.",
-  "drain-speed": "The air drags like syrup — −1 Speed the first time it's found.",
-  pit: "A hidden drop in the dark — −1 Might the first time it's found.",
-  vault: "A sealed vault — loot it if you carry the Iron Key.",
-  "draw-extra-omen": "It pulls the dark closer — draws an extra Omen.",
+  "heal-might": "Steadies your nerve: +1 Might the first time it's found.",
+  "heal-sanity": "A small mercy: +1 Sanity the first time it's found.",
+  "drain-speed": "The air drags like syrup: −1 Speed the first time it's found.",
+  pit: "A hidden drop in the dark: −1 Might the first time it's found.",
+  vault: "A sealed vault. Loot it if you carry the Iron Key.",
+  "draw-extra-omen": "It pulls the dark closer: it draws an extra Omen.",
   "mystic-elevator": "An iron cage that carries you between floors.",
-  "grand-staircase": "Stairs up and down — change floors here.",
-  "stairs-up": "Stairs up — change floors here.",
-  "stairs-down": "Stairs down — change floors here.",
-  "entrance-hall": "The front door — in some haunts you escape through here.",
+  "grand-staircase": "Stairs up and down. Change floors here.",
+  "stairs-up": "Stairs up. Change floors here.",
+  "stairs-down": "Stairs down. Change floors here.",
+  "entrance-hall": "The front door. In some haunts you escape through here.",
 };
 function roomNotes(def: RoomDef): string[] {
   const notes: string[] = [];
-  if (def.aura && def.aura > 0) notes.push(`✦ Blessed — +${def.aura} die to every roll while you're here.`);
-  else if (def.aura && def.aura < 0) notes.push(`☓ Cursed — ${def.aura} dice to every roll while you're here.`);
+  if (def.aura && def.aura > 0) notes.push(`✦ Blessed: +${def.aura} die to every roll while you're here.`);
+  else if (def.aura && def.aura < 0) notes.push(`☓ Cursed: ${def.aura} dice to every roll while you're here.`);
   if (ROOM_SPECIAL_NOTE[def.special]) notes.push(ROOM_SPECIAL_NOTE[def.special]);
   if (def.symbol) {
     const label = { event: "an Event", item: "an Item", omen: "an Omen" }[def.symbol] ?? def.symbol;

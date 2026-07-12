@@ -16,9 +16,9 @@ const TRAIT_ABBR: Record<string, string> = {
 };
 
 const DIFFICULTY_BLURB: Record<string, string> = {
-  relaxed: "Gentler haunts — monsters hit softer and die sooner.",
+  relaxed: "Gentler haunts: monsters hit softer and die sooner.",
   standard: "The tuned, intended challenge.",
-  nightmare: "The house is merciless — stronger, tougher horrors.",
+  nightmare: "The house is merciless: stronger, tougher horrors.",
 };
 
 /** The dossier: what the house already knows about this guest. */
@@ -49,7 +49,7 @@ function Dossier({ c }: { c: CharacterDef }) {
       <p className="dossier-bio">{c.bio}</p>
       <p className="dossier-bond">
         <span className="bond-thread">●</span>{" "}
-        <span className="bond-name">{bondTo.name}</span> — {c.bond.text}
+        <span className="bond-name">{bondTo.name}</span>. {c.bond.text}
       </p>
     </div>
   );
@@ -150,7 +150,7 @@ export function RoomScreen() {
                 {disabled && owner && (
                   <span className="claim-stamp">
                     claimed
-                    <b>— {owner.name}</b>
+                    <b>{owner.name}</b>
                   </span>
                 )}
                 {mine && <span className="wax-seal">you</span>}

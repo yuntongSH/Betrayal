@@ -52,7 +52,7 @@ export function Lobby() {
           <i />
         </div>
         <p className="tagline">
-          A manor that builds itself, one dreadful room at a time — until one of
+          A manor that builds itself, one dreadful room at a time, until one of
           you stops being a friend.
         </p>
       </div>
@@ -82,7 +82,7 @@ export function Lobby() {
           onClick={() => playSolo(trimmed)}
         >
           Play solo vs 3 bots
-          <span className="btn-sub">instant game — character assigned, straight into the hall</span>
+          <span className="btn-sub">instant game · character assigned, straight into the hall</span>
         </button>
 
         <div className="divider">or join one</div>

@@ -123,12 +123,12 @@ export function triggerHaunt(
   const traitorNames = traitorIds
     .map((id) => getPlayer(s, id)?.name ?? "someone")
     .join(", ");
-  addLog(s, `THE HAUNT BEGINS — ${def.name}`, "haunt");
+  addLog(s, `THE HAUNT BEGINS: ${def.name}`, "haunt");
   addLog(s, def.reveal.replace("{traitor}", traitorNames), "haunt");
   if (traitorIds.length > 0) {
     addLog(s, `Traitor: ${traitorNames}.`, "haunt");
   } else {
-    addLog(s, "No traitor walks among you — the house itself is the enemy.", "haunt");
+    addLog(s, "No traitor walks among you. The house itself is the enemy.", "haunt");
   }
   // The turn speaks: each traitor in their own voice, answered by one hero.
   const speakerRng = Rng.fromState(s.rngState);
@@ -273,7 +273,7 @@ export function playerAttack(
       applyCombatDamage(s, attacker, m.attackType === "mental" ? "mental" : "physical", dmg);
     } else {
       // A tie deals no damage (board rule) — the two are locked, neither gives.
-      addLog(s, `${attacker.name} and the ${m.name} strain together — neither gives ground.`, "combat", atk.dice);
+      addLog(s, `${attacker.name} and the ${m.name} strain together. Neither gives ground.`, "combat", atk.dice);
     }
   } else if (opts.targetPlayerId) {
     const target = getPlayer(s, opts.targetPlayerId);

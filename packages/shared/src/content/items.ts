@@ -99,7 +99,7 @@ export const ITEMS: CardDef[] = [
     id: "it-tonic",
     type: "item",
     name: "Calming Tonic",
-    text: "Bitter and blue. Drink it and the whispers recede — for a while. Use: +2 Sanity.",
+    text: "Bitter and blue. Drink it and the whispers recede... for a while. Use: +2 Sanity.",
     effect: { kind: "consumable", use: { kind: "heal", trait: "sanity", delta: 2 } },
   },
   {

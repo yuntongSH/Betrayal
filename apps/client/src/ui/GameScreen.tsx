@@ -126,7 +126,7 @@ export function GameScreen() {
             )}
             {active?.name ?? "…"}
           </span>
-          {myTurn && !ended && <span className="you-tag"> — your move</span>}
+          {myTurn && !ended && <span className="you-tag"> · your move</span>}
           {/* bot-turn cue — same wording as the artifact's turn chip */}
           {!myTurn && !ended && active?.isBot && (
             <span className="muted"> is taking their turn…</span>
@@ -194,7 +194,7 @@ export function GameScreen() {
               <button
                 className="btn act"
                 onClick={investigate}
-                title="Costs 1 step · Knowledge roll vs 4 — glimpse the next omen, or read a monster during the haunt"
+                title="Costs 1 step · Knowledge roll vs 4: glimpse the next omen, or read a monster during the haunt"
               >
                 <span className="bi">👁</span>
                 <span>Investigate</span>
@@ -223,7 +223,7 @@ export function GameScreen() {
                   key={`barricade-${dir}`}
                   className="btn act"
                   onClick={() => barricade(dir)}
-                  title="Costs 1 step · wedge this door shut for 3 rounds — nothing gets through either way"
+                  title="Costs 1 step · wedge this door shut for 3 rounds. Nothing gets through either way"
                 >
                   <span className="bi">⛓</span>
                   <span>Barricade → {nName}</span>
@@ -290,7 +290,7 @@ export function GameScreen() {
       <div className="hud-hint">
         {firstPersonView
           ? "Drag to look around · ↑ walks where you look, ←→ sidestep · click a flame arrow or the map · V for the bird's eye · E ends your turn"
-          : "Drag to orbit · arrows walk by the map — ↑ north, ← west · click a glowing room, a flame arrow or the map · V sees through your explorer's eyes · E ends your turn"}
+          : "Drag to orbit · arrows walk by the map: ↑ north, ← west · click a glowing room, a flame arrow or the map · V sees through your explorer's eyes · E ends your turn"}
         {game.phase === "haunt" ? " · click a monster to strike · ✦ spectral foes are fought with the mind" : ""}
       </div>
     </div>

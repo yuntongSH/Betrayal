@@ -34,7 +34,7 @@ export function HelpButton({ className = "" }: { className?: string }) {
               </li>
               <li>
                 <strong>Discover.</strong> New rooms trigger their special effect
-                and draw cards — <em>Events</em> resolve at once, <em>Items</em>{" "}
+                and draw cards: <em>Events</em> resolve at once, <em>Items</em>{" "}
                 are kept, and <em>Omens</em> are kept but dangerous.
               </li>
               <li>
@@ -44,7 +44,7 @@ export function HelpButton({ className = "" }: { className?: string }) {
               <li>
                 <strong>The betrayal.</strong> One explorer becomes the{" "}
                 <em>traitor</em>; the rest are <em>heroes</em>. Each side gets a
-                secret goal — check your panel.
+                secret goal; check your panel.
               </li>
               <li>
                 <strong>Fight.</strong> Click a monster in your room to strike it;

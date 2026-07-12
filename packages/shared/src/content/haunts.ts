@@ -142,7 +142,7 @@ export const HAUNTS: HauntDef[] = [
     id: "crawling-dark",
     name: "The Crawling Dark",
     reveal:
-      "The lanterns gutter out one by one. Where {traitor} stands, the shadow on the wall keeps moving after they stop — and then it peels away from the wall entirely.",
+      "The lanterns gutter out one by one. Where {traitor} stands, the shadow on the wall keeps moving after they stop... and then it peels away from the wall entirely.",
     heroGoal:
       "Destroy the traitor before the shades drag every last one of you into the dark.",
     traitorGoal: "Snuff out every hero.",
@@ -166,7 +166,7 @@ export const HAUNTS: HauntDef[] = [
       "{traitor} draws a circle in chalk and salt and worse, and begins to chant. Outside, impossibly, the moon turns the color of an old wound.",
     heroGoal: "Kill the traitor before the ritual is completed.",
     traitorGoal:
-      "Complete the ritual — survive four of your own turns — or kill all heroes.",
+      "Complete the ritual by surviving four of your own turns, or kill all heroes.",
     setup: (s, _t, ctx) => {
       if (!s.haunt) return;
       s.haunt.vars.ritualProgress = 0;
@@ -185,7 +185,7 @@ export const HAUNTS: HauntDef[] = [
     id: "hungering-house",
     name: "The Hungering House",
     reveal:
-      "The walls flex like a throat. {traitor} smiles — they understand now that the house was never a building. It was always a mouth, and they are its tongue.",
+      "The walls flex like a throat. {traitor} smiles. They understand now that the house was never a building. It was always a mouth, and they are its tongue.",
     heroGoal:
       "Destroy the house's maws, or carry the Iron Key to the Entrance Hall and force the door open.",
     traitorGoal: "Devour every hero before they break free.",
@@ -231,7 +231,7 @@ export const HAUNTS: HauntDef[] = [
     reveal:
       "{traitor}'s spine arches the wrong way. Teeth crowd a mouth that is suddenly too wide. The thing that was your friend drops to all fours, and grins, and the chase begins.",
     heroGoal:
-      "Reach consecrated ground — get a living hero into a Chapel — or put the beast down.",
+      "Reach consecrated ground: get a living hero into a Chapel, or put the beast down.",
     traitorGoal: "Run down every last one of them.",
     setup: (s) => {
       // No summoned monsters — the traitor *is* the monster.
@@ -250,7 +250,7 @@ export const HAUNTS: HauntDef[] = [
     id: "plague-of-whispers",
     name: "Plague of Whispers",
     reveal:
-      "{traitor} opens their mouth and no voice comes out — instead the room fills with whispering, dozens of small pale shapes unfolding from the corners where the candlelight can't quite reach.",
+      "{traitor} opens their mouth and no voice comes out. Instead the room fills with whispering, dozens of small pale shapes unfolding from the corners where the candlelight can't quite reach.",
     heroGoal: "Silence every whisper, or destroy the one who set them loose.",
     traitorGoal: "Let the whispers drown the living.",
     setup: (s, _t, ctx) => {
@@ -269,7 +269,7 @@ export const HAUNTS: HauntDef[] = [
     id: "the-tide",
     name: "The Tide Comes In",
     reveal:
-      "Black water climbs the walls of its own accord and the house breathes out a cold with no source. There is no betrayer tonight — the house itself has woken, and it means to keep every one of you.",
+      "Black water climbs the walls of its own accord and the house breathes out a cold with no source. There is no betrayer tonight: the house itself has woken, and it means to keep every one of you.",
     heroGoal:
       "Stand together: destroy every drowned thing, or carry the Iron Key to the Entrance Hall and force the flooded door.",
     // No traitor: an "everyone vs. the house" haunt. The house wins if all drown.
@@ -294,7 +294,7 @@ export const HAUNTS: HauntDef[] = [
     reveal:
       "{traitor} kneels before a figure of wax and wire and begins to feed it, candle by candle. With every light it swallows, the thing grows a little more awake.",
     heroGoal: "Smash the effigy, or strike down its maker, before it draws its first breath.",
-    traitorGoal: "Finish the summoning — feed the effigy through five of your turns — or kill every hero.",
+    traitorGoal: "Finish the summoning by feeding the effigy through five of your turns, or kill every hero.",
     setup: (s, _t, ctx) => {
       if (!s.haunt) return;
       s.haunt.vars.ritualProgress = 0;
@@ -318,7 +318,7 @@ export const HAUNTS: HauntDef[] = [
     id: "the-long-cold",
     name: "The Long Cold",
     reveal:
-      "Frost crawls up the inside of the windows and your breath turns to fog. The cold has shapes now — several of them — and where {traitor} walks, the ice does not crack.",
+      "Frost crawls up the inside of the windows and your breath turns to fog. The cold has shapes now, several of them, and where {traitor} walks, the ice does not crack.",
     heroGoal: "Outlast the cold: survive five full rounds, or cut down the one who let it in.",
     traitorGoal: "Let the cold take them all.",
     setup: (s, _t, ctx) => {
@@ -341,7 +341,7 @@ export const HAUNTS: HauntDef[] = [
     id: "the-hollow-king",
     name: "The Hollow King",
     reveal:
-      "A crown of antlers and rust rises out of the dark, and the air bends around it like heat off a road. {traitor} kneels — they have found their king, and they will see the rest of you kneel, or die.",
+      "A crown of antlers and rust rises out of the dark, and the air bends around it like heat off a road. {traitor} kneels. They have found their king, and they will see the rest of you kneel, or die.",
     heroGoal: "Bring down the Hollow King. Nothing less will end this night.",
     traitorGoal: "Guard your king until the house is silent.",
     setup: (s, _t, ctx) => {
@@ -360,7 +360,7 @@ export const HAUNTS: HauntDef[] = [
     name: "The Drowned Choir",
     reveal:
       "From every drain and gutter a wet, tuneless singing rises. Small grey children climb out of the pipes, mouths open, and {traitor} hums along as if they have always known the words.",
-    heroGoal: "Silence the choir — destroy them all — or reach consecrated ground in a Chapel.",
+    heroGoal: "Silence the choir, destroy them all, or reach consecrated ground in a Chapel.",
     traitorGoal: "Let the song fill every head until nothing else is left.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);
@@ -381,7 +381,7 @@ export const HAUNTS: HauntDef[] = [
     name: "The Iron Bargain",
     reveal:
       "The front door has grown a hundred locks of black iron, and things with ledgers and too-long fingers step out of the walls to collect what the house is owed. {traitor} has already signed.",
-    heroGoal: "Carry the Iron Key to the Entrance Hall and force the door — or destroy the collectors and the one who sold you.",
+    heroGoal: "Carry the Iron Key to the Entrance Hall and force the door, or destroy the collectors and the one who sold you.",
     traitorGoal: "Collect every soul before they can flee.",
     setup: (s, _t, ctx) => {
       const heroes = Math.max(1, livingHeroes(s).length);

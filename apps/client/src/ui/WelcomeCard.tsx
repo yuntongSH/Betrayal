@@ -31,13 +31,13 @@ export function WelcomeCard() {
         <h2>Welcome to Dread Hollow</h2>
         <ol className="help-list">
           <li>
-            <strong>Explore together.</strong> Each turn, walk up to your Speed —
+            <strong>Explore together.</strong> Each turn, walk up to your Speed
             through flame-marked doorways to reveal new rooms. New rooms give
             cards: Items help, Events happen, Omens stay with you… and tempt the house.
           </li>
           <li>
             <strong>The house turns.</strong> Every omen drawn risks the haunt.
-            When it comes, one explorer becomes the traitor — maybe you.
+            When it comes, one explorer becomes the traitor. Maybe you.
           </li>
           <li>
             <strong>Then, survive.</strong> Each side gets a secret goal (yours

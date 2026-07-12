@@ -146,7 +146,7 @@ export function BeatOverlay() {
             </div>
             {tray.held ? (
               <div className="dice-throw">
-                🎲 Your roll — <strong>throw the dice</strong> <span className="muted">(click · R)</span>
+                🎲 Your roll: <strong>throw the dice</strong> <span className="muted">(click · R)</span>
               </div>
             ) : (
               <div

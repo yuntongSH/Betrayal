@@ -20,12 +20,12 @@ export function GuideStrip() {
   let tone: "" | " urgent" = "";
 
   if (game.phase === "ended") {
-    text = "The night is over — open a new manor to play again.";
+    text = "The night is over. Open a new manor to play again.";
   } else if (game.phase === "haunt" && game.haunt) {
     const traitor = me?.side === "traitor";
     const goal = traitor ? game.haunt.traitorGoal : game.haunt.heroGoal;
     if (!me?.alive) {
-      text = "You are lost to the house — watch how the night ends.";
+      text = "You are lost to the house. Watch how the night ends.";
     } else if (myTurn) {
       text = `${goal} · click a monster in your room to strike`;
       tone = " urgent";
@@ -35,14 +35,14 @@ export function GuideStrip() {
   } else if (myTurn) {
     text =
       game.movementLeft > 0
-        ? `Your goal for now: explore. Walk into a flame-marked doorway to reveal a new room — new rooms give cards. ${game.movementLeft} step${game.movementLeft === 1 ? "" : "s"} left · E ends your turn`
-        : "Out of steps — Investigate (a Knowledge test), Steady (recover a trait), or press E to end your turn";
+        ? `Your goal for now: explore. Walk into a flame-marked doorway to reveal a new room. New rooms give cards. ${game.movementLeft} step${game.movementLeft === 1 ? "" : "s"} left · E ends your turn`
+        : "Out of steps: Investigate (a Knowledge test), Steady (recover a trait), or press E to end your turn";
   } else {
     const omens =
       game.omenCount === 0
         ? "no omens in play yet"
         : `${game.omenCount} omen${game.omenCount === 1 ? "" : "s"} in play`;
-    text = `${activeName} explores · ${omens} — every omen tempts the haunt, and when it comes, one of you turns`;
+    text = `${activeName} explores · ${omens} · every omen tempts the haunt, and when it comes, one of you turns`;
   }
 
   return <div className={`guide-strip${tone}`}>{text}</div>;

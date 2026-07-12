@@ -90,7 +90,7 @@ export function PartyRoster() {
               )}
               {p.side === "traitor" && <span className="roster-traitor">☠</span>}
             </span>
-            <span className="roster-where">— {where}</span>
+            <span className="roster-where">· {where}</span>
           </button>
         );
       })}

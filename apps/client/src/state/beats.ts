@@ -184,7 +184,7 @@ function compressBacklog(): void {
     if (i < 0) break;
     const b = queue[i];
     const look = CARD_TOAST[b.cardType ?? "item"];
-    addToast(look.glyph, `${b.playerName ?? "The house"} — ${b.card?.name ?? b.name ?? "a card"}`, look.color);
+    addToast(look.glyph, `${b.playerName ?? "The house"} · ${b.card?.name ?? b.name ?? "a card"}`, look.color);
     queue = queue.filter((_, j) => j !== i);
   }
   if (queue.length !== before) useBeats.setState({ queue });
@@ -214,7 +214,7 @@ function maybeActivate(): void {
     const look = CARD_TOAST[beat.cardType ?? "item"];
     addToast(
       look.glyph,
-      `${beat.playerName ?? "The house"} — ${beat.card?.name ?? beat.name ?? "a card"}`,
+      `${beat.playerName ?? "The house"} · ${beat.card?.name ?? beat.name ?? "a card"}`,
       look.color,
     );
     if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type: beat.cardType ?? "item" });
@@ -377,11 +377,11 @@ function recomputeTrayEnd(): void {
  *  frozen in engine.ts:306/:332/:458 and haunt.ts combat lines). */
 function diceVerdict(text: string, total: number): { verdict: string; outcome: "ok" | "bad" | "" } {
   const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
-  // "X rolls might — 3 vs 4: failure."
-  let m = text.match(/rolls (\w+) — (\d+) vs (\d+): (success|failure)/);
+  // "X rolls might · 3 vs 4: failure."
+  let m = text.match(/rolls (\w+) · (\d+) vs (\d+): (success|failure)/);
   if (m) {
     return {
-      verdict: `${cap(m[1]!)} ${m[3]} — rolled ${m[2]} · ${m[4]}`,
+      verdict: `${cap(m[1]!)} ${m[3]} · rolled ${m[2]} · ${m[4]}`,
       outcome: m[4] === "success" ? "ok" : "bad",
     };
   }
@@ -390,16 +390,16 @@ function diceVerdict(text: string, total: number): { verdict: string; outcome: "
   if (m) {
     const holds = Number(m[1]) >= Number(m[2]);
     return {
-      verdict: `Haunt roll — ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`,
+      verdict: `Haunt roll: ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`,
       outcome: holds ? "ok" : "bad",
     };
   }
-  // "X studies the shadows — Knowledge 3 vs 4."
-  m = text.match(/— (\w+) (\d+) vs (\d+)/);
+  // "X studies the shadows: Knowledge 3 vs 4."
+  m = text.match(/: (\w+) (\d+) vs (\d+)/);
   if (m) {
     const ok = Number(m[2]) >= Number(m[3]);
     return {
-      verdict: `${cap(m[1]!)} ${m[3]} — rolled ${m[2]} · ${ok ? "success" : "failure"}`,
+      verdict: `${cap(m[1]!)} ${m[3]} · rolled ${m[2]} · ${ok ? "success" : "failure"}`,
       outcome: ok ? "ok" : "bad",
     };
   }
@@ -563,18 +563,18 @@ function addToast(glyph: string, text: string, color: string): void {
 /** At most one special-room note per action; a room's aura outranks its special. */
 function specialToast(def: RoomDef, discovered: boolean): { glyph: string; text: string; color: string } | null {
   if (def.aura && def.aura > 0)
-    return { glyph: "✦", text: `Blessed ground — +${def.aura} die to every roll here`, color: "#e2c15a" };
+    return { glyph: "✦", text: `Blessed ground: +${def.aura} die to every roll here`, color: "#e2c15a" };
   if (def.aura && def.aura < 0)
-    return { glyph: "☓", text: `Cursed ground — ${def.aura} dice to every roll here`, color: "#c2412f" };
+    return { glyph: "☓", text: `Cursed ground: ${def.aura} dice to every roll here`, color: "#c2412f" };
   switch (def.special) {
     case "mystic-elevator":
-      return { glyph: "⇅", text: "The Caged Lift — it can carry you to another floor", color: "#8f6fd8" };
+      return { glyph: "⇅", text: "The Caged Lift: it can carry you to another floor", color: "#8f6fd8" };
     case "grand-staircase":
     case "stairs-up":
     case "stairs-down":
-      return { glyph: "⇗", text: "Stairs — change floors here", color: "#e2a85a" };
+      return { glyph: "⇗", text: "Stairs: change floors here", color: "#e2a85a" };
     case "vault":
-      return { glyph: "🗝", text: "A sealed vault — it wants the Iron Key", color: "#e2a85a" };
+      return { glyph: "🗝", text: "A sealed vault… it wants the Iron Key", color: "#e2a85a" };
     case "heal-might":
       return discovered ? { glyph: "✚", text: "+1 Might", color: "#7fae6a" } : null;
     case "heal-sanity":
@@ -655,16 +655,16 @@ export function ingestBeats(prev: GameState | null, next: GameState, watchedId: 
       const roomKey = p?.position ?? null;
       // Belt and braces: only count it if the house genuinely grew a new tile.
       if (roomKey && !snap.houseKeys.has(roomKey)) {
-        addToast("◈", `Discovered — ${m[2]!}`, "#d8c090");
+        addToast("◈", `Discovered: ${m[2]!}`, "#d8c090");
         focusPulse(roomKey);
         pendingFx.push({ roomKey, type: "discovery" });
         ambient.doorCreak();
       }
-    } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event — (.+?): /))) {
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event · (.+?): /))) {
       enqueue(cardBeat(next, m[1]!, "event", m[2]!, e.text));
-    } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item — (.+)\.$/))) {
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item: (.+)\.$/))) {
       enqueue(cardBeat(next, m[1]!, "item", m[2]!, e.text));
-    } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen — (.+)\.$/))) {
+    } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen: (.+)\.$/))) {
       enqueue(cardBeat(next, m[1]!, "omen", m[2]!, e.text));
     } else if (e.kind === "card" && / loots the vault!$/.test(e.text)) {
       // Vault loot has no standard string: the prize is whatever card landed

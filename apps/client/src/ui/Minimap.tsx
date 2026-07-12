@@ -511,7 +511,7 @@ export function Minimap() {
           const key = pip ? null : roomAt(e);
           const def = key ? ROOMS_BY_ID[game.house[key]!.roomId] : undefined;
           const next = pip
-            ? { name: `Explore ${pip.dir} — into the unknown`, reachable: true }
+            ? { name: `Explore ${pip.dir}, into the unknown`, reachable: true }
             : def
               ? { name: def.name, reachable: reach.has(key!) }
               : null;
@@ -524,7 +524,7 @@ export function Minimap() {
       {hover && (
         <div className={`minimap-tip${hover.reachable ? " walk" : ""}`}>
           {hover.name}
-          {hover.reachable ? " — click to walk" : ""}
+          {hover.reachable ? " · click to walk" : ""}
         </div>
       )}
       <span

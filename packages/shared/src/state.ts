@@ -159,7 +159,7 @@ export function redactStateForPlayer(
     ...s,
     haunt: {
       ...s.haunt,
-      traitorGoal: "Unknown — the traitor's true purpose is hidden from you.",
+      traitorGoal: "Unknown. The traitor's true purpose is hidden from you.",
     },
   };
 }

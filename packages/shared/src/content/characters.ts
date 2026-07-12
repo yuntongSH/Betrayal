@@ -40,7 +40,7 @@ export const CHARACTERS: CharacterDef[] = [
     fear: "her hands going still",
     keepsake: "a physician's bag the board never reclaimed",
     bio:
-      "Four minutes dead on her table, and the patient sat up and thanked her by name — the board called it desecration and took her license, but not her notes. She has spent six years asking what came back in those four minutes. The manor, they say, has been answering questions like hers for a century.",
+      "Four minutes dead on her table, and the patient sat up and thanked her by name. The board called it desecration and took her license, but not her notes. She has spent six years asking what came back in those four minutes. The manor, they say, has been answering questions like hers for a century.",
     bond: {
       with: "crow",
       text:
@@ -108,7 +108,7 @@ export const CHARACTERS: CharacterDef[] = [
     fear: "being sent back",
     keepsake: "Mister Buttons, a one-eyed sewn rabbit",
     bio:
-      "She has run away from the county home three times, and the third time she made it a whole season without being caught. The dare was only to touch the manor's gate — but the front door stood open, and something upstairs said her name the way you'd say it if you were glad she came. Nobody has ever said it like that before.",
+      "She has run away from the county home three times, and the third time she made it a whole season without being caught. The dare was only to touch the manor's gate, but the front door stood open, and something upstairs said her name the way you'd say it if you were glad she came. Nobody has ever said it like that before.",
     bond: {
       with: "tobias",
       text:
@@ -141,18 +141,18 @@ export const CHARACTERS: CharacterDef[] = [
     fear: "that no one has ever been listening",
     keepsake: "a brass storm-lantern from the abbey crypt",
     bio:
-      "Forty years a copyist, and not one prayer answered — until the voice in the abbey crypt recited his doubts back to him, word for word, in his own hand's rhythm. The abbot called it acoustics. Tobias stopped praying that night and started looking, and the manor is the last name on his list of places where something might actually answer.",
+      "Forty years a copyist, and not one prayer answered, until the voice in the abbey crypt recited his doubts back to him, word for word, in his own hand's rhythm. The abbot called it acoustics. Tobias stopped praying that night and started looking, and the manor is the last name on his list of places where something might actually answer.",
     bond: {
       with: "odette",
       text:
-        "It was Tobias who wrote to Odette Lindqvist about the crypt — a monk asking a medium for help, a letter that could have cost him his order. When the voice greeted her by name, he pretended not to see her shaking.",
+        "It was Tobias who wrote to Odette Lindqvist about the crypt: a monk asking a medium for help, a letter that could have cost him his order. When the voice greeted her by name, he pretended not to see her shaking.",
     },
     lines: {
       arrival: "If Heaven is silent, perhaps everything worth hearing is in here.",
       hauntHero: "Forty years of doubt, and the argument finally comes to me. Stand together.",
       hauntTraitor:
         "I asked for one answer in forty years. The house answered. Forgive me for listening.",
-      death: "Oh… it was listening. All this time, it was—",
+      death: "Oh… it was listening. All this time, it was…",
       victory: "Something heard us tonight. For once I am content not to know what.",
     },
     traits: traits(
@@ -175,11 +175,11 @@ export const CHARACTERS: CharacterDef[] = [
     fear: "a summoned voice that refuses to leave",
     keepsake: "her mother's silver pendulum locket",
     bio:
-      "Her mother's act was clean, profitable fraud — until the night a real voice cut into the patter, and the act became a haunting with matinees. Odette inherited the locket, the trade, and the visitor. For the past year the manor has been writing to her: unsigned letters, in her own handwriting, describing rooms she has never seen. Tonight she intends to compare them against the originals.",
+      "Her mother's act was clean, profitable fraud, until the night a real voice cut into the patter, and the act became a haunting with matinees. Odette inherited the locket, the trade, and the visitor. For the past year the manor has been writing to her: unsigned letters, in her own handwriting, describing rooms she has never seen. Tonight she intends to compare them against the originals.",
     bond: {
       with: "thorne",
       text:
-        "Marcus Thorne sat in on one of her séances meaning to expose her. His photograph showed seven figures around her six-chair table, and he has never printed it — but she knows what his camera saw, because the seventh wrote to her about him.",
+        "Marcus Thorne sat in on one of her séances meaning to expose her. His photograph showed seven figures around her six-chair table, and he has never printed it. But she knows what his camera saw, because the seventh wrote to her about him.",
     },
     lines: {
       arrival: "The house is very loud tonight. Try not to answer it, any of you.",
@@ -209,7 +209,7 @@ export const CHARACTERS: CharacterDef[] = [
     fear: "what's on the one roll he never developed",
     keepsake: "a dented box camera on a leather strap",
     bio:
-      "Three wars, two shrapnel scars, one roll of film he will not develop. In his negatives from a burned village, the same face watches from a different window in every frame — a face he has since found in older photographs, from older wars, always at a window. The last window he traced it to belongs to this manor. He brought the camera. He wants it to pose.",
+      "Three wars, two shrapnel scars, one roll of film he will not develop. In his negatives from a burned village, the same face watches from a different window in every frame: a face he has since found in older photographs, from older wars, always at a window. The last window he traced it to belongs to this manor. He brought the camera. He wants it to pose.",
     bond: {
       with: "vance",
       text:

@@ -223,7 +223,7 @@ function applyRoomSpecial(s: GameState, p: PlayerState, room: PlacedRoom): void 
     case "mystic-elevator":
       addLog(
         s,
-        "The iron cage shudders. Its dial spins — it will carry you between floors.",
+        "The iron cage shudders. Its dial spins. It will carry you between floors.",
         "info",
       );
       break;
@@ -266,14 +266,14 @@ function resolveCard(s: GameState, p: PlayerState, cardId: CardId): void {
   const card = getCard(cardId);
   if (!card) return;
   if (card.type === "event") {
-    addLog(s, `${p.name} triggers an Event — ${card.name}: ${card.text}`, "card");
+    addLog(s, `${p.name} triggers an Event · ${card.name}: ${card.text}`, "card");
     applyEffect(s, p, card.effect);
     s.discards.event.push(cardId);
   } else if (card.type === "item") {
-    addLog(s, `${p.name} picks up an Item — ${card.name}.`, "card");
+    addLog(s, `${p.name} picks up an Item: ${card.name}.`, "card");
     p.inventory.push(cardId);
   } else {
-    addLog(s, `${p.name} uncovers an Omen — ${card.name}.`, "card");
+    addLog(s, `${p.name} uncovers an Omen: ${card.name}.`, "card");
     p.inventory.push(cardId);
     s.omenCount += 1;
     performHauntRoll(s, p, cardId);
@@ -303,7 +303,7 @@ function applyEffect(s: GameState, p: PlayerState, effect: CardEffect): void {
       const passed = roll.total >= effect.difficulty;
       addLog(
         s,
-        `${p.name} rolls ${effect.trait} — ${roll.total} vs ${effect.difficulty}: ${passed ? "success" : "failure"}.`,
+        `${p.name} rolls ${effect.trait} · ${roll.total} vs ${effect.difficulty}: ${passed ? "success" : "failure"}.`,
         "roll",
         roll.dice,
       );
@@ -338,7 +338,7 @@ function performHauntRoll(s: GameState, p: PlayerState, omenId?: CardId): void {
   // even on an unlucky roll — otherwise the game could wander forever.
   const forced = !triggered && s.decks.omen.length === 0;
   if (forced) {
-    addLog(s, "The last omen falls into place — the house can hold back no longer.", "haunt");
+    addLog(s, "The last omen falls into place. The house can hold back no longer.", "haunt");
   }
   if (triggered || forced) triggerHaunt(s, p.id, omenId);
 }
@@ -455,7 +455,7 @@ function handleInvestigate(s: GameState, playerId: PlayerId): void {
   const rng = Rng.fromState(s.rngState);
   const roll = rollDice(rng, Math.max(1, effectiveTrait(p, "knowledge") + roomAura(s, p)));
   s.rngState = rng.state;
-  addLog(s, `${p.name} studies the shadows — Knowledge ${roll.total} vs 4.`, "roll", roll.dice);
+  addLog(s, `${p.name} studies the shadows: Knowledge ${roll.total} vs 4.`, "roll", roll.dice);
   if (roll.total < 4) {
     addLog(s, `${p.name} learns nothing useful.`, "info");
     checkWinNow(s);
@@ -521,7 +521,7 @@ function forceHauntIfStalled(s: GameState, playerId: PlayerId): void {
   addLog(
     s,
     canExpand
-      ? "Dawn will not come. The house has waited long enough — and turns."
+      ? "Dawn will not come. The house has waited long enough... and turns."
       : "The house is whole now: every door drawn, every room found. Something vast turns over in answer.",
     "haunt",
   );

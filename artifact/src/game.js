@@ -499,19 +499,19 @@ function diceVerdict(e) {
   const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
   const total = e.dice.reduce((a, b) => a + b, 0);
   let m;
-  // "X rolls might — 5 vs 4: success."
-  if ((m = e.text.match(/rolls (\w+) — (\d+) vs (\d+): (success|failure)/))) {
-    return { text: `${cap(m[1])} ${m[3]} — rolled ${m[2]} · ${m[4]}`, cls: m[4] === "success" ? "ok" : "bad" };
+  // "X rolls might · 5 vs 4: success."
+  if ((m = e.text.match(/rolls (\w+) · (\d+) vs (\d+): (success|failure)/))) {
+    return { text: `${cap(m[1])} ${m[3]} · rolled ${m[2]} · ${m[4]}`, cls: m[4] === "success" ? "ok" : "bad" };
   }
   // "X makes the haunt roll: 4 vs 3 omen(s) in play." (roll < omens = the turn)
   if ((m = e.text.match(/haunt roll: (\d+) vs (\d+) omen/))) {
     const holds = +m[1] >= +m[2];
-    return { text: `Haunt roll — ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`, cls: holds ? "ok" : "bad" };
+    return { text: `Haunt roll: ${m[1]} vs ${m[2]} omens · ${holds ? "the house holds" : "the house turns"}`, cls: holds ? "ok" : "bad" };
   }
-  // "X studies the shadows — Knowledge 3 vs 4."
-  if ((m = e.text.match(/— (\w+) (\d+) vs (\d+)/))) {
+  // "X studies the shadows: Knowledge 3 vs 4."
+  if ((m = e.text.match(/: (\w+) (\d+) vs (\d+)/))) {
     const ok = +m[2] >= +m[3];
-    return { text: `${cap(m[1])} ${m[3]} — rolled ${m[2]} · ${ok ? "success" : "failure"}`, cls: ok ? "ok" : "bad" };
+    return { text: `${cap(m[1])} ${m[3]} · rolled ${m[2]} · ${ok ? "success" : "failure"}`, cls: ok ? "ok" : "bad" };
   }
   // Combat and friends: the log line already narrates the outcome.
   return { text: `${e.text.replace(/\.\s*$/, "")} · rolled ${total}`, cls: "" };
@@ -751,12 +751,12 @@ const Beats = (() => {
   /** One toast per room entry — its standing aura wins over its special. */
   function specialToast(def, discovered) {
     if (!def) return;
-    if (def.aura > 0) return beatToast("✦", `Blessed ground — +${def.aura} die to every roll here`, "#e2c15a");
-    if (def.aura < 0) return beatToast("☓", `Cursed ground — ${def.aura} dice to every roll here`, "#c2412f");
+    if (def.aura > 0) return beatToast("✦", `Blessed ground: +${def.aura} die to every roll here`, "#e2c15a");
+    if (def.aura < 0) return beatToast("☓", `Cursed ground: ${def.aura} dice to every roll here`, "#c2412f");
     const sp = def.special;
-    if (sp === "mystic-elevator") return beatToast("⇅", "The Caged Lift — it can carry you to another floor", "#8f6fd8");
-    if (sp === "grand-staircase" || sp === "stairs-up" || sp === "stairs-down") return beatToast("⇗", "Stairs — change floors here", "#e2a85a");
-    if (sp === "vault") return beatToast("🗝", "A sealed vault — it wants the Iron Key", "#e2a85a");
+    if (sp === "mystic-elevator") return beatToast("⇅", "The Caged Lift: it can carry you to another floor", "#8f6fd8");
+    if (sp === "grand-staircase" || sp === "stairs-up" || sp === "stairs-down") return beatToast("⇗", "Stairs: change floors here", "#e2a85a");
+    if (sp === "vault") return beatToast("🗝", "A sealed vault… it wants the Iron Key", "#e2a85a");
     if (!discovered) return;
     if (sp === "heal-might") return beatToast("✚", "+1 Might", "#7fae6a");
     if (sp === "heal-sanity") return beatToast("✚", "+1 Sanity", "#7fae6a");
@@ -842,16 +842,16 @@ const Beats = (() => {
           // Belt and braces: only a genuinely new room key counts as a discovery.
           if (p?.position && !snap.houseKeys.has(p.position)) {
             consumed.add(e.id);
-            beatToast("◈", `Discovered — ${m[2]}`, "#d8c090");
+            beatToast("◈", `Discovered: ${m[2]}`, "#d8c090");
             focusPulse(p.position);
             spawnBeatFx(p.position, "discovery", false);
             Sound.door();
           }
-        } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event — (.+?): /))) {
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) triggers an Event · (.+?): /))) {
           pushCard(e, "event", m[2], m[1]);
-        } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item — (.+)\.$/))) {
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) picks up an Item: (.+)\.$/))) {
           pushCard(e, "item", m[2], m[1]);
-        } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen — (.+)\.$/))) {
+        } else if (e.kind === "card" && (m = e.text.match(/^(.+) uncovers an Omen: (.+)\.$/))) {
           pushCard(e, "omen", m[2], m[1]);
         } else if (e.kind === "card" && (m = e.text.match(/^The Iron Key turns\. (.+) loots the vault!$/))) {
           // No standard string carries the card name — the prize is the item
@@ -975,11 +975,11 @@ function renderCampaignScreen() {
   const fam = DH.CHARACTERS_BY_ID[c.humanCharId];
   const famState = c.families[c.humanCharId] || { gen: 1, bonus: {} };
   const heir = c.heirlooms.length
-    ? `<ul class="camp-list">${c.heirlooms.map((h) => `<li><b>${h.name}</b> <span class="camp-gen">— ${DH.CHARACTERS_BY_ID[h.charId]?.name.split(" ").pop() ?? "family"}, +${h.level} ${h.trait}</span></li>`).join("")}</ul>`
+    ? `<ul class="camp-list">${c.heirlooms.map((h) => `<li><b>${h.name}</b> <span class="camp-gen">· ${DH.CHARACTERS_BY_ID[h.charId]?.name.split(" ").pop() ?? "family"}, +${h.level} ${h.trait}</span></li>`).join("")}</ul>`
     : `<div class="camp-empty">No heirlooms forged yet.</div>`;
   const scarIds = Object.keys(c.scars);
   const scars = scarIds.length
-    ? `<ul class="camp-list">${scarIds.map((rid) => `<li><b>${DH.ROOMS_BY_ID[rid]?.name ?? rid}</b> <span class="camp-gen">— ${c.scars[rid]}</span></li>`).join("")}</ul>`
+    ? `<ul class="camp-list">${scarIds.map((rid) => `<li><b>${DH.ROOMS_BY_ID[rid]?.name ?? rid}</b> <span class="camp-gen">· ${c.scars[rid]}</span></li>`).join("")}</ul>`
     : `<div class="camp-empty">The house is unmarked… for now.</div>`;
   const chron = c.chronicle.length
     ? c.chronicle.slice(-8).map((l) => `<div class="chronicle-line">${l}</div>`).join("")
@@ -1036,7 +1036,7 @@ function showLegacyEnd() {
   const heroesWon = state.winner === "heroes";
   const hn = haunt ? haunt.name : "the dark";
   c.chronicle.push(
-    `Chapter ${c.chapter} — ${hn}: ` +
+    `Chapter ${c.chapter}, ${hn}: ` +
     (heroesWon ? "the household survived." : (haunt && haunt.traitorIds.length === 0 ? "the house consumed them." : "the traitor triumphed.")),
   );
   // Scar the room where the haunt began — cursed ground ever after.
@@ -1072,7 +1072,7 @@ function renderLegacyOverlay() {
     `<div class="chronicle-line">${c.chronicle[c.chronicle.length - 1]}</div>`;
   if (me && me.alive && forgeable.length) {
     body += `<div class="camp-sec">Claim an heirloom</div>` +
-      `<p class="camp-empty">Name one item your line carried through — it will pass down, stronger.</p>` +
+      `<p class="camp-empty">Name one item your line carried through; it will pass down, stronger.</p>` +
       `<div class="legacy-pick" id="legacy-pick">` +
       forgeable.map((id) => {
         const existing = c.heirlooms.find((h) => h.cardId === id && h.charId === c.humanCharId);
@@ -1080,7 +1080,7 @@ function renderLegacyOverlay() {
         return `<button class="btn" data-card="${id}">${lbl}</button>`;
       }).join("") + `</div><div id="forge-slot"></div>`;
   } else {
-    body += `<p class="camp-empty">${me && me.alive ? "Your bearer carries nothing to pass down this time." : "Your bearer did not survive — a hardier heir will take up the name."}</p>`;
+    body += `<p class="camp-empty">${me && me.alive ? "Your bearer carries nothing to pass down this time." : "Your bearer did not survive. A hardier heir will take up the name."}</p>`;
   }
   body += `<button class="btn primary" id="legacy-continue">Continue the saga →</button>`;
   $("legacy-body").innerHTML = body;
@@ -1364,7 +1364,7 @@ function onKeyMove(e) {
   }
   const which = SCREEN_KEY[e.key];
   if (!which) return;
-  if (!active || active.isBot) { toast("Hold on — it isn't your turn yet."); return; }
+  if (!active || active.isBot) { toast("Hold on, it isn't your turn yet."); return; }
   const room = active.position ? state.house[active.position] : null;
   if (!room) return;
 
@@ -1390,7 +1390,7 @@ function onKeyMove(e) {
     if (cross.length) { e.preventDefault(); act({ type: "move-to", playerId: active.id, toKey: cross[0].k }); return; }
   }
   e.preventDefault();
-  toast(state.movementLeft <= 0 ? "No movement left — press E to end your turn." : "No way through there.");
+  toast(state.movementLeft <= 0 ? "No movement left. Press E to end your turn." : "No way through there.");
 }
 
 function clearGroup(g) {
@@ -2014,7 +2014,7 @@ function syncTokens(legal) {
         const atk = attackable.has(o.m.id);
         tok.light.intensity = atk ? 5 : 2.5;
         tok.el.className = "tok-lbl monster";
-        tok.el.textContent = `${o.m.name}${o.m.attackType === "mental" ? " ✦" : ""} · ${o.m.hp}♥${atk ? " — strike" : ""}`;
+        tok.el.textContent = `${o.m.name}${o.m.attackType === "mental" ? " ✦" : ""} · ${o.m.hp}♥${atk ? " · strike" : ""}`;
         tok.fig.traverse((x) => { x.userData.kind = "monster"; x.userData.monsterId = o.m.id; x.userData.attackable = atk; });
       }
       // Crossing a boundary swings that door open as the figure passes through.
@@ -2507,22 +2507,22 @@ function tagIcon(cardId) {
 /** Plain-language notes on what a room does, so a player knows what they walked
  *  into — its standing aura and any one-time effect on discovery. */
 const ROOM_SPECIAL_NOTE = {
-  "heal-might": "Steadies your nerve — +1 Might the first time it's found.",
-  "heal-sanity": "A small mercy — +1 Sanity the first time it's found.",
-  "drain-speed": "The air drags like syrup — −1 Speed the first time it's found.",
-  pit: "A hidden drop in the dark — −1 Might the first time it's found.",
-  vault: "A sealed vault — loot it if you carry the Iron Key.",
-  "draw-extra-omen": "It pulls the dark closer — draws an extra Omen.",
+  "heal-might": "Steadies your nerve: +1 Might the first time it's found.",
+  "heal-sanity": "A small mercy: +1 Sanity the first time it's found.",
+  "drain-speed": "The air drags like syrup: −1 Speed the first time it's found.",
+  pit: "A hidden drop in the dark: −1 Might the first time it's found.",
+  vault: "A sealed vault. Loot it if you carry the Iron Key.",
+  "draw-extra-omen": "It pulls the dark closer, drawing an extra Omen.",
   "mystic-elevator": "An iron cage that carries you between floors.",
-  "grand-staircase": "Stairs up and down — change floors here.",
-  "stairs-up": "Stairs up — change floors here.",
-  "stairs-down": "Stairs down — change floors here.",
-  "entrance-hall": "The front door — in some haunts you escape through here.",
+  "grand-staircase": "Stairs up and down: change floors here.",
+  "stairs-up": "Stairs up: change floors here.",
+  "stairs-down": "Stairs down: change floors here.",
+  "entrance-hall": "The front door. In some haunts you escape through here.",
 };
 function roomNotes(def) {
   const notes = [];
-  if (def.aura > 0) notes.push(`✦ Blessed — +${def.aura} die to every roll while you're here.`);
-  else if (def.aura < 0) notes.push(`☓ Cursed — ${def.aura} dice to every roll while you're here.`);
+  if (def.aura > 0) notes.push(`✦ Blessed: +${def.aura} die to every roll while you're here.`);
+  else if (def.aura < 0) notes.push(`☓ Cursed: ${def.aura} dice to every roll while you're here.`);
   if (ROOM_SPECIAL_NOTE[def.special]) notes.push(ROOM_SPECIAL_NOTE[def.special]);
   if ((def.symbols || []).length) {
     const kinds = [...new Set(def.symbols)].map((k) => ({ event: "an Event", item: "an Item", omen: "an Omen" }[k] || k));
@@ -2561,7 +2561,7 @@ function updateHUD(legal) {
     `<div class="hud-turn">${state.phase === "haunt" ? '<span class="haunt-tag">THE HAUNT · </span>' : ""}` +
     `${ended ? '<span class="haunt-tag">CONCLUDED · </span>' : ""}` +
     `<span class="round-chip">Round ${state.turn}</span>${turnChip}` +
-    `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag"> — your move</span>') : ""}</div>` +
+    `${!ended ? (botActing ? ' <span class="muted">is taking their turn…</span>' : ' <span class="you-tag"> · your move</span>') : ""}</div>` +
     `${!ended ? `<div class="hud-move" title="Movement left: ${state.movementLeft}">${pips}</div>` : ""}`;
 
   // party chips — position lives in the 3D view now, not as text. Every
@@ -2593,7 +2593,7 @@ function updateHUD(legal) {
       ` onclick="window.__mmFlash('${p.id}')" aria-label="Show ${p.name} on the map" title="Show ${p.name} on the map">` +
       `<span class="roster-avatar" style="--pc:${c?.color ?? "#888"}">${p.alive ? (c?.name.charAt(0) ?? "?") + (c ? pface(c.id) : "") : "☠"}</span>` +
       `<span class="roster-id"><span class="roster-name">${p.name}${isMe ? " (you)" : ""}</span>` +
-      `<span class="roster-where">— ${where}</span></span>` +
+      `<span class="roster-where">· ${where}</span></span>` +
       traits +
       `${p.side === "traitor" ? '<span class="roster-traitor">☠</span>' : ""}</button>`;
   }).join("");
@@ -2704,7 +2704,7 @@ function updateHUD(legal) {
     }
     // Deliberate actions — each spends a step, so they trade off against moving.
     if (legal.canInvestigate) {
-      bottom += `<button class="btn act" title="Costs 1 step · Knowledge roll vs 4 — glimpse the next omen, or read a monster during the haunt" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
+      bottom += `<button class="btn act" title="Costs 1 step · Knowledge roll vs 4: glimpse the next omen, or read a monster during the haunt" onclick="window.__act({type:'investigate',playerId:'${active.id}'})"><span class="bi">👁</span><span>Investigate</span></button>`;
     }
     if (legal.canRest) {
       bottom += `<button class="btn act" title="Ends your movement · recover +1 on your most-wounded trait" onclick="window.__act({type:'rest',playerId:'${active.id}'})"><span class="bi">✚</span><span>Steady</span></button>`;
@@ -2717,7 +2717,7 @@ function updateHUD(legal) {
         const nDef = state.house[nKey] ? DH.ROOMS_BY_ID[state.house[nKey].roomId] : null;
         if (nDef) label = nDef.name;
       }
-      bottom += `<button class="btn act" title="Costs 1 step · wedge this door shut for 3 rounds — nothing gets through either way" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
+      bottom += `<button class="btn act" title="Costs 1 step · wedge this door shut for 3 rounds; nothing gets through either way" onclick="window.__act({type:'barricade',playerId:'${active.id}',door:'${dir}'})"><span class="bi">⛓</span><span>Barricade → ${label}</span></button>`;
     }
     const etAge = shineNow ? (performance.now() - autoEndArmedAt).toFixed(0) : "0";
     bottom += `<button class="btn primary${shineNow ? " shine" : ""}"${shineNow ? ` style="--dly:-${etAge}ms"` : ""} onclick="window.__act({type:'end-turn',playerId:'${active.id}'})"><span class="bi">🕯</span><span>End turn</span>${humans.length > 1 ? ' <span class="small muted">pass device</span>' : ""}${shineNow ? `<span class="et-timer" style="animation-duration:${AUTO_END_MS}ms;animation-delay:-${etAge}ms"></span>` : ""}</button>`;
@@ -3308,12 +3308,12 @@ function wardrobeShow(charId) {
   const bondTo = DH.CHARACTERS_BY_ID[c.bond.with];
   const bondEl = $("w-bond");
   bondEl.innerHTML =
-    `<span class="bond-thread">●</span> <button class="bond-link" style="color:${bondTo.color}">${bondTo.name}</button> — ${c.bond.text}`;
+    `<span class="bond-thread">●</span> <button class="bond-link" style="color:${bondTo.color}">${bondTo.name}</button> · ${c.bond.text}`;
   bondEl.querySelector(".bond-link").onclick = () => wardrobeShow(bondTo.id);
   $("w-traits").innerHTML = DH.TRAITS.map((t) => `<span class="trait-chip">${t.slice(0, 3)} ${c.traits[t].values[c.traits[t].start]}</span>`).join("");
   const inParty = party.some((p) => p.charId === charId);
   const btn = $("w-pick");
-  btn.textContent = inParty ? "✓ In party — remove" : "Add to party";
+  btn.textContent = inParty ? "✓ In party · remove" : "Add to party";
   btn.className = "btn" + (inParty ? " primary" : "");
   btn.onclick = () => toggleParty(charId);
 }

@@ -285,7 +285,7 @@ export const ROOMS: RoomDef[] = [
     symbol: "event",
     special: "none",
     aura: 1,
-    flavor: "Glass panes climb to a bright ceiling. The light comes in wrong — noon-warm at midnight.",
+    flavor: "Glass panes climb to a bright ceiling. The light comes in wrong: noon-warm at midnight.",
   },
   {
     id: "music-room",
@@ -443,7 +443,7 @@ export const ROOMS: RoomDef[] = [
     floors: ["basement"],
     doorways: ["east"],
     special: "none",
-    flavor: "A hill of old coal — and small bare footprints climbing it.",
+    flavor: "A hill of old coal, and small bare footprints climbing it.",
   },
   {
     id: "well-room",
