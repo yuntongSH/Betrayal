@@ -1015,16 +1015,13 @@ kbd {
   max-width: min(92vw, 880px);
 }
 
-/* party roster */
+/* party roster — no panel box: quiet lines over the scene, the active
+   player marked by a single flame rule instead of a highlighted pill */
 .party-roster {
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  padding: 0.5rem 0.6rem;
-  backdrop-filter: blur(6px);
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.24rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.7);
 }
 /* roster chips + the event-log toast feed live in the HUD v2 block below. */
 
@@ -1309,9 +1306,12 @@ kbd {
 /* Each row is a real <button> (click → flashOnMap): reset the chrome first,
    then lay the old chip line and the new where-line out as a column. */
 .roster-row{font:inherit;background:none;border:none;color:inherit;text-align:left;cursor:pointer;width:100%;
-  display:flex;flex-direction:column;align-items:stretch;gap:.1rem;font-size:.86rem;padding:.22rem .3rem;border-radius:7px}
-.roster-row:hover{background:rgba(232,168,90,.08)}
-.roster-row.active{background:rgba(232,168,90,.14);box-shadow:inset 2px 0 0 var(--flame)}
+  display:flex;flex-direction:column;align-items:stretch;gap:.1rem;font-size:.86rem;padding:.12rem .4rem;
+  border-left:2px solid transparent;border-radius:0}
+.roster-row:hover{background:rgba(232,168,90,.06)}
+.roster-row.active{border-left-color:var(--flame)}
+.roster-row.active .roster-name{color:var(--flame)}
+.roster-trait svg,.roster-avatar{filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
 .roster-row.dead{opacity:.45;filter:grayscale(.8)}
 .roster-line{display:flex;align-items:center;gap:.5rem}
 .roster-where{font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -1342,24 +1342,31 @@ kbd {
 .log-toggle{width:26px;height:26px;border-radius:50%;font-size:.85rem;cursor:pointer;background:rgba(20,16,24,.6);
   border:1px solid var(--panel-edge);color:var(--ink)} .log-toggle:hover{border-color:var(--flame)}
 .log-scroll{display:flex;flex-direction:column;gap:.3rem;font-size:.88rem}
-.log-entry{--age:0ms;display:flex;gap:.45rem;align-items:baseline;line-height:1.35;background:rgba(14,12,18,.74);
-  border:1px solid var(--panel-edge);border-left:3px solid #4a4a55;border-radius:8px;padding:.38rem .6rem .38rem .5rem;
-  animation:log-in .3s ease both,log-age 8.6s linear forwards;animation-delay:var(--age),var(--age)}
-@keyframes log-in{from{transform:translateX(-10px)}}
-@keyframes log-age{0%,93%{opacity:1}100%{opacity:.4}}
-.li{flex:0 0 1.1em;text-align:center;line-height:1.2;color:var(--lk,var(--ink-dim))}
-.log-entry.k-roll{border-left-color:#7a6db0;--lk:#7a6db0} .log-entry.k-card{border-left-color:#6fb6b5;--lk:#6fb6b5}
-.log-entry.k-move{border-left-color:#4a4a55;--lk:#6a6a78}
-.log-entry.k-haunt{border-left-color:var(--blood-bright);--lk:var(--blood-bright);color:#e8b3a8}
-.log-entry.k-combat{border-left-color:var(--blood);--lk:var(--blood-bright)}
-.log-entry.k-death{border-left-color:#000;--lk:#c2517a;color:#c2517a}
-.log-entry.k-win{border-left-color:var(--flame);--lk:var(--flame);color:var(--flame)}
-.log-entry.k-voice{border-left-color:#8a7a5a;--lk:#8a7a5a;color:#d8c9a8;font-style:italic}
+/* Chronicle lines are ink on the night air, not cards: no box, no border —
+   the kind lives in the glyph's color, legibility in a soft shadow, age in
+   the fade. The newest line is simply the brightest thing in the column. */
+.log-entry{--age:0ms;display:flex;gap:.45rem;align-items:baseline;line-height:1.4;
+  padding:.12rem 0;text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 10px rgba(0,0,0,.7);
+  animation:log-in .35s ease both,log-age 8.6s linear forwards;animation-delay:var(--age),var(--age)}
+@keyframes log-in{from{opacity:0}}
+@keyframes log-age{0%,93%{opacity:1}100%{opacity:.38}}
+.li{flex:0 0 1.1em;text-align:center;line-height:1.2;color:var(--lk,var(--ink-dim));
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.8))}
+.log-entry.k-roll{--lk:#7a6db0} .log-entry.k-card{--lk:#6fb6b5}
+.log-entry.k-move{--lk:#6a6a78;color:var(--ink-dim)}
+.log-entry.k-haunt{--lk:var(--blood-bright);color:#e8b3a8}
+.log-entry.k-combat{--lk:var(--blood-bright)}
+.log-entry.k-death{--lk:#c2517a;color:#c2517a}
+.log-entry.k-win{--lk:var(--flame);color:var(--flame)}
+.log-entry.k-voice{--lk:#8a7a5a;color:#d8c9a8;font-style:italic}
 /* Compact feed stays glanceable: the card reveal already delivers the rules
    text, so toasts clamp to two lines; the open Chronicle keeps the prose. */
 .log-entry .log-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.event-log.open{background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;padding:.45rem;max-height:52vh}
-.event-log.open .log-scroll{overflow-y:auto} .event-log.open .log-entry{animation:none;opacity:1}
+/* The full Chronicle is a reading surface: one quiet panel, entries as
+   ruled ledger lines — hairline separators, never per-entry boxes. */
+.event-log.open{background:var(--panel);border:1px solid var(--panel-edge);border-radius:3px;padding:.55rem .75rem;max-height:52vh}
+.event-log.open .log-scroll{overflow-y:auto;gap:0} .event-log.open .log-entry{animation:none;opacity:1;
+  text-shadow:none;padding:.32rem 0;border-bottom:1px solid rgba(216,207,196,.08)}
 .event-log.open .log-text{-webkit-line-clamp:unset}
 .round-chip{font-variant:small-caps;letter-spacing:.08em;color:var(--ink-dim);margin-right:.5rem}
 .turn-chip{display:inline-flex;align-items:center;gap:.4rem;font-weight:bold;vertical-align:-3px}
