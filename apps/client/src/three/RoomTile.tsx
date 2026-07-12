@@ -7,6 +7,7 @@ import type { Direction, PlacedRoom, RoomDef } from "@dread-hollow/shared";
 import { buildRoomDecor, roomTheme, materials, surfaceFor, tickFlames } from "@dread-hollow/decor";
 import { TILE, WALL_H, roomWorld } from "./layout";
 import { registerWall, unregisterWall } from "./followCam";
+import { fadeLabelByDistance } from "./labelFade";
 import { useBeats } from "../state/beats";
 import { useView } from "../state/view";
 
@@ -64,7 +65,22 @@ export function RoomTile({
   // visible (deep-fog culling hides the decor anyway; a modal freeze holds
   // every flame). decorHidden is the same hysteresis ref the visibility uses.
   const decorHidden = useRef(false);
-  useFrame(({ clock }) => {
+  const plaqueEl = useRef<HTMLDivElement>(null);
+  useFrame(({ clock, camera }) => {
+    // Walking under a door plaque in first person would blow it up to a
+    // banner — fade it away as you reach the threshold (the lintel label is
+    // for reading across the room, not from underneath).
+    if (fpLabel && fpLabel !== "hide") {
+      fadeLabelByDistance(
+        plaqueEl.current,
+        camera,
+        wx + DIR_DELTA[fpLabel].dx * (HALF - 0.12),
+        wy + 2.55,
+        wz + DIR_DELTA[fpLabel].dy * (HALF - 0.12),
+        1.5,
+        2.4,
+      );
+    }
     if (decorHidden.current || useBeats.getState().worldFrozen) return;
     tickFlames(decor, clock.elapsedTime);
   });
@@ -283,7 +299,7 @@ export function RoomTile({
           distanceFactor={fpLabel ? 8 : 24}
           occlude={false}
         >
-          <div className={`room-label ${highlighted ? "lit" : ""}${fpLabel ? " plaque" : ""}`}>
+          <div ref={plaqueEl} className={`room-label ${highlighted ? "lit" : ""}${fpLabel ? " plaque" : ""}`}>
             {def.name}
             {def.aura ? (def.aura > 0 ? " ✦" : " ☓") : ""}
           </div>

@@ -21,6 +21,7 @@ import {
 } from "./walk";
 import { avatarHandles, playOneShotFor } from "./avatarRegistry";
 import { cinematic } from "./director";
+import { fadeLabelByDistance } from "./labelFade";
 import { useBeats } from "../state/beats";
 import { useStore } from "../state/store";
 import { useView } from "../state/view";
@@ -92,6 +93,7 @@ export function PlayerToken({
     [entry, vrmUrl, color, archetype],
   );
   const group = useRef<Group>(null);
+  const labelEl = useRef<HTMLDivElement>(null);
   // a stable per-figure phase so identical figures don't bob in lockstep
   const phase = useRef(Math.random() * 6);
   const yaw = useRef(0);
@@ -198,6 +200,11 @@ export function PlayerToken({
       if (activePath.current) cursor.current.i = activePath.current.points.length;
       placed.current = true;
     }
+    // Nose-to-nose in first person a name tag would fill the screen — fade
+    // it out as the camera closes in (runs even during a freeze so entering
+    // first person mid-beat never flashes a giant label).
+    fadeLabelByDistance(labelEl.current, state.camera, g.position.x, g.position.y + 1.9, g.position.z);
+
     // A modal beat owns the stage — hold this walker exactly where it stands
     // (dt-based systems resume seamlessly when the card dismisses).
     if (useBeats.getState().worldFrozen) return;
@@ -347,6 +354,7 @@ export function PlayerToken({
       {!hideSelf && labelVisible && (
         <Html position={[0, alive ? 1.9 : 0.7, 0]} center distanceFactor={labelFactor} occlude={false}>
           <div
+            ref={labelEl}
             className={`token-label ${isMe ? "me" : ""} ${side === "traitor" ? "traitor" : ""} ${alive ? "" : "dead"}`}
           >
             {alive ? name : `✝ ${name}`}

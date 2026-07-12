@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { Group } from "three";
 import { registerToken, unregisterToken, MAX_FRAME_DT } from "./followCam";
 import { followPath, setWalking, type WalkPath } from "./walk";
+import { fadeLabelByDistance } from "./labelFade";
 import { useBeats } from "../state/beats";
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -40,6 +41,7 @@ export function MonsterToken({
 }) {
   const figure = useMemo(() => buildMonsterFigure(name), [name]);
   const group = useRef<Group>(null);
+  const labelEl = useRef<HTMLDivElement>(null);
   const phase = useRef(Math.random() * 6);
   const yaw = useRef(0);
   const placed = useRef(false);
@@ -78,6 +80,10 @@ export function MonsterToken({
       if (activePath.current) cursor.current.i = activePath.current.points.length; // never walk in from a stale path
       placed.current = true;
     }
+    // In first person a point-blank monster tag would fill the screen — the
+    // creature itself is the information at that range. Slightly tighter
+    // fade than name tags: the HP readout matters in melee.
+    fadeLabelByDistance(labelEl.current, state.camera, g.position.x, g.position.y + 1.9, g.position.z, 1.3, 2.2);
     // A modal beat owns the stage — hold position and pose until it drains.
     if (useBeats.getState().worldFrozen) return;
     prev.current.copy(g.position);
@@ -120,7 +126,7 @@ export function MonsterToken({
       <pointLight position={[0, 1, 0]} color="#c2412f" intensity={attackable ? 5 : 2.5} distance={5} decay={2} />
       {labelVisible && (
       <Html position={[0, 1.9, 0]} center distanceFactor={21} occlude={false}>
-        <div className="token-label monster">
+        <div ref={labelEl} className="token-label monster">
           {name}
           {mental ? " ✦" : ""} · {hp}♥{attackable ? " — strike" : ""}
         </div>
