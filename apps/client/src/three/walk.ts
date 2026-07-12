@@ -20,7 +20,15 @@ export type WalkPoint = [number, number, number];
 export interface WalkPath {
   points: WalkPoint[];
   crossing: boolean;
+  /** The doorway point a crossing route passes through — the first-person
+   *  hand reaches for it as the walk approaches (see FirstPersonRig). */
+  door?: WalkPoint;
 }
+
+/** Each walking token's live door target (crossing routes only) — written by
+ *  PlayerToken when its path changes, read by the first-person hand rig.
+ *  Same module-registry pattern as tokenSpeeds. */
+export const doorTargets = new Map<string, WalkPoint>();
 
 /** Peak stride speed (u/s), tuned to the Walk clip cadence at TILE = 7. */
 export const WALK_SPEED = 2.7;
@@ -125,11 +133,12 @@ export function buildWalkPath(fromKey: string, from: WalkPoint, toKey: string, t
   // from the far side of the ring would cross the centerpiece.
   pushArc(out, ax, y, az, Math.atan2(from[2] - az, from[0] - ax), Math.atan2(dirz, dirx));
   out.push([ax + dirx * WALK_RING_R, y, az + dirz * WALK_RING_R]); // ring exit
-  out.push([(ax + bx) / 2, y, (az + bz) / 2]); // door midpoint
+  const door: WalkPoint = [(ax + bx) / 2, y, (az + bz) / 2];
+  out.push(door); // door midpoint
   out.push([bx - dirx * WALK_RING_R, y, bz - dirz * WALK_RING_R]); // ring entry
   pushArc(out, bx, y, bz, Math.atan2(-dirz, -dirx), Math.atan2(to[2] - bz, to[0] - bx));
   out.push(to);
-  return { points: out, crossing: true };
+  return { points: out, crossing: true, door };
 }
 
 // Scratch vector shared across tokens — useFrame callbacks run sequentially.

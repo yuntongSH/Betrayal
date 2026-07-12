@@ -10,6 +10,7 @@ import { VrmAvatar } from "./VrmAvatar";
 import { myVrmUrl } from "./vrmConfig";
 import { followTarget, registerToken, unregisterToken, trackedTokens, MAX_FRAME_DT } from "./followCam";
 import {
+  doorTargets,
   followPath,
   RUN_SPEED,
   setWalking,
@@ -113,6 +114,11 @@ export function PlayerToken({
     cursor.current.i = 0;
     cursor.current.traveled = 0;
     peak.current = path?.crossing ? RUN_SPEED : WALK_SPEED;
+    // Publish the doorway of a crossing route — the first-person hand
+    // reaches for it on approach. Gated by live speed in the rig, so a
+    // finished route going stale here is harmless.
+    if (path?.crossing && path.door) doorTargets.set(tokenId, path.door);
+    else doorTargets.delete(tokenId);
   }
   // Turn lean (body banks into a turn) and its slew rate, applied to an inner
   // group so it composes cleanly under the yaw the outer group carries.

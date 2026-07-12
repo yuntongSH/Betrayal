@@ -267,8 +267,13 @@ export function HouseView() {
           />
         ))}
 
-      {/* player + monster tokens, spread within shared rooms */}
-      {Object.keys(game.house).map((key) => {
+      {/* player + monster tokens, spread within shared rooms. ONE flat keyed
+          array (flatMap), never nested per-room arrays: nesting gives each
+          room's tokens a different implicit parent slot, so crossing a room
+          boundary REMOUNTS the token and the fresh mount snaps into place
+          instead of walking its door corridor. Flat, the key alone carries
+          identity and the walk survives the move. */}
+      {Object.keys(game.house).flatMap((key) => {
         const occ = occupantsAt(game, key);
         const room = game.house[key]!;
         const [wx, wy, wz] = roomWorld(room);

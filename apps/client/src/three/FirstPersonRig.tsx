@@ -18,15 +18,16 @@
  * If your explorer falls, the rig releases and the board view returns —
  * spectating a haunted house from inside a corpse helps no one.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { CHARACTERS_BY_ID } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
 import { useView } from "../state/view";
 import { cinematic, firstPerson } from "./director";
 import { trackedTokens, MAX_FRAME_DT } from "./followCam";
-import { tokenSpeeds, WALK_SPEED } from "./walk";
+import { doorTargets, tokenSpeeds, WALK_SPEED } from "./walk";
 
 const EYE_Y = 1.52; // eyes of a ~1.7-unit explorer
 const FP_FOV = 68; // wider than the 48° tactical lens — hallways need periphery
@@ -43,6 +44,76 @@ export const fpLook = { yaw: 0, pitch: -0.05 };
 
 /** Headless-verify probe: what the rig last wrote (NaN until it drives). */
 export const fpCamProbe = { y: NaN, fov: NaN };
+
+/** Headless-verify probe: the door-reach hand's live extension (0..1). */
+export const fpHandProbe = { reach: 0 };
+
+/** The teardrop every manor flame uses (decor keeps its copy private). */
+function flameGeo(r: number, h: number): THREE.LatheGeometry {
+  const pts: THREE.Vector2[] = [];
+  const N = 8;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const radius = r * Math.sin(Math.PI * Math.min(1, t * 1.15)) * (1 - t * 0.35);
+    pts.push(new THREE.Vector2(Math.max(0.0001, radius), h * t));
+  }
+  return new THREE.LatheGeometry(pts, 10);
+}
+
+/**
+ * Your explorer's hands, camera-locked: the left holds the candle that has
+ * always lit first person (now the light visibly comes FROM it, swaying with
+ * your stride); the right rises and reaches ahead as you close on a doorway
+ * mid-crossing, landing with the door's own opening swing from Doors.tsx.
+ * Low-poly mittens on purpose — the same stylization as the explorers.
+ */
+function buildHands(charColor: string) {
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb08663, roughness: 0.8 });
+  const sleeve = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(charColor).multiplyScalar(0.72),
+    roughness: 0.9,
+  });
+
+  const group = new THREE.Group();
+
+  const left = new THREE.Group();
+  const lHand = new THREE.Mesh(new THREE.SphereGeometry(0.048, 10, 8), skin);
+  lHand.scale.set(1, 0.85, 1.15);
+  const lSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.058, 0.12, 10), sleeve);
+  lSleeve.position.set(0.015, -0.09, 0.05);
+  lSleeve.rotation.x = 0.45;
+  const candle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.021, 0.024, 0.13, 10),
+    new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6 }),
+  );
+  candle.position.y = 0.09;
+  const flame = new THREE.Mesh(
+    flameGeo(0.026, 0.085),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe9c0,
+      emissive: 0xe8a85a,
+      emissiveIntensity: 2.4,
+    }),
+  );
+  flame.position.y = 0.165;
+  left.add(lHand, lSleeve, candle, flame);
+
+  const right = new THREE.Group();
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.046, 0.2, 10), sleeve);
+  forearm.rotation.x = -1.15;
+  forearm.position.set(0, -0.06, 0.1);
+  const rHand = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), skin);
+  rHand.scale.set(1, 0.8, 1.2);
+  rHand.position.set(0, 0, -0.05);
+  const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.021, 8, 6), skin);
+  thumb.position.set(-0.048, 0.005, -0.035);
+  right.add(forearm, rHand, thumb);
+  right.visible = false;
+
+  group.add(left, right);
+  group.visible = false;
+  return { group, left, right, flame };
+}
 
 /** Nearest compass direction the first-person camera faces — the arrow keys
  *  walk relative to the eyes ("↑ walks where you look"). Camera forward at
@@ -72,6 +143,25 @@ export function FirstPersonRig() {
   const wasDriving = useRef(false);
   const lamp = useRef<THREE.PointLight>(null);
   const fill = useRef<THREE.PointLight>(null);
+  const reach = useRef(0);
+
+  // Your own hands: candle left, door-reach right. Rebuilt only if your
+  // explorer (and so your sleeve color) changes.
+  const myColor = useStore((s) => {
+    const me = s.game?.players.find((p) => p.id === s.playerId);
+    return me?.characterId ? CHARACTERS_BY_ID[me.characterId]?.color : undefined;
+  });
+  const hands = useMemo(() => buildHands(myColor ?? "#8a8076"), [myColor]);
+  useEffect(
+    () => () => {
+      hands.group.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) (m.material as THREE.Material).dispose();
+      });
+    },
+    [hands],
+  );
 
   // Drag to look. Pointer capture keeps the turn alive when the cursor
   // leaves the canvas mid-drag. Deltas come from client coordinates, not
@@ -143,6 +233,7 @@ export function FirstPersonRig() {
     // controls.update() fight the timeline for the camera every frame. Its
     // scope cleanup hands the stage back when it ends.
     const release = (restoreControls = true) => {
+      hands.group.visible = false; // no disembodied hands over the board view
       if (!wasDriving.current) return;
       wasDriving.current = false;
       firstPerson.driving = false;
@@ -186,17 +277,51 @@ export function FirstPersonRig() {
     fpCamProbe.y = camera.position.y;
     fpCamProbe.fov = camera.fov;
 
-    // The held candle rides slightly ahead and below the eyes, flickering the
-    // way every other candle in the manor does — without it the room's own
+    // Your hands ride the eyes: the candle sways with the stride in the left,
+    // the right rises to meet an approaching doorway. Camera-locked so they
+    // read as YOUR body, not props in the room.
+    const h = hands.group;
+    h.visible = true;
+    h.position.copy(camera.position);
+    h.quaternion.copy(camera.quaternion);
+    const stride = Math.min(1, speed / WALK_SPEED);
+    hands.left.position.set(
+      -0.26 + Math.sin(bobT.current * 0.5) * 0.01 * stride,
+      -0.35 + bob * 0.55,
+      -0.48,
+    );
+    hands.left.rotation.z = 0.06 * Math.sin(bobT.current * 0.5) * stride;
+    const fs = 1 + 0.13 * Math.sin(bobT.current * 3.1) + 0.07 * Math.sin(bobT.current * 7.7);
+    hands.flame.scale.set(fs, 2 - fs, fs);
+
+    // Door reach: while a crossing walk closes on its doorway, the right hand
+    // extends to push it open (the door leaf itself swings via Doors.tsx) and
+    // eases back once you're through. Distance-based bell, so passing the
+    // threshold retracts it naturally.
+    const door = myId ? doorTargets.get(myId) : undefined;
+    let reachTarget = 0;
+    if (door && speed > 0.5) {
+      const d = Math.hypot(camera.position.x - door[0], camera.position.z - door[2]);
+      reachTarget = THREE.MathUtils.clamp(1 - (d - 0.3) / 1.2, 0, 1);
+    }
+    reach.current += (reachTarget - reach.current) * (1 - Math.exp(-9 * dt));
+    fpHandProbe.reach = reach.current;
+    hands.right.visible = reach.current > 0.03;
+    hands.right.position.set(
+      0.3 - 0.13 * reach.current,
+      -0.46 + 0.24 * reach.current,
+      -0.32 - 0.28 * reach.current,
+    );
+    hands.right.rotation.x = -0.2 - 0.7 * reach.current;
+
+    // The held candle's light now comes from the candle itself, flickering
+    // the way every other flame in the manor does — without it the room's own
     // pools sit behind you and first person is a black rectangle.
     if (lamp.current) {
       const flicker = 1 + 0.08 * Math.sin(bobT.current * 3.7) + 0.05 * Math.sin(bobT.current * 9.1);
       lamp.current.intensity = 9 * flicker;
-      lamp.current.position.set(
-        camera.position.x - Math.sin(look.yaw) * 0.45,
-        camera.position.y - 0.3,
-        camera.position.z - Math.cos(look.yaw) * 0.45,
-      );
+      h.updateMatrixWorld();
+      hands.flame.getWorldPosition(lamp.current.position);
     }
     fill.current?.position.copy(camera.position);
   }, -1); // before CameraDirector/XrayWalls at 0 — they read firstPerson.driving
@@ -209,6 +334,8 @@ export function FirstPersonRig() {
       {/* a whisper of fill riding the candle — walls you face must never be
           a pure black rectangle, however far the nearest pool */}
       <pointLight ref={fill} color="#8a7455" intensity={1.1} distance={13} decay={1.6} />
+      {/* your hands: the lit candle and the door-reach (positioned per frame) */}
+      <primitive object={hands.group} />
     </>
   ) : null;
 }
