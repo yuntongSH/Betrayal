@@ -10,6 +10,14 @@
   --flame: #e8a85a;
   --ghost: #6fb6b5;
   --good: #6fae6f;
+  /* the intake-record material: aged card stock, iron-gall ink, brass pins.
+     Paper is an OBJECT on the dark board, never a page background. */
+  --paper: #d8cbaa;
+  --paper-deep: #c3b088;
+  --iron-ink: #322718;
+  --ink-faded: #6d5c41;
+  --pin-brass: #c9a961;
+  --typewriter: "American Typewriter", "Courier Prime", "Courier New", monospace;
 }
 
 * {
@@ -368,24 +376,32 @@ input:focus {
 }
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 1.1rem 0.95rem;
   overflow-y: auto;
-  padding-right: 0.4rem;
+  /* head room for the pin overhang + hover lift; side room for the tilt */
+  padding: 10px 0.5rem 10px 4px;
   align-content: start;
   /* As a grid item, this defaults to min-height:auto and refuses to shrink below
      its content — which defeats overflow:auto. Allow it to shrink to its cell so
      it actually scrolls when the character list is taller than the viewport. */
   min-height: 0;
 }
-/* The dossier: what the house already knows about the hovered guest. */
+/* The dossier: the guest's full intake sheet — same paper stock as the
+   slips, laid flat beneath the board. The left ribbon takes the explorer's
+   color (inline style); every label is typed, every note is inked. */
 .dossier {
   flex: 0 0 auto;
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
+  background:
+    radial-gradient(120% 100% at 92% 0%, rgba(110, 78, 36, 0.14), transparent 52%),
+    radial-gradient(90% 80% at 4% 100%, rgba(96, 66, 28, 0.12), transparent 48%),
+    linear-gradient(172deg, #dcd0b0, var(--paper-deep));
+  border: 1px solid rgba(64, 48, 24, 0.4);
   border-left: 4px solid var(--flame);
-  border-radius: 12px;
-  padding: 0.8rem 1rem;
+  border-radius: 2px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  color: var(--iron-ink);
+  padding: 0.75rem 1rem 0.85rem;
   font-size: 0.8rem;
   line-height: 1.45;
 }
@@ -396,113 +412,263 @@ input:focus {
   margin-bottom: 0.45rem;
 }
 .dossier-head strong {
-  font-family: Georgia, serif;
-  color: #efe2d3;
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+  font-size: 1.05rem;
+  color: #241a0e;
+}
+.dossier .muted {
+  color: var(--ink-faded);
 }
 .dossier-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  border-top: 1px solid var(--panel-edge);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.15rem 1.4rem;
+  border-top: 1px solid rgba(64, 48, 24, 0.35);
   padding-top: 0.45rem;
 }
 .dossier-row {
   display: flex;
   gap: 0.6rem;
-  color: #c9bfae;
+  color: #40311d;
   font-size: 0.76rem;
 }
 .dossier-key {
-  flex: 0 0 3.8rem;
-  letter-spacing: 0.12em;
+  flex: 0 0 4.2rem;
+  font-family: var(--typewriter);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-size: 0.62rem;
-  color: var(--ink-dim);
-  padding-top: 0.12rem;
+  font-size: 0.56rem;
+  color: var(--ink-faded);
+  padding-top: 0.2rem;
 }
 .dossier-bio {
   margin: 0.5rem 0 0;
-  color: #b8ad9c;
+  color: #4a3a24;
   font-size: 0.77rem;
 }
-/* The red thread — the bond tying this explorer to another of the six. */
+/* The red thread — the bond tying this explorer to another of the six,
+   noted in the margin in the archivist's red ink. */
 .dossier-bond {
-  margin: 0.5rem 0 0;
-  padding: 0.4rem 0.55rem;
+  margin: 0.55rem 0 0;
+  padding: 0.35rem 0.6rem;
   font-size: 0.76rem;
-  color: #c9bfae;
-  background: rgba(120, 30, 30, 0.08);
+  color: #6e2118;
+  background: rgba(140, 47, 35, 0.07);
   border-left: 2px solid var(--blood, #8c2f23);
-  border-radius: 0 8px 8px 0;
 }
 .bond-thread {
   color: var(--blood-bright, #c2412f);
   font-size: 0.6rem;
   vertical-align: middle;
 }
+/* the bonded explorer's name — red ink like the rest of the margin note;
+   the character colors were mixed for the dark board and vanish on paper */
+.bond-name {
+  font-weight: 600;
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+  color: #571a10;
+}
+/* ------------------------------------------------------------------------
+   The intake slips. Each explorer is a paper record pinned to the board:
+   sepia cabinet-card photograph, engraved name, typed particulars. Every
+   slip hangs at its own slight angle; hovering lifts it level off the
+   board; choosing one presses a wax seal into its corner. */
 .char-card {
-  display: flex;
-  gap: 0.7rem;
-  text-align: left;
-  padding: 0.8rem;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  border-left-width: 4px;
-  cursor: pointer;
-  color: var(--ink);
-  font: inherit;
   position: relative;
-  transition: transform 0.1s ease, background 0.2s ease;
-}
-.char-card:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-.char-card.mine {
-  background: rgba(60, 48, 40, 0.95);
-}
-.char-card.taken {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.char-avatar {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-weight: bold;
-  font-size: 1.3rem;
-  color: #1a1410;
-  flex: 0 0 auto;
-}
-.char-info {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.28rem;
+  text-align: center;
+  padding: 0.85rem 0.55rem 0.6rem;
+  font: inherit;
+  cursor: pointer;
+  color: var(--iron-ink);
+  background:
+    radial-gradient(140% 90% at 16% 4%, rgba(120, 88, 40, 0.16), transparent 42%),
+    radial-gradient(120% 80% at 88% 96%, rgba(105, 74, 34, 0.18), transparent 46%),
+    linear-gradient(163deg, #ded2b3 0%, var(--paper) 46%, var(--paper-deep) 100%);
+  border: 1px solid rgba(64, 48, 24, 0.35);
+  border-radius: 2px;
+  box-shadow:
+    0 7px 16px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.55);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.2s ease;
 }
-.char-info em {
-  color: var(--ink-dim);
-  font-size: 0.82rem;
+/* every slip pinned at its own angle — a hand hung these, not a template */
+.char-grid .char-card:nth-child(6n + 1) { --tilt: -1.6deg; }
+.char-grid .char-card:nth-child(6n + 2) { --tilt: 1.3deg; }
+.char-grid .char-card:nth-child(6n + 3) { --tilt: -0.8deg; }
+.char-grid .char-card:nth-child(6n + 4) { --tilt: 1.8deg; }
+.char-grid .char-card:nth-child(6n + 5) { --tilt: -1.2deg; }
+.char-grid .char-card:nth-child(6n + 6) { --tilt: 0.9deg; }
+.char-card:hover:not(:disabled),
+.char-card:focus-visible {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow:
+    0 13px 26px rgba(0, 0, 0, 0.55),
+    0 2px 5px rgba(0, 0, 0, 0.5);
 }
+.char-card.mine {
+  --tilt: 0deg;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(140, 47, 35, 0.4);
+}
+.char-card.taken {
+  cursor: not-allowed;
+  filter: saturate(0.5) brightness(0.78);
+}
+.card-pin {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #ead9a8, var(--pin-brass) 45%, #6e5726 88%);
+  box-shadow:
+    0 2px 3px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 2px rgba(60, 40, 10, 0.6);
+}
+/* a scrap of cloth ribbon in the explorer's color, caught under the pin —
+   the player color has to live somewhere, so it lives as haberdashery */
+.card-ribbon {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 9px;
+  height: 21px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0) 46%),
+    var(--char, #888);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+  opacity: 0.92;
+}
+/* the photograph: a sepia print with its own paper margin, pasted on */
+.char-photo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #221a12;
+  border: 3px solid #e8dfc3;
+  box-shadow: 0 1px 3px rgba(40, 26, 8, 0.45);
+  overflow: hidden;
+}
+.char-photo .pface {
+  border-radius: 0;
+  filter: sepia(0.5) saturate(0.75) contrast(0.96) brightness(0.94);
+}
+.char-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 26px rgba(28, 16, 5, 0.8);
+  pointer-events: none;
+}
+.char-initial {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 2.1rem;
+  color: #877450;
+}
+.char-name {
+  margin-top: 0.18rem;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  font-size: 0.94rem;
+  line-height: 1.12;
+  color: #241a0e;
+}
+.char-epithet {
+  font-style: italic;
+  font-size: 0.72rem;
+  color: var(--ink-faded);
+}
+/* the measurements, typed above a ruled line */
 .char-traits {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.35rem;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(64, 48, 24, 0.3);
 }
-.trait-chip {
-  font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 5px;
-  background: rgba(0, 0, 0, 0.4);
-  color: var(--ink-dim);
+.trait-type {
+  font-family: var(--typewriter);
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-faded);
+  white-space: nowrap;
 }
-.char-owner {
+.trait-type b {
+  color: var(--iron-ink);
+  font-size: 0.68rem;
+}
+/* a rubber stamp across a slip somebody else already claimed */
+.claim-stamp {
   position: absolute;
-  top: 0.6rem;
-  right: 0.7rem;
-  font-size: 0.75rem;
+  top: 46%;
+  left: 50%;
+  max-width: 96%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05em;
+  padding: 0.22em 0.6em 0.28em;
+  transform: translate(-50%, -50%) rotate(-7deg);
+  font-family: var(--typewriter);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8e2317;
+  border: 2px solid rgba(142, 35, 23, 0.8);
+  border-radius: 2px;
+  background: rgba(216, 203, 170, 0.78);
+  box-shadow: 0 0 0 1px rgba(216, 203, 170, 0.3);
+}
+.claim-stamp b {
+  font-weight: 400;
+  font-size: 0.54rem;
+  letter-spacing: 0.06em;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the wax seal pressed into your own slip */
+.wax-seal {
+  position: absolute;
+  right: -10px;
+  top: 47%; /* over the print's lower corner — never over the measurements */
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  border-radius: 46% 54% 50% 50% / 52% 48% 54% 46%;
+  background: radial-gradient(circle at 36% 30%, #b2402d, var(--blood) 52%, #571a10 92%);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.55),
+    inset 0 2px 3px rgba(255, 200, 160, 0.25),
+    inset 0 -3px 5px rgba(30, 6, 2, 0.6);
+  color: #f0d9c8;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  text-shadow: 0 1px 1px rgba(40, 8, 2, 0.8);
+  animation: seal-press 0.32s ease-out;
+}
+@keyframes seal-press {
+  0% { transform: translateY(-50%) scale(1.7); opacity: 0; }
+  55% { transform: translateY(-50%) scale(0.92); opacity: 1; }
+  100% { transform: translateY(-50%) scale(1); }
 }
 .party-panel {
   background: var(--panel);
@@ -1378,6 +1544,8 @@ kbd {
   outline:2px solid var(--flame);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){
   /* windows show lit; fog, flame and pins hold still */
+  .wax-seal{animation:none}
+  .char-card{transition:none}
   .dusk-manor .win,.dusk-manor .win.wf{animation:none;opacity:.92}
   .dusk-fog{animation:none}
   .title-flame{animation:none}

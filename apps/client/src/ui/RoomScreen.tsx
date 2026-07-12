@@ -1,9 +1,18 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { CHARACTERS, CHARACTERS_BY_ID, DIFFICULTIES, TRAITS } from "@dread-hollow/shared";
 import type { CharacterDef } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { DuskScene } from "./DuskScene";
 import { Portrait } from "./Portrait";
+
+/** Typed abbreviations on the intake slips — the archivist's shorthand. */
+const TRAIT_ABBR: Record<string, string> = {
+  speed: "SPD",
+  might: "MGT",
+  sanity: "SAN",
+  knowledge: "KNW",
+};
 
 const DIFFICULTY_BLURB: Record<string, string> = {
   relaxed: "Gentler haunts — monsters hit softer and die sooner.",
@@ -39,7 +48,7 @@ function Dossier({ c }: { c: CharacterDef }) {
       <p className="dossier-bio">{c.bio}</p>
       <p className="dossier-bond">
         <span className="bond-thread">●</span>{" "}
-        <span style={{ color: bondTo.color, fontWeight: 600 }}>{bondTo.name}</span> — {c.bond.text}
+        <span className="bond-name">{bondTo.name}</span> — {c.bond.text}
       </p>
     </div>
   );
@@ -94,32 +103,38 @@ export function RoomScreen() {
               <button
                 key={c.id}
                 className={`char-card ${mine ? "mine" : ""} ${disabled ? "taken" : ""}`}
-                style={{ borderColor: c.color }}
+                style={{ "--char": c.color } as CSSProperties}
                 disabled={disabled}
                 onClick={() => chooseCharacter(c.id)}
                 onMouseEnter={() => setHovered(c.id)}
                 onMouseLeave={() => setHovered((h) => (h === c.id ? null : h))}
               >
-                <div className="char-avatar" style={{ background: c.color }}>
-                  {c.name.charAt(0)}
+                {/* an intake slip pinned to the board: ribbon in the
+                    explorer's color hanging under a brass pin */}
+                <span className="card-ribbon" aria-hidden="true" />
+                <span className="card-pin" aria-hidden="true" />
+                <div className="char-photo">
+                  <span className="char-initial" aria-hidden="true">
+                    {c.name.charAt(0)}
+                  </span>
                   <Portrait id={c.id} />
                 </div>
-                <div className="char-info">
-                  <strong>{c.name}</strong>
-                  <em>{c.title}</em>
-                  <div className="char-traits">
-                    {TRAITS.map((t) => (
-                      <span key={t} className="trait-chip">
-                        {t.slice(0, 3)} {c.traits[t].values[c.traits[t].start]}
-                      </span>
-                    ))}
-                  </div>
+                <strong className="char-name">{c.name}</strong>
+                <em className="char-epithet">{c.title}</em>
+                <div className="char-traits">
+                  {TRAITS.map((t) => (
+                    <span key={t} className="trait-type">
+                      {TRAIT_ABBR[t]}&nbsp;<b>{c.traits[t].values[c.traits[t].start]}</b>
+                    </span>
+                  ))}
                 </div>
-                {owner && (
-                  <div className="char-owner" style={{ color: c.color }}>
-                    {mine ? "You" : owner.name}
-                  </div>
+                {disabled && owner && (
+                  <span className="claim-stamp">
+                    claimed
+                    <b>— {owner.name}</b>
+                  </span>
                 )}
+                {mine && <span className="wax-seal">you</span>}
               </button>
             );
           })}
