@@ -139,6 +139,13 @@ export function roomTheme(roomId: string): RoomTheme {
     verandah: { floor: 0x3a352c, wall: 0x4a4438, accent: 0xd8c088, accentIntensity: 0.5 },
     cloakroom: { floor: 0x2e2a26, wall: 0x3c372f, accent: 0xc0a878, accentIntensity: 0.45 },
     cupola: { floor: 0x2a2e3a, wall: 0x38404e, accent: 0xbfd4ff, accentIntensity: 0.55 },
+    "rafter-crawl": { floor: 0x38312a, wall: 0x473e35, accent: 0xc0a878, accentIntensity: 0.35 },
+    "servants-passage": { floor: 0x342d26, wall: 0x433a30, accent: 0xc9b078, accentIntensity: 0.4 },
+    "dumbwaiter-shaft": { floor: 0x2c2620, wall: 0x3a322a, accent: 0xc0a070, accentIntensity: 0.4 },
+    "cistern-walk": { floor: 0x25302e, wall: 0x33403d, accent: 0x8fb8bf, accentIntensity: 0.45 },
+    "coal-bunker": { floor: 0x201e1e, wall: 0x2e2b2a, accent: 0xd08850, accentIntensity: 0.4 },
+    "well-room": { floor: 0x28302f, wall: 0x36403e, accent: 0x9fc0c4, accentIntensity: 0.45 },
+    "sump-passage": { floor: 0x232a28, wall: 0x313a37, accent: 0x88b0b4, accentIntensity: 0.4 },
   };
   return themes[roomId] ?? DEFAULT_THEME;
 }
@@ -3332,6 +3339,223 @@ COMPOSERS["cupola"] = (g, t, tile, ctx) => {
   const l = new THREE.PointLight(0xbfd4ff, t.accentIntensity * 10, big ? 5.5 : 4.0, 2);
   l.position.set(0, 2.0, 0);
   g.add(l);
+};
+
+// --- tiny inline props for wave 3 (service / basement / passages) ----------
+
+/** A run of iron pipe with a valve wheel, mounted flat to a wall. */
+function pipeRun(len = 2.0): THREE.Group {
+  const g = new THREE.Group();
+  const iron = mat(0x4a4640, { metal: 0.6, rough: 0.5 });
+  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, len, 10), iron);
+  pipe.rotation.z = Math.PI / 2;
+  g.add(pipe);
+  for (const x of [-len * 0.3, len * 0.3]) {
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), mat(0x5a544c, { metal: 0.6 }));
+    collar.rotation.z = Math.PI / 2;
+    collar.position.x = x;
+    g.add(collar);
+  }
+  // a valve wheel jutting out
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.02, 6, 14), iron);
+  wheel.position.set(0, 0.12, 0.08);
+  g.add(wheel);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 6), iron);
+  stem.position.set(0, 0.06, 0.04);
+  g.add(stem);
+  return g;
+}
+
+/** A stone well-head: a low circular parapet, a windlass, a bucket on rope. */
+function wellHead(): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat(0x5a544a, { rough: 0.95 });
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 0.7, 20, 1, true), stone);
+  ring.position.y = 0.35;
+  g.add(ring);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.57, 0.06, 8, 22), stone);
+  lip.rotation.x = Math.PI / 2;
+  lip.position.y = 0.7;
+  g.add(lip);
+  const dark = new THREE.Mesh(new THREE.CircleGeometry(0.5, 18), mat(0x0a0c0e, { rough: 1 }));
+  dark.rotation.x = -Math.PI / 2;
+  dark.position.y = 0.2;
+  g.add(dark);
+  // two posts + a windlass crossbar over the mouth
+  const wood = mat(0x2e2418, { rough: 0.9 });
+  for (const sx of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.2, 8), wood);
+    post.position.set(sx * 0.55, 0.9, 0);
+    g.add(post);
+  }
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.0, 10), wood);
+  barrel.rotation.z = Math.PI / 2;
+  barrel.position.y = 1.45;
+  g.add(barrel);
+  const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 6), mat(0x4a4640, { metal: 0.5 }));
+  crank.position.set(0.6, 1.35, 0);
+  g.add(crank);
+  // a bucket on a short rope
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.16, 10), mat(0x3a2c1e, { rough: 0.85 }));
+  bucket.position.set(0, 1.0, 0);
+  g.add(bucket);
+  return g;
+}
+
+/** A service call-board: numbered brass bells on a wooden panel. */
+function bellBoard(): THREE.Group {
+  const g = new THREE.Group();
+  const board = box(1.0, 0.4, 0.05, 0x33261a, { rough: 0.85 });
+  g.add(board);
+  const brass = mat(0x9a7a3a, { metal: 0.7, rough: 0.4 });
+  for (let i = 0; i < 5; i++) {
+    const bell = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.6), brass);
+    bell.position.set(-0.36 + i * 0.18, 0.08, 0.05);
+    g.add(bell);
+    const spring = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.1, 4), brass);
+    spring.position.set(-0.36 + i * 0.18, 0.16, 0.05);
+    g.add(spring);
+  }
+  return g;
+}
+
+/** The dumbwaiter car itself, hanging in its shaft on a rope. */
+function dumbwaiterCar(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat(0x3a2c1e, { rough: 0.85 });
+  const box_ = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.6), wood);
+  box_.position.y = 1.2;
+  g.add(box_);
+  // open front (a darker inset)
+  const inset = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.58, 0.02), mat(0x140f0a, { rough: 1 }));
+  inset.position.set(0, 1.2, 0.31);
+  g.add(inset);
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, WALL_H - 1.55, 6), mat(0x5a4a30));
+  rope.position.y = 1.55 + (WALL_H - 1.55) / 2;
+  g.add(rope);
+  return g;
+}
+
+COMPOSERS["rafter-crawl"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  dressCorridor(g, t, tile, ctx, 901);
+  // low structural beams crossing overhead at head height — a true crawlspace
+  const beamM = trimWood(0x2e2418);
+  for (const z of big ? [-1.6, 0, 1.6] : [-0.8, 0.8]) {
+    const beam = tagXrayTrim(new THREE.Mesh(new THREE.BoxGeometry(tile - 0.4, 0.16, 0.16), beamM));
+    beam.position.set(0, WALL_H - 0.9, clampInner(z, tile));
+    g.add(beam);
+  }
+  place(g, dustPile(0.16, t.floor + 0x080808), 0.4, tile / 2 - 0.9, tile);
+  if (big) place(g, brokenChair(0x4a3a2c), -(tile / 2 - 0.8), 0.4, tile, 1.1);
+  g.add(rats(scaleN(4, tile), scaleSpread(1.3, tile), 903));
+  cornerCobwebs(g, tile, 4);
+};
+
+COMPOSERS["servants-passage"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  dressCorridor(g, t, tile, ctx, 911);
+  // the call-board where the bells summon the staff, and pegs beneath
+  hangMid(g, ctx, () => bellBoard(), ["e", "w", "n", "s"], 2.1, tile, { halfW: 0.5 });
+  hangMid(g, ctx, () => coatHooks(), ["w", "e", "s", "n"], 1.6, tile, { halfW: 0.55 });
+  place(g, crate(0.3, 0x4a3320), -(tile / 2 - 0.65), tile / 2 - 0.65, tile);
+  if (big) place(g, barrel(0x3a2c1a), tile / 2 - 0.7, -(tile / 2 - 0.75), tile);
+  cornerCobwebs(g, tile, 2);
+};
+
+COMPOSERS["dumbwaiter-shaft"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // the little lift hangs in its shaft; the opening is a dark hatch in a wall
+  const car = standAtWall(g, ctx, dumbwaiterCar(), ["n", "e", "w", "s"], tile, { fromWall: 0.36 });
+  const hatch = wallSlot(car.side, car.along, 0.02, tile);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.08), mat(0x2a2018, { rough: 0.9 }));
+  frame.position.set(hatch.x, 1.2, hatch.z);
+  frame.rotation.y = hatch.rot;
+  g.add(frame);
+  placeOnWall(g, chain(1.2, 0x2a2622), car.side, tile * 0.28, WALL_H - 0.05, tile);
+  place(g, crate(0.32, 0x4a3320), tile / 2 - 0.7, tile / 2 - 0.7, tile);
+  place(g, rug(1.4, 1.2, 0x2c2620, t.accent), 0, 0.2, tile);
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 921);
+  roomLight(g, t, tile, 1.6);
+};
+
+COMPOSERS["cistern-walk"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a walkway skirting the black water of the house cistern
+  place(g, floorPuddle(big ? 1.4 : 1.0, 0x0e1418), 0, big ? -1.0 : -1.2, tile);
+  place(g, floorPuddle(big ? 0.9 : 0.7, 0x101a1e), big ? 1.2 : 0.9, 0.6, tile);
+  // pipes feeding the tank, on the solid walls
+  hangMid(g, ctx, () => pipeRun(big ? 2.4 : 1.6), ["n", "e", "w", "s"], WALL_H - 0.7, tile, { halfW: 0.9 });
+  if (big) hangMid(g, ctx, () => pipeRun(2.0), ["w", "e", "s"], 1.2, tile, { halfW: 0.8 });
+  placeOnWall(g, moldPatch(0.8, 931) as unknown as THREE.Object3D, "e", 0, 0.9, tile);
+  place(g, barrel(0x2e3630), -(tile / 2 - 0.7), tile / 2 - 0.75, tile);
+  g.add(rats(scaleN(3, tile), scaleSpread(1.2, tile), 933));
+  cornerCobwebs(g, tile, 2);
+  // a cold reflection off the water
+  const l = new THREE.PointLight(0x7fa8b0, t.accentIntensity * 10, big ? 5.5 : 4.0, 2);
+  l.position.set(0, 1.6, 0);
+  g.add(l);
+};
+
+COMPOSERS["coal-bunker"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a heaped pile of coal under the chute, a shovel driven into it
+  g.add(rubblePile(scaleN(big ? 16 : 10, tile), scaleSpread(big ? 1.0 : 0.7, tile), 0x121215, 941));
+  const pile = new THREE.Mesh(new THREE.ConeGeometry(big ? 1.1 : 0.8, 0.5, 12), mat(0x0e0e12, { rough: 1 }));
+  pile.position.set(clampInner(big ? -0.8 : 0, tile), 0.25, clampInner(-(tile / 2 - 1.2), tile));
+  g.add(pile);
+  // the coal chute angling in from high on a wall
+  const chuteSide = ctx.bestWall(["n", "e", "w", "s"]) ?? "n";
+  const cs = wallSlot(chuteSide, 0, 0.3, tile);
+  const chute = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 1.0), mat(0x2a2620, { metal: 0.3, rough: 0.7 }));
+  chute.position.set(cs.x * 0.7, 1.7, cs.z * 0.7);
+  chute.rotation.set(0.5, cs.rot, 0);
+  g.add(chute);
+  // a shovel leaning in the heap
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6), mat(0x5a4028));
+  shaft.position.set(clampInner(big ? 0.2 : 0.5, tile), 0.5, clampInner(-(tile / 2 - 1.4), tile));
+  shaft.rotation.z = 0.5;
+  g.add(shaft);
+  const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.22), mat(0x4a4640, { metal: 0.5 }));
+  scoop.position.set(clampInner(big ? 0.44 : 0.74, tile), 0.06, clampInner(-(tile / 2 - 1.4), tile));
+  g.add(scoop);
+  placeFloorStain(g, "soot", 0.6, 0.3, 0.6, tile, 943);
+  cornerCobwebs(g, tile, 2);
+  // the dimmest light in the house — a bunker swallows its own glow
+  const l = new THREE.PointLight(t.accent, t.accentIntensity * 8, big ? 4.5 : 3.5, 2);
+  l.position.set(0, 1.5, big ? 0.5 : 0.5);
+  g.add(l);
+};
+
+COMPOSERS["well-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // the well at the heart, ringed by the party; damp everywhere
+  place(g, wellHead(), 0, big ? 0 : -(tile / 2 - 1.2), tile);
+  place(g, floorPuddle(0.5, 0x0e1418), big ? 1.3 : 0.9, big ? 1.2 : 0.9, tile);
+  hangMid(g, ctx, () => pipeRun(big ? 2.0 : 1.4), ["n", "e", "w", "s"], WALL_H - 0.7, tile, { halfW: 0.8 });
+  placeOnWall(g, moldPatch(0.7, 951) as unknown as THREE.Object3D, "w", 0.3, 1.0, tile);
+  place(g, barrel(0x2e3630), -(tile / 2 - 0.7), -(tile / 2 - 0.75), tile);
+  if (big) place(g, crate(0.3, 0x3a352c), tile / 2 - 0.7, -(tile / 2 - 0.75), tile);
+  g.add(rats(scaleN(3, tile), scaleSpread(1.2, tile), 953));
+  cornerCobwebs(g, tile, 3);
+  const l = new THREE.PointLight(0x7fa8b0, t.accentIntensity * 10, big ? 5.5 : 4.0, 2);
+  l.position.set(0, 1.7, big ? 0 : -(tile / 2 - 1.2));
+  g.add(l);
+};
+
+COMPOSERS["sump-passage"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  dressCorridor(g, t, tile, ctx, 961);
+  // the drain floods this run; a grate, standing water, weeping pipes
+  place(g, floorPuddle(big ? 1.3 : 0.9, 0x0c1216), 0, 0, tile);
+  const grate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.8), mat(0x2a2e2c, { metal: 0.4, rough: 0.7 }));
+  grate.position.set(clampInner(0.2, tile), 0.02, clampInner(tile / 2 - 1.1, tile));
+  g.add(grate);
+  hangMid(g, ctx, () => pipeRun(big ? 2.2 : 1.5), ["e", "w", "n", "s"], WALL_H - 0.7, tile, { halfW: 0.85 });
+  placeOnWall(g, moldPatch(0.8, 963) as unknown as THREE.Object3D, "w", 0, 0.7, tile);
+  g.add(rats(scaleN(4, tile), scaleSpread(1.3, tile), 965));
+  cornerCobwebs(g, tile, 2);
 };
 
 /** Generic tasteful dressing for unknown rooms: rug + candlestick + crate + decay. */
