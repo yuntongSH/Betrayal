@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-07-13 — The 20/20 quality pass
+
+A push toward "every room feels crafted," driven by a full-game audit
+(rooms, maps, bots, audio).
+
+### Every room now has a hand-composed interior
+
+Only 25 of the manor's 47 rooms had bespoke decor; the other 22 fell
+through to a generic rug-and-crate dresser — and purpose-built props
+(piano, gun-racks, organ pipes, specimen jars, birdcages) sat unused. All
+22 now have composers, in three waves:
+
+- **Signature rooms** — music-room (piano), gun-room & trophy-hall
+  (weapon racks, beast mounts), old-surgery (operating slab over a blood
+  pool, specimen shelves), harmonium-room (pipe wall), cage-room (hanging
+  birdcages, a floor cage).
+- **Social/living rooms** — attic, gymnasium (vaulting horse, climbing
+  rope), ruined-ballroom (pillars, cracked pier glass), solarium,
+  morning-room, sewing-room (dress form, thread spools), verandah
+  (balustrade), cloakroom, cupola (a brass telescope under moonlight).
+- **Service/basement rooms** — well-room (a stone well-head with windlass
+  and bucket), coal-bunker (heaped coal, a shovel, a chute), cistern-walk,
+  sump-passage, rafter-crawl, servants-passage (call-bell board),
+  dumbwaiter-shaft. Each with its own theme colour.
+
+### Diegetic foley
+
+The house had music (scene beds, peril layer, stings) and a door creak,
+but nothing else made a sound. Five procedural, zero-asset one-shots now
+play at the right moments in **both** frontends: a card turning face-up, a
+scatter of dice settling on the table, a bright pickup when an item is
+taken, a soft footfall at each stride in first person, and a heavy thud
+when a blow lands.
+
+### Bots stand where people would
+
+A lone room occupant no longer plants at the same due-south mark in every
+room (which read as one mannequin staked to each floor); the spot is
+seeded from the room key so a house of solo bots looks like people who
+wandered to different places.
+
 ## 2026-07-10 → 07-12 — The first-person sessions
 
 The manor learned to be *walked through*. This run of sessions migrated the
