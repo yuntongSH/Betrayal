@@ -27,3 +27,6 @@ coverage/
 !.vscode/extensions.json
 .idea/
 *.zip
+
+# scratch decor render harness (not committed)
+scratch-decor/

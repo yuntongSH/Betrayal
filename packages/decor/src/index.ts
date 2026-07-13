@@ -126,6 +126,12 @@ export function roomTheme(roomId: string): RoomTheme {
     attic: { floor: 0x47403a, wall: 0x574e47, accent: 0xc7b48a, accentIntensity: 0.4 },
     gymnasium: { floor: 0x453f36, wall: 0x554d43, accent: 0xd8c074, accentIntensity: 0.5 },
     vault: { floor: 0x303234, wall: 0x404347, accent: 0xffd24d, accentIntensity: 0.8 },
+    "music-room": { floor: 0x352438, wall: 0x453048, accent: 0xd8a0e0, accentIntensity: 0.6 },
+    "gun-room": { floor: 0x2f342a, wall: 0x3d4335, accent: 0xc9a35a, accentIntensity: 0.55 },
+    "trophy-hall": { floor: 0x3e2a22, wall: 0x4e372c, accent: 0xe0a860, accentIntensity: 0.6 },
+    "old-surgery": { floor: 0x33403e, wall: 0x415250, accent: 0xa8e0d4, accentIntensity: 0.55 },
+    "harmonium-room": { floor: 0x2e2b3c, wall: 0x3c384e, accent: 0xb0a0e0, accentIntensity: 0.55 },
+    "cage-room": { floor: 0x322c26, wall: 0x423a32, accent: 0xd8b878, accentIntensity: 0.45 },
   };
   return themes[roomId] ?? DEFAULT_THEME;
 }
@@ -2846,6 +2852,187 @@ COMPOSERS["creaking-corridor"] = (g, t, tile, ctx) => {
   // warped, snapped floorboards (the source of the creak)
   g.add(debrisPlank(scaleFlat(6, tile), scaleSpread(1.3, tile), 0x3a322a, 313));
   g.add(rats(scaleN(3, tile), scaleSpread(1.3, tile), 315));
+};
+
+// ---------------------------------------------------------------------------
+// Expansion-wave composers: rooms whose fiction demands a signature prop the
+// generic dresser can't imply. Assembled from the shared vocabulary above,
+// plus a few tiny inline props. Every one is door-safe (standAtWall/hangMid/
+// ctx.hasDoor) and holds to the one-PointLight budget.
+// ---------------------------------------------------------------------------
+
+/** A single accent PointLight at room-appropriate height/reach. */
+function roomLight(g: THREE.Group, t: RoomTheme, tile: number, y = 1.4, x = 0, z = 0): void {
+  const big = tile >= 6;
+  const l = new THREE.PointLight(t.accent, t.accentIntensity * 12, big ? 5.5 : 4.0, 2);
+  l.position.set(x, y, z);
+  g.add(l);
+}
+
+/** A mounted trophy: a stylised beast skull on a wooden shield plaque. */
+function mountedTrophy(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat(0x33261a, { rough: 0.85 });
+  const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.05, 5), wood);
+  shield.rotation.x = Math.PI / 2;
+  g.add(shield);
+  const boneM = mat(0xccbfa2, { rough: 0.7 });
+  const skullBox = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.14), boneM);
+  skullBox.position.z = 0.11;
+  g.add(skullBox);
+  // two curling horns
+  for (const sx of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.32, 6), boneM);
+    horn.position.set(sx * 0.11, 0.16, 0.11);
+    horn.rotation.z = sx * 0.7;
+    g.add(horn);
+  }
+  return g;
+}
+
+/** A floor-standing barred cage (an animal or a prisoner once, now empty). */
+function floorCage(h = 1.5, r = 0.42): THREE.Group {
+  const g = new THREE.Group();
+  const iron = mat(0x3a3a3e, { metal: 0.7, rough: 0.5 });
+  const ringGeo = new THREE.TorusGeometry(r, 0.02, 6, 18);
+  for (const y of [0.05, h * 0.5, h - 0.05]) {
+    const ring = new THREE.Mesh(ringGeo, iron);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = y;
+    g.add(ring);
+  }
+  const barT = Array.from({ length: 10 }, (_, i) => {
+    const a = (i / 10) * Math.PI * 2;
+    return { pos: [Math.cos(a) * r, h / 2, Math.sin(a) * r] as [number, number, number] };
+  });
+  g.add(instanced(new THREE.CylinderGeometry(0.012, 0.012, h, 6), iron, barT));
+  return g;
+}
+
+COMPOSERS["music-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // the upright against a doorless wall, its stool pulled out to face it
+  const piano = standAtWall(g, ctx, uprightPiano(), ["n", "e", "w", "s"], tile, { fromWall: 0.4 });
+  const ps = wallSlot(piano.side, piano.along, 1.25, tile);
+  place(g, chair(0x2a1e14), ps.x, ps.z, tile, ps.rot + Math.PI);
+  place(g, rug(big ? 2.8 : 1.9, big ? 2.2 : 1.6, 0x3a2038, t.accent), 0, 0, tile);
+  g.add(scatteredPaper(big ? 5 : 3, big ? 1.4 : 0.9, 71)); // dropped sheet music
+  if (big) {
+    // a harp skeleton and a candelabrum keeping the recital company
+    place(g, candlestick(t.accent), tile / 2 - 0.85, -(tile / 2 - 0.85), tile);
+    place(g, deadPlant(), -(tile / 2 - 0.7), tile / 2 - 0.75, tile);
+    hangMid(g, ctx, () => framedPortrait(0.5, 0.65), ["s", "e", "w", "n"], 1.7, tile, { halfW: 0.3 });
+    g.add(chandelier(t.accent));
+  } else {
+    hangMid(g, ctx, () => framedPortrait(0.45, 0.55), ["s", "e", "w"], 1.6, tile, { halfW: 0.25 });
+  }
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 711);
+  roomLight(g, t, tile, 1.6);
+};
+
+COMPOSERS["gun-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // racks of long-guns on the solid walls; a cleaning table in the middle
+  hangMid(g, ctx, () => weaponRack(), ["n", "e", "w", "s"], 1.55, tile, { halfW: 0.6 });
+  if (big) hangMid(g, ctx, () => weaponRack(), ["w", "e", "s", "n"], 1.55, tile, { halfW: 0.6 });
+  const tbl = table(big ? 1.2 : 0.85, 0.6, 0.55, 0x33261a);
+  place(g, tbl, 0, big ? 0 : 0.6, tile, 0);
+  place(g, bottlesAndJars(6, 0.4), big ? 0.3 : 0.2, big ? -0.1 : 0.55, tile); // oils, solvents
+  place(g, crate(0.34, 0x4a3320), -(tile / 2 - 0.75), tile / 2 - 0.75, tile); // ammunition
+  place(g, rug(big ? 2.4 : 1.6, big ? 1.8 : 1.4, 0x2c3326, t.accent), 0, 0, tile);
+  if (big) {
+    standAtWall(g, ctx, mountedTrophy(), ["s", "n"], tile, { fromWall: 0.12, along: -tile * 0.28 });
+    place(g, barrel(0x3a2c1a), tile / 2 - 0.7, -(tile / 2 - 0.75), tile);
+  }
+  decayKit(g, t, tile, 721);
+  roomLight(g, t, tile, 1.5);
+};
+
+COMPOSERS["trophy-hall"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  place(g, rug(big ? tile - 1.6 : 1.8, big ? 1.4 : 1.2, 0x4a1f1f, t.accent), 0, 0, tile); // a runner down the hall
+  // beast trophies mounted high on every solid wall
+  hangMid(g, ctx, () => mountedTrophy(), ["n", "s", "e", "w"], big ? 2.1 : 1.9, tile, { halfW: 0.35 });
+  if (big) {
+    hangMid(g, ctx, () => mountedTrophy(), ["s", "n", "w", "e"], 2.1, tile, { halfW: 0.35 });
+    // a display pedestal with a statue under the mounts
+    const dais = cyl(0.4, 0.46, 0.5, 0x413b34, 16, { rough: 0.95 });
+    dais.position.set(0, 0.25, 0);
+    g.add(dais);
+    const st = statue();
+    st.scale.setScalar(0.55);
+    st.position.set(0, 0.5, 0);
+    g.add(st);
+    standAtWall(g, ctx, mountedTrophy(), ["e", "w"], tile, { fromWall: 0.12, along: tile * 0.28 });
+  } else {
+    place(g, statue(), 0, -(tile / 2 - 0.8), tile);
+  }
+  place(g, candlestick(t.accent), tile / 2 - 0.85, tile / 2 - 0.85, tile);
+  cornerCobwebs(g, tile, 3);
+  decayKit(g, t, tile, 731);
+  roomLight(g, t, tile, 1.7);
+};
+
+COMPOSERS["old-surgery"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // the operating table at the heart, a pale sheet over it, blood beneath
+  const slab = table(1.0, 0.55, 0.6, 0x6a6660);
+  place(g, slab, 0, big ? 0 : 0.7, tile, 0);
+  placeFloorStain(g, "blood", 0.55, 0.1, big ? 0.4 : 0.95, tile, 743);
+  // shelves of specimens in jars along a wall; an instrument tray beside the slab
+  standAtWall(g, ctx, specimenShelf(0x8fd66a), ["n", "e", "w", "s"], tile, { fromWall: 0.3 });
+  place(g, bottlesAndJars(7, 0.45), big ? 0.7 : 0.5, big ? -0.5 : 0.4, tile);
+  if (big) {
+    standAtWall(g, ctx, specimenShelf(0x6fd6c0), ["w", "e", "s", "n"], tile, { fromWall: 0.3, along: tile * 0.28 });
+    place(g, standingMirror(true), -(tile / 2 - 0.6), tile / 2 - 0.7, tile, 0.6);
+    place(g, chair(0x3a2c22), 0.9, 0.9, tile, -0.5);
+  }
+  place(g, rug(1.6, 1.2, 0x24303a, t.accent), 0, big ? 0 : 0.7, tile);
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 741);
+  // a cold clinical light rather than warm candle
+  const l = new THREE.PointLight(0xcfe8e0, t.accentIntensity * 11, big ? 5.5 : 4.0, 2);
+  l.position.set(0, 1.9, big ? 0 : 0.7);
+  g.add(l);
+};
+
+COMPOSERS["harmonium-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a wall of pipes above the harmonium body; a bench before it
+  const pipeWall = hangMid(g, ctx, () => organPipes(), ["n", "e", "w", "s"], 1.4, tile, { halfW: 0.75 });
+  const side = pipeWall ?? "n";
+  const body = wallSlot(side, 0, 0.55, tile);
+  place(g, box(1.3, 0.9, 0.5, 0x2a1c14, { rough: 0.8 }), body.x, body.z, tile, body.rot); // harmonium cabinet
+  const bench = wallSlot(side, 0, 1.5, tile);
+  place(g, pew(0x3a2818), bench.x, bench.z, tile, bench.rot + Math.PI / 2);
+  place(g, rug(big ? 2.6 : 1.8, big ? 2.0 : 1.5, 0x2c2740, t.accent), 0, 0, tile);
+  if (big) {
+    place(g, candlestick(t.accent), tile / 2 - 0.85, tile / 2 - 0.85, tile);
+    place(g, candlestick(t.accent), -(tile / 2 - 0.85), tile / 2 - 0.85, tile);
+    hangMid(g, ctx, () => framedPortrait(0.5, 0.6), [side === "n" ? "s" : "n", "e", "w"], 1.7, tile, { halfW: 0.3 });
+  }
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 751);
+  roomLight(g, t, tile, 1.5);
+};
+
+COMPOSERS["cage-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // birdcages hanging from the rafters, a larger floor cage below
+  place(g, hangingBirdcage(), -(tile / 2 - 1.1), -(tile / 2 - 1.1), tile);
+  if (big) {
+    place(g, hangingBirdcage(), tile / 2 - 1.1, -(tile / 2 - 1.3), tile);
+    place(g, floorCage(1.6, 0.5), tile / 2 - 1.2, tile / 2 - 1.2, tile);
+  } else {
+    place(g, floorCage(1.3, 0.42), tile / 2 - 0.9, tile / 2 - 0.9, tile);
+  }
+  place(g, bonePile(8, 0.4), 0.4, 0.3, tile); // what the cages held, once
+  placeOnWall(g, chain(1.3, 0x2a2622), "n", -tile * 0.25, WALL_H - 0.05, tile);
+  place(g, rug(1.8, 1.4, 0x2a2620, t.accent), -0.3, 0, tile);
+  cornerCobwebs(g, tile, 3);
+  decayKit(g, t, tile, 761);
+  roomLight(g, t, tile, 1.9);
 };
 
 /** Generic tasteful dressing for unknown rooms: rug + candlestick + crate + decay. */
