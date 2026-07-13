@@ -352,9 +352,16 @@ function toast(msg) {
 }
 
 function roomWorld(r) { return [r.x * TILE, FLOOR_Y[r.floor], r.y * TILE]; }
-// A lone occupant stands ON the walk ring (due +z), never dead-center on the
-// island prop — [0,0] parked characters on top of the room's centerpiece.
-function ring(i, n, rad) { if (n <= 1) return [0, rad]; const a = (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
+// Tokens stand on the walk ring, never dead-center on the island prop. A lone
+// occupant no longer plants at the same due-south mark in every room (that read
+// as one mannequin staked in each room, now often against the centerpiece):
+// seeded by the room key, they stand at a believable clock position instead.
+function keyHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; }
+function ring(i, n, rad, key = "") {
+  const phase = key ? keyHash(key) * Math.PI * 2 : Math.PI / 2;
+  if (n <= 1) { const r = rad * (0.85 + keyHash(key + "r") * 0.2); return [Math.cos(phase) * r, Math.sin(phase) * r]; }
+  const a = phase + (i / n) * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad];
+}
 
 // ---- audio (Web Audio) ----------------------------------------------------
 // Diegetic SFX (door creaks) stay procedural and local; the MUSIC — an
@@ -1985,7 +1992,7 @@ function syncTokens(legal) {
     if (!room) continue;
     const [wx, wy, wz] = roomWorld(room);
     occ.forEach((o, i) => {
-      const [ox, oz] = ring(i, occ.length, WALK_R);
+      const [ox, oz] = ring(i, occ.length, WALK_R, key);
       seen.add(o.id);
       let tok = tokenCache.get(o.id);
       if (o.kind === "p") {

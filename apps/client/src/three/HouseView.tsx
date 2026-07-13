@@ -281,7 +281,7 @@ export function HouseView() {
         // room. Text floating through walls reads as chrome, not a house.
         const labelVisible = !fpDriving || key === myRoom?.key;
         return occ.map((o, i) => {
-          const [ox, oz] = ringOffset(i, occ.length);
+          const [ox, oz] = ringOffset(i, occ.length, undefined, key);
           const slot: WalkPoint = [wx + ox, wy, wz + oz];
           if (o.kind === "player") {
             const p = game.players.find((pp) => pp.id === o.id)!;
