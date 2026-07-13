@@ -223,6 +223,7 @@ function maybeActivate(): void {
     );
     if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type: beat.cardType ?? "item" });
     ambient.sting(beat.cardType ?? "item");
+    ambient.cardFlip(); // the same paper foley, quieter company down the hall
     useBeats.setState({ queue: rest });
     maybeActivate(); // the queue shrank — recursion terminates
     return;
@@ -296,6 +297,9 @@ function showEffects(beat: Beat): void {
   if (beat.roomKey) pendingFx.push({ roomKey: beat.roomKey, type });
   useBeats.setState((s) => ({ vignette: { type, seq: s.vignette.seq + 1 } }));
   ambient.sting(beat.kind === "death" ? "death" : (type as CardType));
+  // the paper foley under the musical sting — a card turning face-up (a death
+  // is a body, not a card, so it keeps the sting alone)
+  if (beat.kind !== "death") ambient.cardFlip();
 }
 
 /** Clear everything (a reconnect must not replay history). */
@@ -461,6 +465,7 @@ export function throwDice(onlyId?: number): void {
 
 /** The tumble→settle→verdict→fade clock for the tray with `id`. */
 function beginTumble(id: number, n: number): void {
+  ambient.diceRoll(); // the clatter of dice leaving the hand
   // Faces flicker while the dice tumble (CSS), then each settles on its real
   // value in stagger order; the verdict fades in once all have landed.
   for (let i = 0; i < n; i++) {

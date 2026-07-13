@@ -24,6 +24,7 @@ import * as THREE from "three";
 import { CHARACTERS_BY_ID } from "@dread-hollow/shared";
 import { useStore } from "../state/store";
 import { useBeats } from "../state/beats";
+import { ambient } from "../audio/ambient";
 import { useView } from "../state/view";
 import { cinematic, firstPerson } from "./director";
 import { trackedTokens, MAX_FRAME_DT } from "./followCam";
@@ -266,8 +267,15 @@ export function FirstPersonRig() {
     // frame while leaving the tactical view (and the candle at the origin).
     const dt = useBeats.getState().worldFrozen ? 0 : Math.min(MAX_FRAME_DT, rawDt);
     const speed = tokenSpeeds.get(myId!) ?? 0;
+    const prevBob = bobT.current;
     bobT.current += dt * (BOB_BASE_HZ + speed * BOB_SPEED_HZ) * Math.PI * 2;
     const bob = Math.min(1, speed / WALK_SPEED) * BOB_AMP * Math.sin(bobT.current);
+    // A footfall at each bob trough (sin crossing the bottom) while actually
+    // moving — two steps per bob cycle, so your own walk is audible underfoot.
+    if (speed > 0.4) {
+      const half = Math.PI;
+      if (Math.floor(prevBob / half) !== Math.floor(bobT.current / half)) ambient.footstep();
+    }
 
     camera.position.set(tok.obj.position.x, tok.obj.position.y + EYE_Y + bob, tok.obj.position.z);
     camera.rotation.order = "YXZ";

@@ -231,14 +231,20 @@ export const useStore = create<Store>((set, get) => {
     attackMonster: (monsterId) =>
       act((playerId) => {
         playOneShotFor(playerId, "attack");
+        ambient.thud(); // the blow lands
         return { type: "attack", playerId, targetMonsterId: monsterId };
       }),
     attackPlayer: (targetPlayerId) =>
       act((playerId) => {
         playOneShotFor(playerId, "attack");
+        ambient.thud();
         return { type: "attack", playerId, targetPlayerId };
       }),
-    pickupItem: (cardId) => act((playerId) => ({ type: "pickup-item", playerId, cardId })),
+    pickupItem: (cardId) =>
+      act((playerId) => {
+        ambient.pickup(); // an item taken into hand
+        return { type: "pickup-item", playerId, cardId };
+      }),
     giveItem: (toPlayerId, cardId) =>
       act((playerId) => ({ type: "give-item", playerId, toPlayerId, cardId })),
     useItem: (cardId) => act((playerId) => ({ type: "use-item", playerId, cardId })),
