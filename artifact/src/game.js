@@ -391,6 +391,27 @@ const Sound = (() => {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(f).connect(g).connect(master); s.start(); s.stop(t + dur + 0.1);
   }
+  // shared foley synths (mirror apps/client/src/audio/ambient.ts)
+  function burst(dur, freq, q, peak, type = "bandpass", delay = 0) {
+    if (!started || muted) return;
+    const s = ctx.createBufferSource(); s.buffer = noise(dur + 0.02);
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); const t = ctx.currentTime + delay;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + Math.min(0.008, dur * 0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(master); s.start(t); s.stop(t + dur + 0.02);
+  }
+  function tone(freq, dur, peak, type = "triangle", delay = 0, glideTo) {
+    if (!started || muted) return;
+    const o = ctx.createOscillator(); o.type = type;
+    const t = ctx.currentTime + delay; o.frequency.setValueAtTime(freq, t);
+    if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02);
+  }
   return {
     start() {
       if (started) return;
@@ -406,6 +427,14 @@ const Sound = (() => {
       if (muted) score.setVolume(0);
     },
     door() { const now = performance.now(); if (now - lastDoor < 350) return; lastDoor = now; creak(330 + Math.random() * 220, 0.6, 0.22); },
+    /** A card turned face-up: a paper riffle then a soft slap. */
+    cardFlip() { burst(0.09, 2600, 1.2, 0.14, "highpass"); burst(0.05, 900, 2.5, 0.1, "bandpass", 0.1); },
+    /** Dice tumbling out and settling: a scatter of clacks. */
+    diceRoll() { let at = 0; const n = 6 + ((Math.random() * 3) | 0); for (let i = 0; i < n; i++) { at += 0.03 + Math.random() * 0.07 * (i / n); burst(0.035, 1200 + Math.random() * 1400, 3.5, 0.09, "bandpass", at); } },
+    /** An item taken into hand: a bright two-note lift with a chime tail. */
+    pickup() { tone(523, 0.12, 0.12, "triangle"); tone(784, 0.18, 0.1, "triangle", 0.07); burst(0.12, 5200, 6, 0.04, "bandpass", 0.02); },
+    /** A combat impact: a heavy body-thump under a crack. */
+    thud() { tone(120, 0.18, 0.22, "sine", 0, 55); burst(0.12, 800, 1.0, 0.14, "lowpass"); },
     /** Near-death heartbeat state — forwarded to the score's peril layer. */
     setHeart(on) { score?.setPeril(!!on); },
     /** Game phase -> musical scene: "lobby" | "explore" | "haunt" | "ended". */
@@ -548,6 +577,7 @@ const DiceTray = (() => {
       e.dice.map((_, i) => `<span class="die" style="animation-delay:${i * DICE_STAGGER_MS}ms"></span>`).join("") +
       `</div><div class="dice-verdict${v.cls ? " " + v.cls : ""}">${v.text}</div>`;
     layer.appendChild(el);
+    Sound.diceRoll(); // the clatter of dice hitting the table
     const dice = [...el.querySelectorAll(".die")];
     const timers = [];
     // Faces flicker while the dice tumble, then each settles on its real value
@@ -724,7 +754,7 @@ const Beats = (() => {
     focusPulse(b.roomKey);
     spawnBeatFx(b.roomKey, type);
     if (b.kind === "death") Sound.sting("death");
-    else Sound.sting(b.cardType);
+    else { Sound.sting(b.cardType); Sound.cardFlip(); } // paper foley under the sting
     // Every reveal gets its full reading time — no backlog fast-drain (driveBots
     // pauses while a beat is up, so the queue stays bounded regardless). A card
     // whose action also rolled dice holds until the tray finishes + a linger.
@@ -2389,6 +2419,8 @@ function onClick(e) {
 function act(action) {
   const active = state.players.find((p) => p.id === state.activePlayerId);
   if (active && active.isBot) return; // bots are driven automatically
+  if (action.type === "pickup-item") Sound.pickup(); // an item taken into hand
+  else if (action.type === "attack") Sound.thud(); // the blow lands
   reactToAction(action); // before dispatch: a losing swing gets replaced by the flinch
   dispatch(action);
   render();
