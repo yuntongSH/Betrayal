@@ -132,6 +132,13 @@ export function roomTheme(roomId: string): RoomTheme {
     "old-surgery": { floor: 0x33403e, wall: 0x415250, accent: 0xa8e0d4, accentIntensity: 0.55 },
     "harmonium-room": { floor: 0x2e2b3c, wall: 0x3c384e, accent: 0xb0a0e0, accentIntensity: 0.55 },
     "cage-room": { floor: 0x322c26, wall: 0x423a32, accent: 0xd8b878, accentIntensity: 0.45 },
+    "ruined-ballroom": { floor: 0x3a2e3e, wall: 0x4a3c4e, accent: 0xe0c088, accentIntensity: 0.6 },
+    solarium: { floor: 0x353e30, wall: 0x45503e, accent: 0xbfe0a0, accentIntensity: 0.55 },
+    "morning-room": { floor: 0x3e332a, wall: 0x4e4136, accent: 0xe6b878, accentIntensity: 0.55 },
+    "sewing-room": { floor: 0x332e34, wall: 0x423b44, accent: 0xd0a8c0, accentIntensity: 0.5 },
+    verandah: { floor: 0x3a352c, wall: 0x4a4438, accent: 0xd8c088, accentIntensity: 0.5 },
+    cloakroom: { floor: 0x2e2a26, wall: 0x3c372f, accent: 0xc0a878, accentIntensity: 0.45 },
+    cupola: { floor: 0x2a2e3a, wall: 0x38404e, accent: 0xbfd4ff, accentIntensity: 0.55 },
   };
   return themes[roomId] ?? DEFAULT_THEME;
 }
@@ -3033,6 +3040,298 @@ COMPOSERS["cage-room"] = (g, t, tile, ctx) => {
   cornerCobwebs(g, tile, 3);
   decayKit(g, t, tile, 761);
   roomLight(g, t, tile, 1.9);
+};
+
+// --- tiny inline props for wave 2 (living/social rooms) --------------------
+
+/** A gymnastic vaulting horse: padded body on four splayed legs. */
+function vaultingHorse(): THREE.Group {
+  const g = new THREE.Group();
+  const leather = mat(0x5a4632, { rough: 0.8 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.8, 4, 8), leather);
+  body.rotation.z = Math.PI / 2;
+  body.position.y = 0.85;
+  g.add(body);
+  const legM = mat(0x2e2418, { rough: 0.9 });
+  for (const [sx, sz] of [[-0.42, -0.14], [0.42, -0.14], [-0.42, 0.14], [0.42, 0.14]] as const) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.85, 6), legM);
+    leg.position.set(sx, 0.42, sz);
+    leg.rotation.z = sx * 0.12;
+    g.add(leg);
+  }
+  return g;
+}
+
+/** A dressmaker's form: a fabric torso on a single turned post + tripod foot. */
+function dressForm(color = 0x6a5a4a): THREE.Group {
+  const g = new THREE.Group();
+  const cloth = mat(color, { rough: 0.9 });
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.32, 4, 10), cloth);
+  torso.scale.set(1, 1, 0.72);
+  torso.position.y = 1.15;
+  g.add(torso);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.7, 8), mat(0x2a2018));
+  post.position.y = 0.62;
+  g.add(post);
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.03, 12), mat(0x2a2018, { metal: 0.3 }));
+  foot.position.y = 0.28;
+  g.add(foot);
+  return g;
+}
+
+/** A wall row of coat pegs, a couple draped with hanging coats. */
+function coatHooks(): THREE.Group {
+  const g = new THREE.Group();
+  const rail = box(1.1, 0.06, 0.06, 0x33261a, { rough: 0.85 });
+  g.add(rail);
+  for (let i = 0; i < 4; i++) {
+    const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.1, 6), mat(0x8a7448, { metal: 0.6 }));
+    peg.rotation.x = Math.PI / 2;
+    peg.position.set(-0.4 + i * 0.27, -0.02, 0.06);
+    g.add(peg);
+  }
+  for (const [x, col] of [[-0.4, 0x3a3038], [0.13, 0x2e2a24]] as const) {
+    const coat = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.5, 3, 8), mat(col, { rough: 0.95 }));
+    coat.scale.set(1, 1, 0.5);
+    coat.position.set(x, -0.34, 0.08);
+    g.add(coat);
+  }
+  return g;
+}
+
+/** A brass telescope on a wooden tripod, angled up at a lost sky. */
+function telescope(): THREE.Group {
+  const g = new THREE.Group();
+  const brass = mat(0x9a7a3a, { metal: 0.8, rough: 0.35 });
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.7, 12), brass);
+  tube.position.set(0, 1.0, 0);
+  tube.rotation.x = -0.7;
+  g.add(tube);
+  const wood = mat(0x2e2418, { rough: 0.9 });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6), wood);
+    leg.position.set(Math.cos(a) * 0.22, 0.5, Math.sin(a) * 0.22);
+    leg.rotation.set(Math.sin(a) * 0.32, 0, -Math.cos(a) * 0.32);
+    g.add(leg);
+  }
+  return g;
+}
+
+/** A low balustrade run along one wall (verandah / gallery edge). */
+function balustrade(len = 2.4): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mat(0x6a6258, { rough: 0.95 });
+  const rail = box(len, 0.08, 0.12, 0x6a6258, { rough: 0.95 });
+  rail.position.y = 0.9;
+  g.add(rail);
+  const base = box(len, 0.08, 0.14, 0x5a534a, { rough: 0.95 });
+  base.position.y = 0.05;
+  g.add(base);
+  const n = Math.max(3, Math.round(len / 0.32));
+  for (let i = 0; i < n; i++) {
+    const bal = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.82, 8), stone);
+    bal.position.set(-len / 2 + 0.16 + i * ((len - 0.32) / (n - 1)), 0.5, 0);
+    g.add(bal);
+  }
+  return g;
+}
+
+COMPOSERS["attic"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // storage: stacked trunks and crates under heavy dust and web
+  place(g, crate(0.42, 0x4a3826), -(tile / 2 - 0.85), -(tile / 2 - 0.85), tile);
+  place(g, crate(0.3, 0x5a4632), -(tile / 2 - 0.85), -(tile / 2 - 0.85), tile, 0.4);
+  const trunk = box(0.7, 0.4, 0.44, 0x3a2a1c, { rough: 0.85 });
+  place(g, trunk, tile / 2 - 0.9, tile / 2 - 0.9, tile, 0.3);
+  standAtWall(g, ctx, wardrobe(0x3a2a1c), ["n", "e", "w", "s"], tile, { fromWall: 0.45 });
+  place(g, leaningLadder(2.6), tile / 2 - 0.7, -(tile / 2 - 1.0), tile, Math.PI * 0.85);
+  place(g, dustPile(0.18, t.floor + 0x0a0a0a), 0.3, 0.4, tile);
+  if (big) {
+    place(g, standingMirror(true), -(tile / 2 - 0.6), tile / 2 - 0.8, tile, 0.5);
+    place(g, rockingChair(0x4a3320), tile / 2 - 1.0, -0.4, tile, 2.4);
+    place(g, dustPile(0.15, t.floor + 0x0a0a0a), -0.6, -0.9, tile);
+    g.add(debrisPlank(4, scaleSpread(1.3, tile), 0x3a2a1c, 813));
+  }
+  cornerCobwebs(g, tile, 4);
+  decayKit(g, t, tile, 811);
+  roomLight(g, t, tile, 1.7);
+};
+
+COMPOSERS["gymnasium"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  place(g, rug(big ? 3.0 : 2.0, big ? 2.2 : 1.6, 0x2c3a3a, t.accent), 0, 0, tile); // exercise mat
+  place(g, vaultingHorse(), big ? -1.0 : 0, big ? 0.2 : 0.3, tile, 0.2);
+  // a climbing rope from the rafters
+  placeOnWall(g, chain(WALL_H - 0.6, 0x6a5a3a), "n", tile * 0.28, WALL_H - 0.05, tile);
+  if (big) {
+    // wall bars on a solid wall
+    const bars = new THREE.Group();
+    for (let i = 0; i < 5; i++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 8), mat(0x5a4632));
+      bar.rotation.z = Math.PI / 2;
+      bar.position.y = 0.4 + i * 0.42;
+      bars.add(bar);
+    }
+    standAtWall(g, ctx, bars, ["s", "e", "w"], tile, { fromWall: 0.08, along: -tile * 0.25 });
+    // a medicine ball and a pair of clubs
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), mat(0x4a3a2a, { rough: 0.9 }));
+    ball.position.set(clampInner(1.3, tile), 0.2, clampInner(1.4, tile));
+    g.add(ball);
+    for (const cx of [-0.15, 0.15]) {
+      const club = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.06, 0.4, 8), mat(0x5a4028));
+      club.position.set(clampInner(1.7 + cx, tile), 0.06, clampInner(1.0, tile));
+      club.rotation.z = 1.4 + cx;
+      g.add(club);
+    }
+  }
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 821);
+  roomLight(g, t, tile, 1.8);
+};
+
+COMPOSERS["ruined-ballroom"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  place(g, rug(big ? tile - 1.4 : 2.0, big ? tile - 2.2 : 1.6, 0x3a2244, t.accent), 0, 0, tile);
+  g.add(chandelier(t.accent));
+  if (big) {
+    // twin pillars framing the dance floor, one cracked and shedding rubble
+    place(g, pillar(WALL_H, 0x6a6258), -1.9, -1.4, tile);
+    place(g, pillar(WALL_H, 0x6a6258), 1.9, -1.4, tile);
+    g.add(rubblePile(7, 0.5, 0x5a534a, 833));
+    place(g, standingMirror(true), 0, -(tile / 2 - 0.5), tile, Math.PI); // a great cracked pier glass
+    hangMid(g, ctx, () => tornCurtain(0.7, 1.6, 0x3a2030), ["e", "w", "s"], 1.9, tile, { halfW: 0.4 });
+    place(g, brokenChair(0x4a3320), tile / 2 - 1.0, tile / 2 - 1.0, tile, 1.8);
+  } else {
+    place(g, pillar(WALL_H, 0x6a6258), -(tile / 2 - 0.8), -(tile / 2 - 0.8), tile);
+    place(g, standingMirror(true), 0, -(tile / 2 - 0.6), tile, Math.PI);
+  }
+  // stained glass burning on the solid walls
+  const winSides = ctx.known ? ctx.walls() : (["n"] as WallSide[]);
+  for (const s of winSides.slice(0, big ? 3 : 1)) placeOnWall(g, glowWindow(t.accent), s, 0, 1.9, tile);
+  cornerCobwebs(g, tile, 3);
+  decayKit(g, t, tile, 831);
+  roomLight(g, t, tile, 2.0);
+};
+
+COMPOSERS["solarium"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a sun-room gone to seed: dead planters and glass on every wall
+  const winSides = ctx.known ? ctx.walls() : (["n"] as WallSide[]);
+  for (const s of winSides.slice(0, 4)) {
+    placeOnWall(g, glowWindow(t.accent), s, -0.85, 1.8, tile);
+    if (big) placeOnWall(g, glowWindow(t.accent), s, 0.85, 1.8, tile);
+  }
+  place(g, deadPlant(), -(tile / 2 - 0.8), -(tile / 2 - 0.8), tile);
+  place(g, deadPlant(), tile / 2 - 0.8, -(tile / 2 - 0.85), tile);
+  if (big) {
+    place(g, deadPlant(), tile / 2 - 0.85, tile / 2 - 0.9, tile);
+    place(g, pew(0x4a4238), 0, 0.2, tile, Math.PI / 2); // a wrought bench
+  }
+  place(g, rug(big ? 2.2 : 1.5, big ? 2.2 : 1.5, 0x2c3a2a, t.accent), 0, 0, tile);
+  placeFloorStain(g, "mold", 0.5, -0.6, 0.8, tile, 843);
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 841);
+  roomLight(g, t, tile, 1.9);
+};
+
+COMPOSERS["morning-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a faded parlour: tea table, chairs, a settle, a stopped clock
+  const tbl = table(big ? 1.0 : 0.8, 0.7, 0.5, 0x5a3d28);
+  place(g, tbl, 0, big ? 0 : 0.5, tile, 0);
+  place(g, candlestick(t.accent), big ? 0.2 : 0.15, big ? -0.1 : 0.45, tile);
+  place(g, chair(), -0.7, big ? 0 : 0.9, tile, Math.PI / 2);
+  place(g, chair(), 0.7, big ? 0 : 0.9, tile, -Math.PI / 2);
+  place(g, rug(big ? 2.8 : 1.9, big ? 2.2 : 1.6, 0x5a3226, t.accent), 0, big ? 0 : 0.4, tile);
+  if (big) {
+    standAtWall(g, ctx, grandfatherClock(), ["n", "e", "w", "s"], tile, { fromWall: 0.35 });
+    place(g, deadPlant(), tile / 2 - 0.8, tile / 2 - 0.85, tile);
+    hangMid(g, ctx, () => framedPortrait(0.5, 0.62), ["s", "e", "w"], 1.7, tile, { halfW: 0.3 });
+  } else {
+    hangMid(g, ctx, () => framedPortrait(0.42, 0.52), ["s", "e", "w"], 1.6, tile, { halfW: 0.25 });
+  }
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 851);
+  roomLight(g, t, tile, 1.5);
+};
+
+COMPOSERS["sewing-room"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  const tbl = table(big ? 1.1 : 0.85, 0.55, 0.5, 0x4a3524);
+  place(g, tbl, big ? -0.6 : 0, big ? 0.3 : 0.6, tile, 0);
+  // spools of thread on the table
+  for (let i = 0; i < 4; i++) {
+    const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 8), emissiveMat([0x8a3030, 0x30508a, 0xc0a040, 0x408a50][i]!, 0.25));
+    spool.position.set(clampInner((big ? -0.6 : 0) - 0.25 + i * 0.16, tile), 0.53, clampInner((big ? 0.3 : 0.6) - 0.1, tile));
+    g.add(spool);
+  }
+  place(g, dressForm(0x6a5a4a), big ? 1.1 : 0.9, big ? -0.3 : 0.7, tile);
+  place(g, chair(), big ? -0.6 : 0, big ? 1.1 : 1.3, tile, Math.PI);
+  g.add(scatteredPaper(big ? 4 : 3, big ? 1.2 : 0.9, 861)); // dress patterns
+  place(g, rug(big ? 2.2 : 1.5, big ? 1.8 : 1.3, 0x2c2c3a, t.accent), 0, big ? 0.2 : 0.5, tile);
+  if (big) place(g, standingMirror(false), -(tile / 2 - 0.6), -(tile / 2 - 0.7), tile, 0.5);
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 861);
+  roomLight(g, t, tile, 1.5);
+};
+
+COMPOSERS["verandah"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a covered porch edge: a balustrade along a solid wall, chairs facing out
+  const bal = standAtWall(g, ctx, balustrade(big ? tile - 1.2 : tile - 2), ["s", "n", "e", "w"], tile, { fromWall: 0.25 });
+  place(g, rockingChair(0x4a3320), big ? -0.7 : 0, 0.2, tile, bal.side === "s" ? 0 : Math.PI);
+  if (big) place(g, rockingChair(0x4a3320), 0.9, 0.4, tile, bal.side === "s" ? 0.2 : Math.PI - 0.2);
+  place(g, deadPlant(), -(tile / 2 - 0.75), -(tile / 2 - 0.8), tile);
+  place(g, candlestick(t.accent), tile / 2 - 0.85, tile / 2 - 0.85, tile);
+  place(g, rug(big ? 2.4 : 1.6, big ? 1.6 : 1.2, 0x3a3226, t.accent), 0, 0.1, tile);
+  // glass looking out where the wall opposite the rail is solid
+  const winSides = (ctx.known ? ctx.walls() : (["n"] as WallSide[])).filter((s) => s !== bal.side);
+  for (const s of winSides.slice(0, 2)) placeOnWall(g, glowWindow(t.accent), s, 0, 1.9, tile);
+  cornerCobwebs(g, tile, 1);
+  decayKit(g, t, tile, 871);
+  roomLight(g, t, tile, 1.7);
+};
+
+COMPOSERS["cloakroom"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // pegs of forgotten coats, a bench to sit and pull on boots, a glass
+  hangMid(g, ctx, () => coatHooks(), ["n", "e", "w", "s"], 1.7, tile, { halfW: 0.55 });
+  if (big) hangMid(g, ctx, () => coatHooks(), ["w", "e", "s", "n"], 1.7, tile, { halfW: 0.55 });
+  place(g, pew(0x3a2c1e), 0, big ? 0.2 : 0.5, tile, Math.PI / 2);
+  place(g, standingMirror(false), tile / 2 - 0.6, -(tile / 2 - 0.7), tile, -0.5);
+  // an umbrella stand
+  const stand = cyl(0.12, 0.14, 0.5, 0x2e2418, 10);
+  stand.position.set(clampInner(-(tile / 2 - 0.7), tile), 0.25, clampInner(-(tile / 2 - 0.7), tile));
+  g.add(stand);
+  for (const a of [0.1, -0.15, 0.3]) {
+    const umb = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.8, 6), mat(0x2a2a30));
+    umb.position.set(clampInner(-(tile / 2 - 0.7) + a * 0.1, tile), 0.6, clampInner(-(tile / 2 - 0.7), tile));
+    umb.rotation.z = a;
+    g.add(umb);
+  }
+  place(g, rug(big ? 2.0 : 1.4, big ? 1.4 : 1.1, 0x2c2622, t.accent), 0, 0, tile);
+  cornerCobwebs(g, tile, 2);
+  decayKit(g, t, tile, 881);
+  roomLight(g, t, tile, 1.5);
+};
+
+COMPOSERS["cupola"] = (g, t, tile, ctx) => {
+  const big = tile >= 6;
+  // a glass lantern atop the house: windows all round, a telescope, star charts
+  const winSides = ctx.known ? ctx.walls() : (["n"] as WallSide[]);
+  for (const s of winSides.slice(0, 4)) placeOnWall(g, glowWindow(0xbfd4ff), s, 0, 1.9, tile);
+  place(g, telescope(), big ? 0.4 : 0, big ? -0.2 : 0.2, tile, 0.4);
+  place(g, chair(0x3a2c1e), big ? -0.8 : -0.6, big ? 0.6 : 0.8, tile, 0.6);
+  g.add(scatteredPaper(3, big ? 1.0 : 0.8, 891)); // star charts
+  place(g, rug(big ? 2.0 : 1.4, big ? 2.0 : 1.4, 0x1e2436, t.accent), 0, 0, tile);
+  if (big) place(g, candlestick(t.accent), tile / 2 - 0.8, tile / 2 - 0.8, tile);
+  cornerCobwebs(g, tile, 1);
+  decayKit(g, t, tile, 891);
+  // cold moonlight instead of candle warmth
+  const l = new THREE.PointLight(0xbfd4ff, t.accentIntensity * 10, big ? 5.5 : 4.0, 2);
+  l.position.set(0, 2.0, 0);
+  g.add(l);
 };
 
 /** Generic tasteful dressing for unknown rooms: rug + candlestick + crate + decay. */
