@@ -6,7 +6,7 @@ import { Portrait } from "./Portrait";
 import { beatsBusy, useBeats } from "../state/beats";
 import { ambient } from "../audio/ambient";
 import { Scene } from "../three/Scene";
-import { TraitPanel } from "./TraitPanel";
+import { RoomInfoCard, TraitPanel } from "./TraitPanel";
 import { EventLog } from "./EventLog";
 import { PartyRoster } from "./PartyRoster";
 import { HauntBanner } from "./HauntBanner";
@@ -159,8 +159,16 @@ export function GameScreen() {
         <EventLog />
       </div>
 
+      {/* One right rail, one height budget. The room card takes the elastic
+          slot (it scrolls when the column runs short); your own panel and the
+          map are pinned, so the inventory's use/give buttons and your haunt
+          goal can never be pushed off-screen or buried under the map. */}
       <div className="hud-right">
+        <div className="hud-right-scroll">
+          <RoomInfoCard />
+        </div>
         <TraitPanel />
+        <Minimap />
       </div>
 
       <div className="hud-bottom">
@@ -245,8 +253,6 @@ export function GameScreen() {
           </>
         )}
       </div>
-
-      <Minimap />
 
       <BeatOverlay />
       <HauntBanner />

@@ -750,8 +750,14 @@ input:focus {
    out near 16.7M). Isolating the canvas layer traps those values in their own
    stacking context so room/token labels can never paint over the HUD; the HUD
    chrome then gets an explicit tier of its own, below the overlays (beat
-   toasts 7, vignette 8, card reveal 9, haunt 10, help 20, notice 30). */
-.game-shell div:has(> canvas) {
+   toasts 7, vignette 8, card reveal 9, haunt 10, help 20, notice 30).
+
+   This MUST sit on the R3F Canvas root — the element that holds both the
+   canvas and the <Html> portal layer. Targeting the canvas's own parent
+   (`div:has(> canvas)`) isolates a layer the labels are not inside: they
+   portal into a *sibling* div, so their z-index kept escaping into
+   .game-shell and painting room/player names over the panels. */
+.game-shell > div:has(canvas) {
   isolation: isolate;
 }
 .hud-top,
@@ -829,7 +835,9 @@ input:focus {
   right: 0;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  /* top-aligned, not centred: the guide strip makes .hud-turn two lines tall,
+     and centring pushed the toggle cluster down into .hud-right's column. */
+  align-items: flex-start;
   padding: 0.8rem 1.2rem;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent);
   pointer-events: none;
@@ -839,7 +847,10 @@ input:focus {
   color: var(--blood-bright);
 }
 /* The guide strip — the one line that always answers "what do I do now?".
-   Sits under the turn banner; quiet gold, urgent red when a fight wants you. */
+   Sits under the turn banner; quiet gold, urgent red when a fight wants you.
+   Clamped to two lines and holding that height whether it needs it or not, so
+   the top bar's footprint is constant: .hud-left's offset is measured against
+   it, and an unclamped wrap used to overrun the party roster's first row. */
 .guide-strip {
   margin-top: 0.3rem;
   font-size: 0.86rem;
@@ -848,6 +859,11 @@ input:focus {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   max-width: min(620px, 60vw);
   line-height: 1.35;
+  min-height: 2.7em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .guide-strip.urgent {
   color: #e88f7e;
@@ -981,7 +997,8 @@ kbd {
 /* --- HUD panels --------------------------------------------------------- */
 .hud-left {
   position: absolute;
-  top: 3.4rem;
+  /* clears the top bar at its full two-line guide-strip height */
+  top: 5.2rem;
   left: 0.9rem;
   /* bottom clears the control hint (~4 lines at 320px) so toasts never overlap it */
   bottom: 6rem;
@@ -995,12 +1012,63 @@ kbd {
 .hud-left > * {
   pointer-events: auto;
 }
+/* The right rail is ONE column with ONE height budget. It used to be two
+   independently-anchored stacks — cards from the top, the minimap from the
+   bottom — which silently overlapped on any ordinary laptop (~99px at 1468x775),
+   burying the inventory and, during a haunt, your own goal behind the opaque
+   map. The map keeps its natural size; the card stack takes what's left. */
 .hud-right {
   position: absolute;
   top: 3.4rem;
   right: 0.9rem;
+  bottom: 4.4rem;
   width: 280px;
   max-width: 40vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+.hud-right > * {
+  pointer-events: auto;
+}
+/* Shrink priority, highest factor first: the room card gives up height long
+   before the player's own panel does, and the minimap never shrinks (its canvas
+   is separately vh-capped). So when the column runs short it's contextual,
+   re-readable text that scrolls, never the inventory's use/give buttons or the
+   haunt goal. Both regions scroll internally rather than overflowing the rail. */
+.hud-right-scroll {
+  flex: 0 100 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.trait-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.hud-right-scroll,
+.trait-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 168, 90, 0.32) transparent;
+}
+.hud-right-scroll::-webkit-scrollbar,
+.trait-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.hud-right-scroll::-webkit-scrollbar-thumb,
+.trait-panel::-webkit-scrollbar-thumb {
+  background: rgba(232, 168, 90, 0.32);
+  border-radius: 3px;
+}
+.hud-right-scroll::-webkit-scrollbar-track,
+.trait-panel::-webkit-scrollbar-track {
+  background: transparent;
 }
 .hud-bottom {
   position: absolute;
@@ -1443,7 +1511,9 @@ kbd {
 .death-banner .dc-continue{margin-top:.5rem}
 
 /* ===== Minimap — clickable bird's-eye map, bottom-right (artifact mirrors) ===== */
-.minimap{position:absolute;right:.9rem;bottom:4.4rem;width:280px;z-index:5;
+/* In-flow child of .hud-right (see the rail block above) — it no longer
+   anchors itself to the viewport bottom, so it cannot cover the cards. */
+.minimap{flex:0 0 auto;
   /* opaque: 3D room/token labels must never bleed through the panel */
   background:#14111c;border:1px solid var(--panel-edge);border-radius:10px;
   padding:.4rem;
@@ -1455,7 +1525,12 @@ kbd {
 .mm-turn{font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   padding:0 .15rem .1rem}
 .mm-turn.yours{color:var(--flame);font-variant:small-caps;letter-spacing:.08em}
-.minimap-canvas{display:block;width:100%;border-radius:6px;background:rgba(5,5,9,.62)}
+/* Width-capped (not height-capped) so the aspect ratio the canvas draws at is
+   preserved: on a short viewport the map gives its height back to the card
+   stack above it rather than forcing that stack to scroll. On tall screens
+   min() picks 100% and the map is full size as before. */
+.minimap-canvas{display:block;width:min(100%,calc(22vh * 264 / 216));height:auto;margin-inline:auto;
+  border-radius:6px;background:rgba(5,5,9,.62)}
 /* YOU-pin: a DOM ring in your character color over your canvas dot, with a
    pulsing amber halo. Positioned/sized by the draw effect (grid→px mapping). */
 .mm-you{position:absolute;pointer-events:none;border-radius:50%;

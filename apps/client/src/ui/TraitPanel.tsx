@@ -79,6 +79,45 @@ function TraitGauge({ t, idx, track }: { t: Trait; idx: number; track: TraitTrac
   );
 }
 
+/**
+ * The room you're standing in: name, flavour, and what it does to you.
+ *
+ * Split out of <TraitPanel> so the right rail can give it the *elastic* slot.
+ * Room notes are contextual and re-readable; your own panel below (traits,
+ * inventory with its use/give buttons, haunt goal) is not — so when the column
+ * runs short, this is what scrolls, and never the player's own state.
+ */
+export function RoomInfoCard() {
+  const game = useStore((s) => s.game)!;
+  const myId = useStore((s) => s.playerId);
+  const me = game.players.find((p) => p.id === myId);
+  const room = me?.position ? game.house[me.position] : null;
+  const rdef = room ? ROOMS_BY_ID[room.roomId] : null;
+  if (!rdef) return null;
+  const rnotes = roomNotes(rdef);
+
+  return (
+    <div className="room-info">
+      <div className="ri-head">
+        <span className="ri-name">{rdef.name}</span>
+        {rdef.aura ? (
+          <span className={`ri-aura ${rdef.aura > 0 ? "good" : "bad"}`}>
+            {rdef.aura > 0 ? "✦ blessed" : "☓ cursed"}
+          </span>
+        ) : null}
+      </div>
+      <div className="ri-flavor muted small">{rdef.flavor}</div>
+      {rnotes.length > 0 && (
+        <ul className="ri-notes">
+          {rnotes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function TraitPanel() {
   const game = useStore((s) => s.game)!;
   const myId = useStore((s) => s.playerId);
@@ -107,33 +146,8 @@ export function TraitPanel() {
         : game.haunt.heroGoal
       : null;
 
-  const room = me.position ? game.house[me.position] : null;
-  const rdef = room ? ROOMS_BY_ID[room.roomId] : null;
-  const rnotes = rdef ? roomNotes(rdef) : [];
-
   return (
-    <>
-      {rdef && (
-        <div className="room-info">
-          <div className="ri-head">
-            <span className="ri-name">{rdef.name}</span>
-            {rdef.aura ? (
-              <span className={`ri-aura ${rdef.aura > 0 ? "good" : "bad"}`}>
-                {rdef.aura > 0 ? "✦ blessed" : "☓ cursed"}
-              </span>
-            ) : null}
-          </div>
-          <div className="ri-flavor muted small">{rdef.flavor}</div>
-          {rnotes.length > 0 && (
-            <ul className="ri-notes">
-              {rnotes.map((n, i) => (
-                <li key={i}>{n}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      <div className={`trait-panel ${!me.alive ? "dead" : ""}`}>
+    <div className={`trait-panel ${!me.alive ? "dead" : ""}`}>
       <div className="tp-head" style={{ borderColor: char.color }}>
         <div className="tp-avatar" style={{ "--pc": char.color } as CSSProperties}>
           {char.name.charAt(0)}
@@ -205,7 +219,6 @@ export function TraitPanel() {
           {goal}
         </div>
       )}
-      </div>
-    </>
+    </div>
   );
 }
